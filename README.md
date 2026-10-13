@@ -1,14 +1,22 @@
 # Observatório eleitoral brasileiro
 
-Dashboard público, gratuito e sem fins lucrativos para explorar eleições e contexto territorial. O [planejamento](plan.md) registra o escopo e os princípios do projeto.
+Dashboard público, gratuito e sem fins lucrativos para explorar eleições e contexto territorial com dados oficiais. O [planejamento](plan.md) registra finalidade, princípios, decisões e o histórico de implementação.
 
-Consulta da Presidência de 2022, com turnos separados, participação municipal e locais paginados com busca por zona, seção, código, nome ou endereço. O piloto de São Paulo é preservado; a expansão nacional só é ativada depois de reconciliar todos os municípios do recorte. A página de transparência informa a cobertura efetivamente publicada, os originais preservados e seus checksums. Governador, senador, deputados e 2026 ainda não foram importados.
+## O que está disponível
 
-A página inicial mostra “Todo o Brasil”: um quadro presidencial consolidado por turno, com participação e votos por candidatura dos 5.570 municípios nas 27 UFs e das 181 localidades eleitorais do exterior, sem lista municipal ou paginação. A parcela exterior entra somente com publicação completa e os mesmos originais/checksums da publicação doméstica; as duas versões ficam identificadas. Selecione uma UF ou pesquise um município para consultar resultados municipais; selecione “Exterior — ZZ” para a consulta própria. `npm run smoke:summary` compara o consolidado dos dois turnos com todos os agregados domésticos e do exterior e verifica essa navegação.
+Presidência de 2022, com turnos sempre separados:
+
+- **Todo o Brasil**: consolidado presidencial por turno, somando os 5.570 municípios das 27 UFs e as 181 localidades eleitorais do exterior. O exterior só entra com publicação completa e os mesmos originais/checksums da publicação doméstica; as duas versões ficam identificadas.
+- **Municípios**: listagem paginada por UF ou nome, com participação e votos de todas as candidaturas.
+- **Locais de votação**: busca por zona, seção, código, nome ou endereço; cada local mostra suas seções.
+- **Exterior (`ZZ`)**: consulta própria por localidade eleitoral.
+- **Transparência** (`/fontes`): versões publicadas, cobertura por UF, relatórios de auditoria e download dos originais preservados com SHA-256.
+
+Governador, senador, deputados, 2026 e dados do IBGE ainda não foram importados. Não há inferências sobre renda, motivação individual ou migração de votos.
 
 ## Iniciar localmente
 
-Requisitos: Node.js 24.21.0 (veja `.nvmrc`), npm 11 ou superior, Docker, Docker Compose e `unzip` para o importador. O desenvolvimento usa npm workspaces; o lockfile fixa as dependências.
+Requisitos: Node.js 24.21.0 (veja `.nvmrc`), npm 11 ou superior (desenvolvido com npm 12.2.0), Docker, Docker Compose e `unzip` para o importador.
 
 ```sh
 cp .env.example .env
@@ -17,86 +25,61 @@ npm run db:up
 npm run dev
 ```
 
-Abra <http://localhost:3000>. A API fica em <http://127.0.0.1:3001>.
+Abra <http://localhost:3000>. A API fica em <http://127.0.0.1:3001>. Sem importação, a interface mostra o estado vazio — nunca números de exemplo.
 
-Os comandos npm das aplicações carregam o `.env` da raiz. Variáveis já definidas no ambiente têm precedência. Se alterar `POSTGRES_PORT`, usuário, senha ou banco, ajuste também `DATABASE_URL` para o desenvolvimento fora do Docker. Credenciais do exemplo são apenas locais. O PostgreSQL mantém os dados em um volume; mudar as variáveis de usuário/senha não altera um banco já inicializado.
+Os comandos npm carregam o `.env` da raiz; variáveis já definidas no ambiente têm precedência. Se alterar `POSTGRES_PORT`, usuário, senha ou banco, ajuste também `DATABASE_URL`. Credenciais do exemplo são apenas locais, e mudar usuário/senha não altera um banco já inicializado no volume.
 
-`Ctrl+C` encerra os servidores de desenvolvimento. `npm run db:stop` para o banco preservando o volume.
+`Ctrl+C` encerra os servidores de desenvolvimento; `npm run db:stop` para o banco preservando o volume. Para executar os builds sem modo de desenvolvimento: `npm run build` e, em terminais separados, `npm run start -w @observatorio/api` e `npm run start -w @observatorio/web`.
 
-## Importar e analisar o piloto
-
-Com o banco em execução e `.env` configurado:
-
-```sh
-npm run import:pilot
-npm run analyze -w @observatorio/importer
-npm run smoke:pilot
-npm run smoke:places
-```
-
-O importador baixa automaticamente três ZIPs oficiais quando ausentes (aproximadamente 816 MiB juntos). O TSE distribui as seções presidenciais no arquivo nacional; somente São Paulo é carregado no banco. A leitura é em fluxo, em Latin-1, e verifica a integridade ZIP. Os originais ficam em `data/raw/tse/2022`, a preparação em `data/staging` e o relatório em `data/audit/sao-paulo-2022.json`. A primeira leitura pode levar vários minutos.
-
-Cada zona precisa reconciliar candidaturas, válidos, brancos, nulos, participação e quantidade de seções principais. A carga ocorre em lotes e é publicada em uma transação. Reexecuções com os mesmos checksums e versão conferem os originais e reutilizam a publicação, sem duplicar registros. Originais existentes não são atualizados automaticamente.
-
-O esquema está versionado em `apps/importer/src/schema.sql` e é aplicado na transação inicial. Divergências nos votos ou nas chaves impedem publicação. Nomes/endereços divergentes de um mesmo identificador de local ficam indisponíveis, com variantes preservadas e aviso no painel. Aptos e abstenção por local permanecem indisponíveis.
-
-`analyze` reconfere no banco as somas por votável, exporta `data/analysis/sao-paulo-2022.json` e registra os conflitos no relatório de auditoria. A [análise inicial](docs/analise-sao-paulo-2022.md) contém os resultados, denominadores e limites. Arquivos `data/` são locais e estão fora do Git.
-
-## Executar tudo em Docker
+### Tudo em Docker
 
 ```sh
 cp .env.example .env
-npm run compose:up
-```
-
-O perfil `app` constrói e inicia web, API e PostgreSQL, com verificações de saúde e portas vinculadas apenas à máquina local. Não exige Node/npm no host se você usar diretamente `docker compose --profile app up --build -d --wait`. O banco usa o volume no caminho `/var/lib/postgresql`, conforme a imagem oficial PostgreSQL 18.
-
-```sh
+npm run compose:up    # equivale a: docker compose --profile app up --build -d --wait
 docker compose --profile app logs -f
 docker compose --profile app stop
 ```
 
-O ambiente é local; não há publicação, domínio ou contratação de serviços.
+O perfil `app` constrói web, API e PostgreSQL com verificações de saúde e portas vinculadas apenas à máquina local. A API recebe `data/originals` e `data/audit` como volumes somente leitura. O ambiente é local; não há publicação, domínio ou serviço contratado.
 
-## Importação nacional — Presidência 2022
+## Importar os dados
 
-```sh
-npm run import:national
-npm run verify:national -w @observatorio/importer
-npm run smoke:national
-```
-
-Usa os mesmos três ZIPs do piloto, sem baixar as 27 fontes de outros cargos. Os originais exatos ficam em `data/originals/<sha256>/<arquivo>`, com permissão somente leitura e integridade conferida. A API recebe esses arquivos e os relatórios por volumes Docker somente leitura. A data de download recuperada de arquivos antigos é identificada como data de modificação local, não como comprovante HTTP; não se usa o `Last-Modified` da versão remota atual para descrever um original antigo.
-
-As seções são particionadas em NDJSON por UF/município, com escrita em fluxo e descritores limitados. Um marcador completo é gravado após leitura de todas as fontes e verificação dos CRCs; uma interrupção **nessa preparação inicial** exige refazer a leitura. Partições incompletas ficam preservadas com nome `.partial-*` e nunca são publicadas. Depois da preparação, a carga retoma por município: votos, agregados e checkpoint são gravados na mesma transação. O município é a maior unidade de memória, não o Brasil inteiro; São Paulo e outras unidades grandes ainda exigem mais memória na reconciliação.
-
-A versão nacional `president-2022-national-v2` normaliza a representação numérica dos códigos TSE para cinco dígitos. A v1 foi interrompida e não publicada porque códigos com/sem zero inicial criavam identidades falsas. A tentativa e seu motivo ficam na transparência. A v2 pode reutilizar a preparação completa da v1 quando hashes/entradas coincidirem, conferindo novamente apuração/nominal contra os ZIPs e cada partição contra seu checksum; não reutiliza os agregados incorretos da v1.
-
-O relatório histórico da publicação doméstica registra o exterior (`ZZ`) como `excluded`, com originais e partições preservados; sua publicação própria, descrita abaixo, não altera esse histórico nem o inclui na lista de municípios brasileiros. Trânsito, votos de categorias não auditadas, duplicatas e divergências bloqueiam o recorte. Todos os municípios domésticos precisam estar reconciliados antes da troca atômica da publicação. A estrutura das novas tabelas inclui ano, eleição, turno, cargo e identidade territorial pertinente, sem colisões entre zonas de UFs/municípios diferentes.
-
-Seções não instaladas domésticas são conferidas separadamente: aptos = comparecimento + abstenção + eleitores dessas seções; principais = seções com registros + não instaladas. Manaus registra uma seção e 84 eleitores nessa categoria em cada turno. Os valores oficiais não são alterados nem reclassificados como abstenção, e a consulta municipal mostra o aviso. Ausência dos novos campos em versões anteriores não é convertida automaticamente em zero.
-
-O relatório nacional está em `data/audit/<dataset-id>.json`; inclui cobertura por município, registros, conflitos e limitações. `verify:national` reconfere a persistência real por município e votável/turno, registra volumes PostgreSQL e anexa o resultado ao relatório. `smoke:national` testa as 27 UFs nos dois turnos, locais, buscas, paginação, transparência e os bytes/checksums dos três originais entregues por HTTP.
-
-Reexecutar `import:national` com os mesmos originais/versão não duplica a publicação. Arquivos já existentes não são atualizados automaticamente; mudanças de fonte/regras exigem versão nova e validação própria. Não apagar `data/` nem o volume PostgreSQL sem backup. A migração `003-national.sql` é idempotente e preserva o piloto.
-
-A primeira publicação nacional reconciliou 5.570 municípios e preservou 5.368.073 registros domésticos. Os três originais servidos por HTTP tiveram seus SHA-256 conferidos. [Resultado e limitações da validação](docs/importacao-nacional-2022.md). A migração `004-national-section-lookup.sql` acrescenta o índice específico de busca por seção; é aplicada automaticamente pela importação nacional, inclusive na reexecução idempotente.
-
-## Exterior — Presidência 2022
-
-Após a preparação nacional completa, com banco em execução e API/web atualizados:
+Com o banco em execução:
 
 ```sh
-npm run import:exterior
-node scripts/smoke-forms-exterior.mjs
-npm run smoke:summary
+npm run import:national                              # municípios das 27 UFs
+npm run verify:national -w @observatorio/importer    # reconfere a persistência
+npm run import:exterior                              # exterior (ZZ)
 ```
 
-A versão `president-2022-exterior-v1` reutiliza os três originais preservados e as partições completas de ZZ, verificando seus hashes, apuração, candidaturas e persistência. Publica 181 localidades, nos dois turnos, e 12.663 registros seção/votável em escopo separado. Reexecução idempotente reconfere os registros sem duplicação. O relatório fica em `data/audit/<dataset-id>.json`.
+Na primeira execução, o importador baixa três ZIPs oficiais do TSE (cerca de 816 MiB) e lê o arquivo nacional de seções em fluxo; a preparação inicial pode levar bastante tempo. Espere alguns GiB em `data/` e cerca de 3 GiB no PostgreSQL.
 
-Exterior é a unidade `ZZ`; todas as suas localidades pertencem à zona eleitoral 1. País não é zona nem município brasileiro. Não há agrupamento por país sem correspondência oficial auditada. As 46 seções não instaladas e seus 573 eleitores por turno são preservados, incluindo localidades com totais oficiais zero, sem fabricar linhas de votos. Com Manaus, o consolidado Brasil registra 47 seções não instaladas e 657 eleitores nessa categoria. [Auditoria e limites](docs/exterior-2022.md).
+Como funciona:
 
-Os formulários mantêm GET e URLs compartilháveis, preservam valores inválidos com erros por campo, separam busca principal de filtros avançados e oferecem turnos em opções visíveis. O feedback de consulta e as transições curtas respeitam movimento reduzido. Autocomplete, revisão visual e auditoria de teclado/leitor de tela em navegador permanecem pendentes.
+1. **Originais**: ficam em `data/raw/tse/2022` e são preservados em `data/originals/<sha256>/<arquivo>`, somente leitura e com integridade conferida a cada uso. Arquivos existentes não são atualizados automaticamente.
+2. **Preparação**: as seções são particionadas em NDJSON por UF/município em `data/staging`. Um manifesto só é gravado após ler todas as fontes e verificar os CRCs; uma interrupção nessa fase exige refazer a leitura, e partições incompletas (`.partial-*`) nunca são publicadas.
+3. **Reconciliação e carga**: cada município é conferido por zona e turno (candidaturas, válidos, brancos, nulos, participação e seções) e gravado, com seu checkpoint, numa única transação. A carga retoma por município após interrupção.
+4. **Publicação**: a troca da versão pública é atômica e só ocorre quando todos os municípios do recorte reconciliaram. Divergências de votos ou chaves, duplicatas e categorias de voto não auditadas bloqueiam a publicação.
+
+Reexecutar com os mesmos originais e versão do importador não duplica registros. Mudanças de fonte ou de regra exigem nova versão e validação própria. Não apague `data/` nem o volume PostgreSQL sem backup.
+
+O relatório de cada versão fica em `data/audit/<dataset-id>.json` (cobertura por município, conflitos e limitações) e também é servido pela transparência. Resultados, decisões e limites de cada carga:
+
+- [Importação nacional](docs/importacao-nacional-2022.md): versão `president-2022-national-v2`, normalização dos códigos TSE com cinco dígitos, tentativa v1 rejeitada, seções não instaladas e métricas.
+- [Exterior](docs/exterior-2022.md): versão `president-2022-exterior-v1`, zona única do exterior e os eleitores de seções não instaladas (657 no consolidado Brasil, por turno).
+
+Seções não instaladas não são somadas à abstenção: aptos = comparecimento + abstenção + eleitores dessas seções. Nomes/endereços divergentes de um mesmo local ficam indisponíveis, com variantes preservadas e aviso no painel. Aptos e abstenção por local permanecem indisponíveis.
+
+### Piloto São Paulo (opcional)
+
+Primeira importação do projeto, restrita ao município de São Paulo. Não é necessária para a consulta nacional, que tem prioridade na API.
+
+```sh
+npm run import:pilot
+npm run analyze -w @observatorio/importer
+```
+
+`analyze` reconfere as somas no banco e exporta `data/analysis/sao-paulo-2022.json`. Resultados e limites estão na [análise de São Paulo](docs/analise-sao-paulo-2022.md).
 
 ## Verificação
 
@@ -104,46 +87,59 @@ Os formulários mantêm GET e URLs compartilháveis, preservam valores inválido
 npm run typecheck
 npm test
 npm run build
-npm run smoke
-npm run smoke:pilot
+```
+
+Os testes unitários usam somente dados sintéticos e cobrem filtros, configuração, reconciliação, denominadores, duplicatas, divergências, isolamento territorial, partições e navegação. O painel usa apenas dados oficiais.
+
+Os smoke tests exigem web, API e banco em execução. Endereços alternativos podem ser definidos com `SMOKE_API_URL` e `SMOKE_WEB_URL`.
+
+| Comando | Exige | Verifica |
+| --- | --- | --- |
+| `npm run smoke` | serviços | Conexão real, estado vazio de 2026, rejeição de filtros, páginas e HTML semântico básico |
+| `npm run smoke:pilot` | piloto SP ou nacional | Totais conhecidos de São Paulo nos dois turnos, locais, paginação e páginas com resultados |
+| `npm run smoke:places` | piloto SP ou nacional | Busca de locais por zona/seção/código/texto, acentos, variantes, paginação e erros |
+| `npm run smoke:national` | `import:national` | 27 UFs nos dois turnos, locais, transparência e SHA-256 dos originais servidos por HTTP |
+| `npm run smoke:exterior` | `import:exterior` | Formulários (GET, erros por campo, turnos) e consulta do exterior |
+| `npm run smoke:summary` | nacional + exterior | Consolidado Brasil contra todos os agregados domésticos e do exterior |
+
+```sh
 curl http://127.0.0.1:3001/health/live
 curl http://127.0.0.1:3001/health/ready
 curl 'http://127.0.0.1:3001/elections/municipalities?year=2022&round=1&uf=SP&page=1&pageSize=25'
 ```
 
-Os testes verificam filtros, configuração, contagens ausentes, duplicatas, divergências de totalização e metadados, denominadores, indisponibilidade, buscas, preservação de filtros, isolamento territorial e integridade das partições. Dados sintéticos ficam exclusivamente em testes; o painel usa dados oficiais. A conexão real com PostgreSQL é verificada por `/health/ready`.
+Smoke tests e testes HTTP não substituem revisão visual nem auditoria de acessibilidade em navegador, que permanecem pendentes.
 
-`npm run smoke` exige web, API e banco em execução. Verifica conexão real, contrato vazio, rejeição de filtros, páginas e elementos semânticos básicos no HTML. Não substitui uma auditoria completa de acessibilidade ou revisão visual em diferentes dispositivos. Endereços alternativos podem ser definidos com `SMOKE_API_URL` e `SMOKE_WEB_URL`.
+## Estrutura
 
-`smoke:pilot` também exige a importação e verifica os dois turnos, totais conhecidos do piloto, busca com e sem acentos, paginação, 2026 sem publicação e páginas com resultados reais.
+```text
+apps/api/            NestJS: saúde, banco e rotas públicas de consulta (docs/api.md)
+apps/importer/       TypeScript: download, preparação, reconciliação, carga, verificação e análise
+apps/web/            Next.js: consulta, locais, exterior, fontes e metodologia
+packages/contracts/  Esquemas Zod e tipos compartilhados entre web, API e importador
+scripts/             Inicialização conjunta (dev.mjs) e smoke tests
+docs/                Decisões técnicas, contrato da API, auditorias e análises
+plan.md              Contexto, princípios, decisões e histórico de implementação
+CLAUDE.md            Orientações para assistentes de código
+```
 
-`smoke:places` verifica busca por zona/seção, código e texto, nomes variantes, acentos, paginação com filtros, buscas sem correspondência, páginas fora do intervalo e mensagens de erro. O formulário de locais usa GET, preserva filtros na URL e reinicia a página ao pesquisar ou trocar de turno. Cada local mostra suas seções; a busca por seção localiza o local e mantém seus totais agregados.
+A conexão usa o driver `pg`; Prisma ainda não foi adotado. O esquema está em `apps/importer/src/schema.sql` e `apps/importer/src/migrations/`, aplicados pelos importadores. Versões e referências das escolhas técnicas: [decisões técnicas](docs/decisoes-tecnicas.md).
 
-Para bancos instalados antes da busca por seção, aplicar o índice adicional uma vez (não exige reimportação):
+<details>
+<summary>Banco criado antes da busca por seção (piloto antigo)</summary>
+
+Novas importações já incluem o índice. Para um banco do piloto instalado antes dele, aplicar uma vez (não exige reimportação; ajuste usuário/banco se alterados):
 
 ```sh
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U observatorio -d observatorio < apps/importer/src/migrations/002-section-lookup.sql
 ```
 
-O esquema de novas importações já inclui esse índice. Ajuste os nomes de usuário/banco no comando caso tenha alterado a configuração local.
+</details>
 
-Para executar os builds sem o modo de desenvolvimento, use `npm run start -w @observatorio/api` e `npm run start -w @observatorio/web` em terminais separados, após `npm run build`.
+## Pendências e próximos passos
 
-## Estrutura
-
-```text
-apps/api/            NestJS: saúde, banco e consultas eleitorais
-apps/importer/       TypeScript: auditoria, carga em lote e análise descritiva
-apps/web/            Next.js: consulta, fontes e metodologia
-packages/contracts/  Validação e tipos compartilhados entre web e API
-scripts/             Inicialização conjunta no desenvolvimento
-docs/                Decisões técnicas e contrato da API
-```
-
-A conexão usa `pg`; Prisma ainda não foi adotado. Não há camadas espaciais ou associação TSE–IBGE nesta etapa.
-
-## Próximo marco
-
-Após a Presidência nacional: governador e senador por UF, com regras próprias de cargo e validação. Deputados terão apresentação resumida, preservando dados completos e distinguindo votos nominais e de legenda; o resumo não define eleitos ou distribuição de cadeiras sem auditoria específica. A integração IBGE/TSE e a etapa espacial ficam posteriores, conforme a prioridade acordada. Resultados de 2026 não foram importados. Não há inferências sobre renda, motivação individual ou migração de votos.
-
-Licença, nome definitivo e hospedagem permanecem pendentes. Não foi copiado código do repositório de referência.
+- Governador e senador por UF, com regras próprias de cargo e validação. Deputados com apresentação resumida, preservando os dados completos e distinguindo votos nominais e de legenda, sem definir eleitos ou cadeiras sem auditoria específica.
+- Depois: integração IBGE/TSE no nível municipal e etapa espacial.
+- Interface: autocomplete, revisão visual e auditoria de teclado/leitor de tela em navegador.
+- Resultados de 2026 não foram importados.
+- Licença, nome definitivo e hospedagem não foram decididos. Não foi copiado código do repositório de referência.
