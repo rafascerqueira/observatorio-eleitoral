@@ -1,0 +1,58 @@
+import { catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery } from '@observatorio/contracts';
+
+export async function getExterior(filters: ExteriorQuery) {
+  try {
+    const url = new URL('/elections/exterior', process.env.API_URL ?? 'http://127.0.0.1:3001');
+    for (const [key, value] of Object.entries(filters)) if (value !== undefined && value !== '') url.searchParams.set(key, String(value));
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return { kind: 'unavailable' as const };
+    return { kind: 'ready' as const, data: exteriorResponseSchema.parse(await response.json()) };
+  } catch { return { kind: 'unavailable' as const }; }
+}
+
+export async function getNational(filters: NationalQuery): Promise<{ kind: 'ready'; data: NationalResponse } | { kind: 'unavailable' }> {
+  try {
+    const url = new URL('/elections/national', process.env.API_URL ?? 'http://127.0.0.1:3001');
+    for (const [key, value] of Object.entries(filters)) url.searchParams.set(key, value);
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return { kind: 'unavailable' };
+    return { kind: 'ready', data: nationalResponseSchema.parse(await response.json()) };
+  } catch { return { kind: 'unavailable' }; }
+}
+
+export async function getCatalog() {
+  try {
+    const response = await fetch(new URL('/elections/catalog', process.env.API_URL ?? 'http://127.0.0.1:3001'), { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return null;
+    return catalogSchema.parse(await response.json());
+  } catch { return null; }
+}
+
+export type ResultsState = { kind: 'ready'; data: MunicipalitiesResponse } | { kind: 'unavailable' };
+export async function getMunicipalities(filters: MunicipalityQuery): Promise<ResultsState> {
+  try {
+    const url = new URL('/elections/municipalities', process.env.API_URL ?? 'http://127.0.0.1:3001');
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== '') url.searchParams.set(key, String(value));
+    }
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return { kind: 'unavailable' };
+    const result = municipalitiesSchema.safeParse(await response.json());
+    if (!result.success) return { kind: 'unavailable' };
+    return { kind: 'ready', data: result.data };
+  } catch {
+    return { kind: 'unavailable' };
+  }
+}
+
+export async function getPlaces(code: string, filters: PlacesQuery) {
+  try {
+    const path = filters.uf === 'ZZ' ? `/elections/exterior/cities/${encodeURIComponent(code)}/places` : `/elections/municipalities/${encodeURIComponent(code)}/places`;
+    const url = new URL(path, process.env.API_URL ?? 'http://127.0.0.1:3001');
+    for (const [key, value] of Object.entries(filters)) if (value !== undefined && value !== '') url.searchParams.set(key, String(value));
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (response.status === 404) return { kind: 'missing' as const };
+    if (!response.ok) return { kind: 'unavailable' as const };
+    return { kind: 'ready' as const, data: placesResponseSchema.parse(await response.json()) };
+  } catch { return { kind: 'unavailable' as const }; }
+}

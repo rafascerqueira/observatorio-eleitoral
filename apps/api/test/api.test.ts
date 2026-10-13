@@ -1,0 +1,165 @@
+import 'reflect-metadata';
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { ServiceUnavailableException, type INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { AppModule } from '../src/app';
+import { readConfig } from '../src/config';
+import { DatabaseService } from '../src/database/database.service';
+import { emptyMunicipalitiesSchema, nationalResponseSchema } from '@observatorio/contracts';
+
+let app: INestApplication;
+let base: string;
+let databaseAvailable = true;
+let published = false;
+let national = false;
+let incomplete = false;
+let exteriorPublished = false;
+let exteriorIncomplete = false;
+const queries: Array<{ sql: string; parameters: unknown[] }> = [];
+// Metadados e local exclusivamente sintéticos para verificar o contrato HTTP.
+const dataset = { id: 'a'.repeat(64), year: 2022, office: 'president', municipalityCode: '71072', municipalityName: 'São Paulo', uf: 'SP', importedAt: '2026-10-12T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', validation: 'reconciled' };
+const place = { zone: 1, code: '1015', name: 'Local de teste', address: null, sections: 2, totals: { eligible: null, turnout: null, abstentions: null, valid: 0, blank: 0, null: 0, totalVotes: 0 }, candidates: [], metadataConflict: false, metadataVariants: [{ name: 'Local de teste', address: null }] };
+before(async () => {
+  const config = readConfig({ DATABASE_URL: 'postgresql://test:test@localhost/test' });
+  const module = await Test.createTestingModule({ imports: [AppModule.register(config)] })
+    .overrideProvider(DatabaseService).useValue({ check: async () => {
+      if (!databaseAvailable) throw new ServiceUnavailableException({ status: 'unavailable', database: 'unavailable' });
+    }, query: async (sql: string, parameters: unknown[] = []) => {
+      if (!databaseAvailable) throw new ServiceUnavailableException();
+      queries.push({ sql, parameters });
+      if (published) {
+        if (sql.includes('to_regclass')) return { rows: [{ registry: 'import_batches' }] };
+        if (sql.includes("scope='2022/president/ZZ'")) return { rows: exteriorPublished ? [{ metadata: { ...dataset, id: 'b'.repeat(64), municipalityCode: undefined, municipalityName: undefined, uf: 'ZZ', level: 'exterior', coverage: { expected: exteriorIncomplete ? 2 : 1, reconciled: exteriorIncomplete ? 2 : 1, blocked: 0, excluded: 0 } } }] : [] };
+        if (sql.includes('SELECT metadata')) return { rows: [{ metadata: national ? { ...dataset, municipalityCode: undefined, municipalityName: undefined, uf: undefined, level: 'national', coverage: { expected: incomplete ? 2 : 1, reconciled: incomplete ? 2 : 1, blocked: 0, excluded: 0 } } : dataset }] };
+        if (sql.includes("AND uf='ZZ'")) return { rows: [{ result: { code: '60011', name: 'Localidade sintética', uf: 'ZZ', electionCode: '544', round: parameters[2], totals: { eligible: 10, turnout: 8, abstentions: 2, nonInstalledEligible: 0, valid: 6, blank: 1, null: 1, totalVotes: 8 }, candidates: [{ number: '13', name: 'Candidato de teste', party: 'Teste', votes: 6, percentValid: 100 }], zones: 1, sections: 2, pollingPlaces: 1, nonInstalledSections: 0 } }] };
+        if (sql.includes("uf<>'ZZ'")) return { rows: [{ result: { code: '60011', name: 'Município teste RJ', uf: 'RJ', electionCode: '544', round: parameters[2], totals: { eligible: 10, turnout: 8, abstentions: 2, nonInstalledEligible: 0, valid: 6, blank: 1, null: 1, totalVotes: 8 }, candidates: [{ number: '13', name: 'Candidato de teste', party: 'Teste', votes: 6, percentValid: 100 }], zones: 1, sections: 2, pollingPlaces: 1, nonInstalledSections: 0 } }] };
+        if (sql.startsWith('SELECT result FROM municipality_results')) return { rows: [{ result: { code: national ? '60011' : '71072', name: national ? 'Município teste RJ' : 'São Paulo', uf: parameters[0] === 'b'.repeat(64) ? 'ZZ' : national ? 'RJ' : 'SP' } }] };
+        if (sql.includes('count(*)')) return { rows: [{ total: 1 }] };
+        if (sql.includes('SELECT p.result')) return { rows: [{ result: place, section_numbers: [1, 2] }] };
+        throw new Error('Consulta inesperada no teste');
+      }
+      return { rows: [{ registry: null }] };
+    } }).compile();
+  app = module.createNestApplication();
+  await app.listen(0, '127.0.0.1');
+  base = await app.getUrl();
+});
+test('exterior tem namespace próprio, total independente da busca e soma explícita ao Brasil', async () => {
+  assert.equal((await (await fetch(`${base}/elections/exterior`)).json()).status, 'awaiting-import');
+  published = true; national = true; exteriorPublished = true; queries.length = 0;
+  try {
+    const response = await fetch(`${base}/elections/exterior?search=Lisboa&pageSize=10`);
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.pagination.total, 0); assert.equal(data.summary.exteriorCities, 1); assert.equal(data.summary.totals.valid, 6);
+    const all = await (await fetch(`${base}/elections/national`)).json();
+    assert.equal(all.includesExterior, true); assert.equal(all.summary.totals.valid, 12); assert.equal(all.summary.municipalities, 1); assert.equal(all.summary.exteriorCities, 1);
+    const places = await fetch(`${base}/elections/exterior/cities/60011/places?zone=1&section=2`);
+    assert.equal(places.status, 200); assert.equal((await places.json()).municipality.uf, 'ZZ');
+    const select = queries.find((query) => query.sql.includes('SELECT p.result'))!;
+    assert.deepEqual(select.parameters.slice(6, 10), ['60011', 2022, 'president', 'ZZ']);
+    assert.equal(select.parameters[0], 'b'.repeat(64));
+    assert.equal((await fetch(`${base}/elections/exterior/cities/60011/places?uf=SP`)).status, 400);
+    assert.equal((await fetch(`${base}/elections/exterior/cities/60011/places?year=2026`)).status, 404);
+    assert.equal((await (await fetch(`${base}/elections/exterior?year=2026`)).json()).status, 'awaiting-import');
+    exteriorIncomplete = true;
+    assert.equal((await fetch(`${base}/elections/exterior`)).status, 503);
+    assert.equal((await fetch(`${base}/elections/national`)).status, 503, 'Brasil não pode omitir silenciosamente uma publicação de exterior inconsistente');
+  } finally { published = false; national = false; exteriorPublished = false; exteriorIncomplete = false; }
+});
+test('consolidado nacional não usa paginação/filtros municipais nem publica uma cobertura parcial', async () => {
+  assert.equal((await (await fetch(`${base}/elections/national`)).json()).status, 'awaiting-import');
+  published = true;
+  try {
+    assert.equal((await (await fetch(`${base}/elections/national`)).json()).status, 'awaiting-import', 'Piloto não é um Brasil consolidado');
+    national = true; queries.length = 0;
+    for (const round of ['1', '2']) {
+      const response = await fetch(`${base}/elections/national?round=${round}`);
+      assert.equal(response.status, 200);
+      const data = nationalResponseSchema.parse(await response.json());
+      assert.equal(data.status, 'published');
+      if (data.status === 'published') { assert.equal(data.summary.municipalities, 1); assert.equal(data.summary.totals.valid, 6); }
+    }
+    const select = queries.find((query) => query.sql.includes("uf<>'ZZ'"))!;
+    assert.doesNotMatch(select.sql, /LIMIT|OFFSET/);
+    assert.deepEqual(select.parameters, [dataset.id, '2022', '1', 'president']);
+    for (const query of ['uf=SP', 'page=2', 'search=Manaus', 'round=3', 'office=senator', 'round=1&round=2']) {
+      assert.equal((await fetch(`${base}/elections/national?${query}`)).status, 400);
+    }
+    assert.equal((await (await fetch(`${base}/elections/national?year=2026`)).json()).status, 'awaiting-import');
+    incomplete = true;
+    assert.equal((await fetch(`${base}/elections/national`)).status, 503);
+  } finally { published = false; national = false; incomplete = false; }
+});
+test('consulta nacional de locais isola UF/município/ano/cargo nas duas tabelas', async () => {
+  published = true; national = true; queries.length = 0;
+  try {
+    const response = await fetch(`${base}/elections/municipalities/60011/places?uf=RJ&zone=1&section=2`);
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.municipality.uf, 'RJ');
+    const select = queries.find((query) => query.sql.includes('SELECT p.result'))!;
+    assert.match(select.sql, /national_place_results/);
+    assert.match(select.sql, /national_section_votes/);
+    assert.match(select.sql, /p.municipality_code=\$7/);
+    assert.match(select.sql, /s.uf=p.uf/);
+    assert.deepEqual(select.parameters.slice(6, 10), ['60011', 2022, 'president', 'RJ']);
+    assert.equal((await fetch(`${base}/elections/sources/invalid/archive.zip`)).status, 404);
+    assert.equal((await fetch(`${base}/elections/imports/invalid/report`)).status, 404);
+  } finally { published = false; national = false; }
+});
+
+test('busca HTTP por zona/seção usa parâmetros SQL e retorna a lista de seções', async () => {
+  published = true; queries.length = 0;
+  try {
+    const search = "Colégio %_'); SELECT 1; --";
+    const params = new URLSearchParams({ zone: '0001', section: '0002', local: '01015', search, pageSize: '10' });
+    const response = await fetch(`${base}/elections/municipalities/71072/places?${params}`);
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.deepEqual(data.items[0].sectionNumbers, [1, 2]);
+    assert.equal(data.items[0].sections, 2);
+    const select = queries.find((query) => query.sql.includes('SELECT p.result'))!;
+    assert.deepEqual(select.parameters.slice(2, 5), [1, 2, 1015]);
+    assert.equal(select.parameters[5], search.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
+    assert.equal(select.sql.includes(search), false);
+    assert.equal(select.sql.includes('EXISTS'), true);
+    for (const query of ['zone=0', 'section=-1', 'local=abc', 'zone=1&zone=2', 'sort=municipality']) assert.equal((await fetch(`${base}/elections/municipalities/71072/places?${query}`)).status, 400);
+    assert.equal((await fetch(`${base}/elections/municipalities/71072/places?year=2026`)).status, 404);
+  } finally { published = false; }
+});
+after(async () => { await app?.close(); });
+
+test('saúde, contrato vazio e rejeição de filtros inválidos por HTTP', async () => {
+  assert.deepEqual(await (await fetch(`${base}/health/ready`)).json(), { status: 'ok', database: 'ok' });
+  const response = await fetch(`${base}/elections/municipalities?year=2026&round=2&uf=RJ&page=2&pageSize=10`);
+  assert.equal(response.status, 200);
+  const data = emptyMunicipalitiesSchema.parse(await response.json());
+  assert.equal(data.dataset, null);
+  assert.equal(data.filters.year, '2026');
+  assert.equal(data.pagination.page, 2);
+  assert.deepEqual(data.items, []);
+  for (const query of ['page=0', 'pageSize=101', 'year=2024', 'uf=XX', 'year=2022&year=2026']) {
+    assert.equal((await fetch(`${base}/elections/municipalities?${query}`)).status, 400);
+  }
+});
+
+test('banco indisponível gera 503 e não uma tabela vazia; liveness permanece 200', async () => {
+  databaseAvailable = false;
+  try {
+    assert.equal((await fetch(`${base}/health/ready`)).status, 503);
+    assert.equal((await fetch(`${base}/elections/municipalities`)).status, 503);
+    assert.equal((await fetch(`${base}/elections/national`)).status, 503);
+    assert.equal((await fetch(`${base}/health/live`)).status, 200);
+  } finally { databaseAvailable = true; }
+});
+
+test('configuração inválida falha sem expor credenciais', () => {
+  assert.throws(() => readConfig({ DATABASE_URL: 'segredo', API_PORT: '0' }), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /DATABASE_URL/);
+    assert.doesNotMatch(error.message, /segredo/);
+    return true;
+  });
+});

@@ -1,0 +1,203 @@
+# Contexto do projeto — Observatório eleitoral brasileiro
+
+Consolidado em 12/10/2026 para continuidade no Codex local. Nome provisório. Este documento registra decisões e propostas; não certifica conjuntos de dados ainda não auditados.
+
+## 1. Finalidade e intenção do autor
+
+O autor deseja criar um dashboard de acesso público e gratuito para explorar os resultados eleitorais brasileiros junto ao contexto demográfico e socioeconômico dos territórios.
+
+A inspiração é o livro O Cérebro Político, aparentemente The Political Brain, de Drew Westen. A referência inspira o interesse pelo comportamento político; suas conclusões não serão presumidas válidas para o Brasil. O MVP não fará inferências psicológicas.
+
+O projeto começa pequeno com dados oficiais do TSE e IBGE. Não deve partir de uma tese política a confirmar nem exigir um conjunto extenso de perguntas de pesquisa antes da obtenção dos dados. O público poderá formular questionamentos a partir da exploração.
+
+## 2. Princípios acordados
+
+- Independência partidária e mesmos recursos, filtros e fórmulas para todas as candidaturas e partidos.
+- Não produzir conclusões editoriais automáticas ou orientar o visitante para uma interpretação política.
+- Mostrar distribuições e valores; não classificar pessoas ou lugares automaticamente como de direita, de esquerda, apolíticos, ricos ou pobres.
+- Abstenção, brancos e nulos não identificam motivação nem condição apolítica.
+- Fontes, definição de variável, ano de referência, cobertura e denominador sempre consultáveis.
+- Ausência absoluta de viés não pode ser garantida: escolhas metodológicas devem ser explícitas, testadas e revisáveis.
+- Diferentes perspectivas devem ter critérios consistentes; explicações não recebem o mesmo peso quando a evidência difere.
+- Não prometer ineditismo: já existem produtos brasileiros com mapas eleitorais e indicadores socioeconômicos.
+
+## 3. Escopo inicial e apresentação
+
+Primeira entrega: tabela didática por município, com filtros de eleição, turno, cargo e território; permitir abrir o detalhe dos locais de votação. Priorizar leitura simples e acessibilidade, inclusive no celular. Mapas e gráficos ficam para evolução; evitar visualizações densas ou difíceis de interpretar.
+
+Exibir votos absolutos e percentuais de todas as candidaturas, aptos, comparecimento, abstenção, brancos e nulos. A diferença entre candidaturas pode ser mostrada em pontos percentuais, com definição explícita do par comparado.
+
+Apresentar os indicadores do IBGE na escala realmente disponível. A distribuição em faixas de renda só entra onde os arquivos e dicionários confirmarem essa informação; não fabricar distribuição a partir de médias.
+
+Liderança não é maioria absoluta: 40% dos votos válidos pode ser o maior percentual sem ultrapassar 50%. Agregações regionais usam soma dos votos e denominadores correspondentes, não média simples dos percentuais municipais.
+
+Preservar a granularidade das seções na base e agregá-las por local de votação para explorar o contexto do entorno. Município é o ponto inicial mais simples de cruzamento entre fontes.
+
+## 4. Anos e cargos
+
+O usuário quer aproveitar 2022 e 2026. Resultados por zona e seção já existiam em 2022; não são uma novidade exclusiva de 2026. A cobertura e qualidade das localizações de cada ano precisam ser auditadas.
+
+Começar pela eleição presidencial, mantendo os turnos separados; modelar os cargos para expansão futura a governador, senador, deputados etc. Regras de denominador variam por cargo — atenção especial ao Senado em anos com duas escolhas por eleitor.
+
+Não presumir que resultados de 2026 ou localizações estejam completos só porque o catálogo os apresenta. Verificar arquivos, geração, cobertura e situação de totalização. Não inventar resultados de turnos ainda não realizados. Comparações só são publicadas depois da validação de cada conjunto.
+
+Um exemplo mencionado pelo usuário sobre Rio de Janeiro, Niterói e interior não foi validado nesta conversa e não deve ser tratado como conclusão.
+
+## 5. Associação geográfica
+
+- Seção é um agrupamento eleitoral; local de votação é o prédio; zona é uma unidade administrativa. Não equivalem automaticamente a bairro ou setor censitário.
+- O endereço do local mostra onde o eleitor vota, não onde mora.
+- O entorno socioeconômico será uma aproximação do contexto territorial. Não atribuir sua renda aos eleitores inscritos.
+- Definir e versionar o método: setor que contém o local, setores próximos ou área delimitada por distância. Nenhuma distância foi decidida.
+- Testar sensibilidade a diferentes delimitações e informar casos sem associação confiável.
+- Várias seções no mesmo prédio compartilham contexto geográfico; não tratá-las como observações socioeconômicas independentes.
+- Não calcular renda média do entorno pela média simples das médias de setores: usar os denominadores apropriados quando disponíveis. Não agregar medianas como se fossem médias.
+- Associação territorial não demonstra causa, motivo individual, ideologia ou transferência individual de votos entre eleições.
+- Comparar seções e locais entre anos exige conferir mudanças, agregações, transferências e correspondências. Números iguais não bastam para garantir continuidade.
+
+## 6. Renda e salário mínimo
+
+O usuário prefere métricas objetivas e faixas em salários mínimos, sem rótulos fixos de classe.
+
+Distinguir rigorosamente:
+
+1. Rendimento do responsável pelo domicílio.
+2. Renda domiciliar total, conforme definição da fonte.
+3. Renda domiciliar per capita.
+
+Renda domiciliar não deve ser chamada automaticamente de renda familiar. O salário mínimo é uma unidade de expressão da renda, não uma segunda renda. Registrar valor, vigência e período de referência. Para renda de 2022, usar uma referência de 2022 explicitada; comparações temporais de poder de compra exigem tratamento próprio.
+
+O levantamento encontrou divulgação do IBGE de rendimento do responsável por setor censitário. Isso não comprova disponibilidade de renda domiciliar total ou per capita na mesma escala. Confirmar dicionários antes de implementar camadas. Se só houver média/mediana, rotular exatamente a medida; não afirmar proporções por faixa.
+
+## 7. Fontes e referências
+
+Fontes prioritárias:
+
+- Portal TSE: https://dadosabertos.tse.jus.br/
+- Resultados 2022: https://dadosabertos.tse.jus.br/dataset/resultados-2022
+- Resultados 2026: https://dadosabertos.tse.jus.br/dataset/resultados-2026
+- Eleitorado: https://dadosabertos.tse.jus.br/group/eleitorado
+- IBGE Censo 2022: https://www.ibge.gov.br/estatisticas/sociais/populacao/22827-censo-demografico-2022.html
+- Rendimento do responsável: https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Rendimento_do_Responsavel/
+
+Perfil cadastral do TSE descreve inscritos, sem indicar voto de cada grupo. Códigos TSE e IBGE precisam de correspondência validada; não cruzar apenas por nome municipal.
+
+Referências de produtos levantadas, sem auditoria integral:
+
+- https://electomaps.com.br/eleicoes — distingue perfil cadastral e entorno censitário.
+- https://hubpolitico.com.br/mapa — anuncia cruzamentos eleitorais e socioeconômicos.
+- https://datapedia.info/
+- https://votehub.com/2024-map/
+- https://github.com/nytimes/presidential-precinct-map-2024
+
+Fontes futuras, fora do MVP: CESOP/ESEB para atitudes individuais (https://www.cesop.unicamp.br/por/eseb), Ipea, RAIS/Caged e MDS. Surveys não devem ser presumidos representativos de cada município.
+
+## 8. Direção técnica acordada
+
+Stack: TypeScript e Node.js; NextJS no frontend, NestJS no backend, PostgreSQL. Prisma é compatível com a experiência do usuário; seu uso e versão ainda precisam ser definidos. Docker Compose para ambiente local; Docker e Traefik são familiares ao usuário para hospedagem futura.
+
+Proposta de monorepo:
+
+- apps/web: NextJS, tabela e páginas de fontes/metodologia.
+- apps/api: NestJS, API de consulta com paginação e ordenação.
+- apps/importer: proposta de importador TypeScript executado separadamente.
+- packages/: contratos compartilhados apenas quando necessários.
+- docs/: contexto, fontes e decisões.
+
+Importações fora das requisições do visitante. Preservar originais e metadados; carregar em área de preparação, validar e publicar versão consistente. Usar importação em lote e SQL quando apropriado, evitando inserir milhões de registros individualmente pelo ORM. PostgreSQL/PostGIS é uma opção para a etapa espacial, não uma decisão já fechada.
+
+Persistir agregados por município e local para consultas econômicas. Backend modular único; sem microserviços, Redis ou filas no início sem necessidade demonstrada. Nunca enviar a base nacional inteira ao navegador. Dimensionar hospedagem só após medir volume e carga.
+
+Gerenciador de pacotes, versões, município/UF piloto, licença, nome definitivo, hospedagem e fonte exata de cada variável ainda não foram decididos. Linux é habitual ao usuário, mas o ambiente local atual precisa ser inspecionado.
+
+## 9. Validação e rastreabilidade
+
+- Arquivo original, URL, checksum, data de download/geração e versão do importador.
+- Relatório de cobertura, descartes, campos ausentes e conflitos.
+- Nulos não viram zeros automaticamente.
+- Duplicatas conflitantes não são descartadas silenciosamente.
+- Reexecução idempotente: não duplicar dados.
+- Chaves incluem eleição, turno, cargo e unidade pertinente.
+- Validar aptos, comparecimento, abstenção e denominadores segundo os dicionários; reconciliar agregados com totais oficiais do mesmo recorte.
+- Conferir cardinalidade das junções para impedir multiplicação de votos.
+- Denominador zero deve gerar estado sem percentual, não valor inventado.
+- Dados fictícios apenas em testes, claramente separados dos dados públicos.
+- Testar fórmulas e invariantes relevantes; garantir reprodução das tabelas publicadas.
+
+## 10. Revisão do repositório esteleicao
+
+Referência: https://github.com/ralbuque/esteleicao — revisão do commit 69d8fdd (11/10/2026).
+
+Objetivo diferente: detectar seções atípicas em abstenção baixa, horário tardio e habilitação manual. Usa Python, pandas, Parquet, Plotly e Streamlit. Não encontrei IBGE, renda, geometrias censitárias ou votos por candidatura.
+
+Referências úteis: leitura em blocos, Parquet antes da interface, download retomável/HTTP Range com CRC, navegação por local e separação de taxa agregada e média de taxas.
+
+Achados a evitar:
+
+- Conversão de valores inválidos para zero.
+- Remoção de duplicatas mantendo primeira sem resolver conflitos.
+- Inconsistências geram aviso, mas seguem para análise.
+- Nome do Parquet ignora cargo, permitindo sobrescrita entre importações.
+- Estimativa de fuso pela abertura confunde atraso com deslocamento: chamada fuso_por_abertura(9, 'SP') retornou 1.
+- Critérios de alerta dirigidos a padrões específicos não atendem à exploração aberta pretendida.
+- Não encontrei licença explícita nem suíte automatizada/CI; confirmar licença antes de copiar código.
+
+Limites da revisão: leitura de código e documentação, importação dos módulos analíticos e teste pontual do fuso. Painel não executado; dados oficiais nacionais não baixados; validações nacionais relatadas pelo autor não reproduzidas. Logs de urna ficam fora do MVP.
+
+## 11. Próxima tarefa para o Codex local
+
+Leia este arquivo e instruções existentes (AGENTS.md e outras aplicáveis). Inspecione ambiente e repositório sem sobrescrever trabalho existente. Inicialize uma estrutura executável com NextJS, NestJS, TypeScript e PostgreSQL via Docker Compose, documentando como iniciar. Escolha versões compatíveis consultando documentação oficial atual e registre a escolha.
+
+Primeiro marco: frontend acessível, API com verificação de saúde e conexão com banco, configuração por ambiente e estado vazio claro na tabela. Não criar números eleitorais para aparentar um produto pronto.
+
+Segundo marco: auditar e importar um recorte pequeno real do TSE, reconciliar totais e expor tabela paginada. Definir recorte piloto com Rafael antes de uma carga extensa. Depois integrar IBGE no nível municipal e detalhar locais onde a correspondência foi validada.
+
+Não expandir automaticamente para IA, modelos psicológicos, classificação ideológica, alertas de fraude ou múltiplas fontes adicionais. Não publicar nem contratar serviços sem instrução. Manter este contexto e decisões atualizados conforme a implementação evoluir.
+
+## 12. Registro de implementação — 12/10/2026
+
+Iniciada a implementação do primeiro marco em monorepo npm workspaces: Next.js 16.4.0 / React 19.3.0, NestJS 12.1.3, TypeScript 5.9.3 e PostgreSQL 18.6 em Docker Compose, com Node.js 24.21.0 LTS. As escolhas e referências oficiais estão em `docs/decisoes-tecnicas.md`; a inicialização está no `README.md`.
+
+Criados frontend com formulário de consulta, tabela sem dados inventados, páginas de fontes/metodologia e estados distintos de ausência de importação e indisponibilidade; API com configuração validada, saúde do processo e verificação real do PostgreSQL. Contratos compartilhados validam filtros e resposta inicial. O endpoint de municípios ainda retorna apenas `awaiting-import`; não há consulta eleitoral nem importador implementado.
+
+Prisma continua pendente; o marco inicial usa o driver `pg`. Não foram baixados arquivos TSE/IBGE nem definidos esquema eleitoral, recorte piloto ou método geográfico. Próxima decisão: escolher com Rafael o recorte pequeno antes de auditar e importar dados reais. Nome, licença e hospedagem seguem pendentes.
+
+Primeiro marco validado com verificação de tipos, quatro testes, build local, builds Docker e smoke contra os serviços locais. Também verificado o comportamento real de indisponibilidade com parada temporária e restauração do banco. Os serviços ficaram em execução local em `http://localhost:3000` (web) e `http://127.0.0.1:3001` (API). Não houve publicação externa. Revisão visual e auditoria completa de acessibilidade permanecem pendentes.
+
+## 13. Piloto São Paulo — 12/10/2026
+
+Rafael definiu o município de São Paulo como piloto e solicitou testes e análise. Implementada importação de Presidência 2022, eleições 544/545, cargo 1, código municipal TSE 71072, preservando os turnos separados. O importador TypeScript usa leitura CSV Latin-1 em fluxo, originais ZIP preservados com SHA-256 e carga PostgreSQL em lotes, publicada em transação apenas após reconciliação por zona e candidatura.
+
+Carregados 325.089 registros seção/votável, com 58 zonas, 26.288 seções principais e 2.049 identificadores zona/local em cada turno. Geração das seções: 01/11/2022; arquivos municipais: 11/10/2026. As somas coincidiram exatamente. O campo de pendência de totalização final está ausente no CSV municipal, limitação registrada.
+
+Identificada divergência de nome no local 1430 da zona 258, nos dois turnos, com endereço comum. Campos divergentes ficam indisponíveis; variantes são preservadas e exibidas. Não foi feita associação geográfica ou ao IBGE. Aptos e abstenção por local continuam indisponíveis.
+
+O painel agora consulta agregados reais e expõe municípios e locais paginados; participação não é repetida entre candidaturas. Fontes e metadados são consultáveis. Oito testes, tipos, builds e smoke com os dois turnos passaram; reexecução com os mesmos checksums confirmou idempotência. A análise descritiva está em `docs/analise-sao-paulo-2022.md`, com artefatos reproduzíveis em `data/audit` e `data/analysis`. Não houve publicação externa nem importação de 2026. Próxima etapa: auditar o IBGE municipal e a correspondência de códigos para São Paulo.
+
+## 14. Busca nos locais e avaliação funcional
+
+Atendendo à solicitação de Rafael, adicionada busca combinada por zona, seção, código do local e nome/endereço. A busca textual ignora caixa e acentos e inclui as variantes de metadados. Identificadores aceitam zeros iniciais. Seção localiza o local correspondente pelos registros já importados; a interface deixa explícito que os totais apresentados são do local inteiro.
+
+Adicionados lista clicável de seções por local, botão de limpeza, contagem de resultados, paginação acima e abaixo, filtros preservados na URL e estados distintos para ausência de correspondência, página fora do intervalo e falhas. Nova busca e troca de turno reiniciam na primeira página. Índice adicional de seção aplicado ao PostgreSQL, sem reimportação ou alteração de resultados.
+
+Verificação: 12 testes, tipos e build local; smoke do piloto e 40 requisições específicas da busca com a base real, nos dois turnos. Avaliação registrada em `docs/avaliacao-busca-locais.md`; inspeção visual em navegador e auditoria completa de acessibilidade permanecem pendentes por indisponibilidade de superfícies de navegador nesta sessão.
+
+## 15. Prioridade acordada — expansão de 2022
+
+Rafael aprovou avançar primeiro na Presidência de 2022 para os municípios das 27 UFs, priorizando a transparência objetiva: arquivos consultáveis, datas, checksums e cobertura. Depois, governador e senador por UF; deputados com apresentação resumida, preservando os dados e denominadores completos. A integração IBGE/espacial fica posterior a essa prioridade; não foi autorizada publicação externa.
+
+Implementada preparação nacional em fluxo por UF/município, tabelas com chaves territoriais completas e checkpoints transacionais por município. A versão pública anterior permanece ativa até todos os municípios domésticos passarem nas verificações dos dois turnos. ZZ é explicitamente separado, com originais e partições preservados, aguardando regra própria para o exterior e seções não instaladas.
+
+A transparência distingue download do original imutável de consulta ao arquivo atual no TSE, registra a base da data de download e oferece cobertura por UF e relatório JSON com municípios/motivos. Acrescentados catálogo e rotas públicas somente leitura; Docker monta originais/relatórios somente para leitura. A consulta municipal e a busca de locais deixam de ser fixas em São Paulo. Métricas e validação da primeira carga nacional estão registradas em `docs/importacao-nacional-2022.md`.
+
+Concluída a versão nacional `president-2022-national-v2`: 5.570 municípios reconciliados, nos dois turnos, sem bloqueios; 5.368.073 registros domésticos preservados no PostgreSQL. ZZ: 181 unidades e 12.663 registros separados. Corrigidos códigos municipais com/sem zero inicial, mantendo a tentativa v1 como rejeitada e nunca publicada. Manaus possui uma seção não instalada e 84 eleitores na categoria por turno; valores mantidos separados da abstenção e conferidos contra os originais.
+
+Validação final: 19 testes, tipos, builds local/Docker, auditoria integral de persistência por município e turno/votável, 182 requisições nacionais (27 UFs/dois turnos), 40 de busca e três ZIPs baixados por HTTP com SHA-256 correspondente. Reexecução idempotente confirmada. Um timeout sob tarefas pesadas concorrentes motivou índice nacional específico de seção; a repetição concorrente passou. Relatório e métricas em `docs/importacao-nacional-2022.md`. Serviços locais saudáveis, sem publicação externa; governador/senador/deputados, exterior consultável, IBGE e 2026 permanecem etapas posteriores.
+
+## 16. Formulários, exterior e explicação dos eleitores de seções não instaladas
+
+Após aprovação de Rafael, implementado o primeiro refinamento dos formulários: turnos visíveis, cargo como contexto, UFs com nomes completos, filtros avançados separados, erros por campo sem descartar valores, GET compartilhável, feedback de consulta e movimento breve com respeito a movimento reduzido. Autocomplete e auditoria visual/teclado/leitor de tela permanecem pendentes.
+
+A pedido de Rafael, publicada a Presidência 2022 do exterior em escopo próprio `ZZ`, com 181 localidades, dois turnos e 12.663 registros seção/votável. Corrigida a hipótese de país como zona: o exterior inteiro pertence à zona 1; não foi inventada correspondência país/localidade. O consolidado Brasil combina as publicações doméstica e exterior somente com fontes idênticas e cobertura completa, expondo ambas na transparência. Auditoria integral de persistência e reexecução idempotente sem divergências; registro em `docs/exterior-2022.md`.
+
+Esclarecido o aviso dos 84 eleitores: são aptos da zona 68 de Manaus, vinculados a uma seção não instalada, não votos nem uma categoria somável entre turnos. O original não informa a causa. O aviso ganhou explicação e distribuição por localidade. Com ZZ, o total nacional dessa categoria é 657 eleitores em 47 seções por turno, sem reclassificação como abstenção. Não houve publicação externa ou importação de outros cargos.

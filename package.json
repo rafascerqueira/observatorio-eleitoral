@@ -1,0 +1,26 @@
+{
+  "name": "observatorio-eleitoral",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=24.21.0 <25", "npm": ">=11" },
+  "packageManager": "npm@12.2.0",
+  "scripts": {
+    "dev": "npm run build -w @observatorio/contracts && node scripts/dev.mjs",
+    "build": "npm run build -w @observatorio/contracts && npm run build -w @observatorio/api && npm run build -w @observatorio/web",
+    "typecheck": "npm run build -w @observatorio/contracts && npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w @observatorio/contracts && npm run test --workspaces --if-present",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:pilot": "node scripts/smoke.mjs --pilot",
+    "smoke:places": "node scripts/smoke-places.mjs",
+    "import:pilot": "npm run build -w @observatorio/contracts && npm run import -w @observatorio/importer",
+    "import:national": "npm run build -w @observatorio/contracts && npm run national -w @observatorio/importer",
+    "import:exterior": "npm run build -w @observatorio/contracts && npm run exterior -w @observatorio/importer",
+    "smoke:national": "node scripts/smoke-national.mjs",
+    "smoke:summary": "node scripts/smoke-summary.mjs",
+    "db:up": "docker compose up -d --wait db",
+    "db:stop": "docker compose stop db",
+    "compose:up": "docker compose --profile app up --build -d --wait"
+  },
+  "devDependencies": { "typescript": "5.9.3", "tsx": "4.23.15", "@types/node": "^24.0.0" }
+}
