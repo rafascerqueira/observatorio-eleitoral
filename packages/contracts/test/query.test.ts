@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema } from '../src';
+import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice } from '../src';
 
 test('aplica defaults e limita a paginação sem coerção de entradas vazias', () => {
   const defaults = municipalityQuerySchema.parse({});
@@ -27,4 +27,17 @@ test('resposta do exterior aceita filtros já normalizados, sem revalidar númer
   const data = exteriorResponseSchema.parse({ status: 'awaiting-import', filters, summary: null, dataset: null, items: [], pagination: { page: 2, pageSize: 100, total: 0 } });
   assert.equal(data.filters.page, 2); assert.equal(data.filters.pageSize, 100);
   assert.equal(exteriorQuerySchema.safeParse({ uf: 'SP' }).success, false);
+});
+
+test('governador é cargo estadual: aceito por UF, rejeitado no Brasil e no exterior', () => {
+  assert.equal(municipalityQuerySchema.parse({ office: 'governor', uf: 'SP' }).office, 'governor');
+  assert.equal(isStateOffice('governor'), true); assert.equal(isStateOffice('president'), false);
+  assert.equal(nationalQuerySchema.safeParse({ office: 'governor' }).success, false);
+  assert.equal(exteriorQuerySchema.safeParse({ office: 'governor' }).success, false);
+  assert.equal(stateQuerySchema.safeParse({ office: 'governor' }).success, false, 'UF obrigatória');
+  assert.equal(stateQuerySchema.safeParse({ office: 'governor', uf: 'ZZ' }).success, false);
+  assert.equal(stateQuerySchema.parse({ office: 'governor', uf: 'SP' }).round, '1');
+  // Versões antigas não têm `rounds`: ausência não vira turno único.
+  const old = datasetSchema.parse({ id: 'x', year: 2022, office: 'president', importedAt: 'x', importerVersion: 'x', sources: [], scope: 'x', validation: 'reconciled' });
+  assert.equal(old.rounds, undefined);
 });

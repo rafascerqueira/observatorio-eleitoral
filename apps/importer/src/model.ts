@@ -1,7 +1,13 @@
-import { percent, type MunicipalityResult } from '@observatorio/contracts';
+import { percent, type MunicipalityResult, type Office } from '@observatorio/contracts';
 import { count, type Row } from './csv';
 
 export const IMPORTER_VERSION = 'sao-paulo-2022-v1';
+type Round = '1' | '2';
+/** Recorte auditado de uma eleição: cargo, códigos de eleição por turno e turnos esperados. */
+export type ElectionScope = { year: 2022; office: Office; cargo: string; electionCodes: Record<Round, string>; rounds: readonly Round[] };
+export const PRESIDENT_2022: ElectionScope = { year: 2022, office: 'president', cargo: '1', electionCodes: { '1': '544', '2': '545' }, rounds: ['1', '2'] };
+// Eleições estaduais de 2022 (546/547) auditadas nos originais de SP.
+export const GOVERNOR_2022: ElectionScope = { year: 2022, office: 'governor', cargo: '3', electionCodes: { '1': '546', '2': '547' }, rounds: ['1', '2'] };
 export type SectionVote = { electionCode: string; round: string; zone: number; section: number; local: string; number: string; votes: number; name: string | null; address: string | null; uf?: string; municipalityCode?: string };
 type Candidate = { number: string; name: string; party: string; votes: number };
 type Totals = MunicipalityResult['totals'];
@@ -13,14 +19,15 @@ const required = (row: Row, key: string): string => {
   return value;
 };
 const nullable = (value: string | undefined) => value === undefined || ['#NULO', '#NE', '-1', '-3', ''].includes(value) ? null : value;
-export function identity(row: Row): { round: string; electionCode: string; zone: number } {
+export function identity(row: Row, scope = PRESIDENT_2022): { round: string; electionCode: string; zone: number } {
   const round = required(row, 'NR_TURNO');
   const electionCode = required(row, 'CD_ELEICAO');
-  if (!['1', '2'].includes(round) || electionCode !== (round === '1' ? '544' : '545') || row.CD_TIPO_ELEICAO !== '2') throw new Error('Eleição fora do escopo auditado.');
+  if (!scope.rounds.includes(round as Round) || electionCode !== scope.electionCodes[round as Round] || row.CD_TIPO_ELEICAO !== '2') throw new Error('Eleição fora do escopo auditado.');
+  if (row.CD_CARGO !== undefined && row.CD_CARGO !== scope.cargo) throw new Error('Cargo fora do escopo auditado.');
   return { round, electionCode, zone: count(row, 'NR_ZONA') };
 }
-export function sectionVote(row: Row): SectionVote {
-  const id = identity(row);
+export function sectionVote(row: Row, scope = PRESIDENT_2022): SectionVote {
+  const id = identity(row, scope);
   return { ...id, ...(row.SG_UF ? { uf: row.SG_UF } : {}), ...(row.CD_MUNICIPIO ? { municipalityCode: row.CD_MUNICIPIO } : {}), section: count(row, 'NR_SECAO'), local: required(row, 'NR_LOCAL_VOTACAO'), number: required(row, 'NR_VOTAVEL'), votes: count(row, 'QT_VOTOS'), name: nullable(row.NM_LOCAL_VOTACAO), address: nullable(row.DS_LOCAL_VOTACAO_ENDERECO) };
 }
 export function assertEqual(actual: number, expected: number, label: string): void {
@@ -38,17 +45,21 @@ function addVote(totals: Totals, vote: SectionVote, candidateNumbers: Set<string
   totals.totalVotes += vote.votes;
 }
 
-export function reconcile(details: Row[], nominal: Row[], sections: SectionVote[], municipality = { code: '71072', name: 'São Paulo', uf: 'SP' as MunicipalityResult['uf'] }, options = { allowNonInstalled: false }) {
+export function reconcile(details: Row[], nominal: Row[], sections: SectionVote[], municipality = { code: '71072', name: 'São Paulo', uf: 'SP' as MunicipalityResult['uf'] }, options: { allowNonInstalled: boolean; scope?: ElectionScope } = { allowNonInstalled: false }) {
   return reconcileTerritory(details, nominal, sections, municipality, options);
 }
 export function reconcileExterior(details: Row[], nominal: Row[], sections: SectionVote[], city: { code: string; name: string }) {
   if ([...details, ...nominal].some((row) => row.NR_ZONA !== '1') || sections.some((vote) => vote.zone !== 1)) throw new Error('Zona do exterior fora do escopo auditado de 2022.');
   return reconcileTerritory(details, nominal, sections, { ...city, uf: 'ZZ' }, { allowNonInstalled: true, allowEmptyNonInstalled: true });
 }
-function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: Row[], nominal: Row[], sections: SectionVote[], municipality: { code: string; name: string; uf: U }, options: { allowNonInstalled: boolean; allowEmptyNonInstalled?: boolean }) {
+function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: Row[], nominal: Row[], sections: SectionVote[], municipality: { code: string; name: string; uf: U }, options: { allowNonInstalled: boolean; allowEmptyNonInstalled?: boolean; scope?: ElectionScope }) {
+  const scope = options.scope ?? PRESIDENT_2022;
   for (const row of [...details, ...nominal]) {
-    if ((row.CD_MUNICIPIO && row.CD_MUNICIPIO !== municipality.code) || (row.SG_UF && row.SG_UF !== municipality.uf) || (row.CD_CARGO && row.CD_CARGO !== '1')) throw new Error('Mistura de territórios/cargos na reconciliação.');
+    if ((row.CD_MUNICIPIO && row.CD_MUNICIPIO !== municipality.code) || (row.SG_UF && row.SG_UF !== municipality.uf) || (row.CD_CARGO && row.CD_CARGO !== scope.cargo)) throw new Error('Mistura de territórios/cargos na reconciliação.');
   }
+  // Um turno fora do recorte esperado não é descartado: bloqueia a reconciliação.
+  for (const row of [...details, ...nominal]) identity(row, scope);
+  for (const vote of sections) if (!scope.rounds.includes(vote.round as Round) || vote.electionCode !== scope.electionCodes[vote.round as Round]) throw new Error('Seção fora do escopo auditado.');
   const summaries: Array<Omit<MunicipalityResult, 'uf'> & { uf: U }> = [];
   const allZones: Array<Zone & { round: string }> = [];
   const allPlaces: Array<Place & { round: string }> = [];
@@ -59,7 +70,7 @@ function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: 
     if (duplicateSections.has(key)) throw new Error(`Seção/votável duplicado: ${key}`);
     duplicateSections.add(key);
   }
-  for (const round of ['1', '2'] as const) {
+  for (const round of scope.rounds) {
     const detailRows = details.filter((row) => row.NR_TURNO === round);
     const candidateRows = nominal.filter((row) => row.NR_TURNO === round);
     const votes = sections.filter((row) => row.round === round);
@@ -67,7 +78,7 @@ function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: 
     const candidateInfo = new Map<string, Candidate>();
     const nominalByZone = new Map<string, number>();
     for (const row of candidateRows) {
-      const id = identity(row);
+      const id = identity(row, scope);
       if (row.ST_VOTO_EM_TRANSITO !== 'N' || row.NM_TIPO_DESTINACAO_VOTOS !== 'Válido') throw new Error('Destinação/trânsito fora do escopo do piloto.');
       const number = required(row, 'NR_CANDIDATO');
       const candidate = { number, name: required(row, 'NM_URNA_CANDIDATO'), party: required(row, 'SG_PARTIDO'), votes: count(row, 'QT_VOTOS_NOMINAIS_VALIDOS') };
@@ -83,7 +94,7 @@ function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: 
     const detailByZone = new Map<number, Row>();
     const zoneVotes = new Map<number, SectionVote[]>();
     for (const row of detailRows) {
-      const id = identity(row);
+      const id = identity(row, scope);
       if (row.ST_VOTO_EM_TRANSITO !== 'N') throw new Error('Apuração em trânsito fora do escopo.');
       if (row.ST_PENDENTE_TOT_FINAL && row.ST_PENDENTE_TOT_FINAL !== 'N') throw new Error('Totalização final pendente.');
       if (detailByZone.has(id.zone)) throw new Error('Apuração/zona duplicada.');
@@ -152,7 +163,7 @@ function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: 
       const addresses = new Set(variants.map((variant) => variant.address));
       allPlaces.push({ round, zone: first.zone, code: first.local, name: names.size === 1 ? first.name : null, address: addresses.size === 1 ? first.address : null, metadataConflict: variants.length > 1, metadataVariants: variants, sections: new Set(group.map((vote) => vote.section)).size, totals: placeTotals, candidates: candidatesWithPercent([...candidateInfo.values()].map((candidate) => ({ ...candidate, votes: counts.get(candidate.number) ?? 0 })), placeTotals.valid) });
     }
-    summaries.push({ ...municipality, electionCode: round === '1' ? '544' : '545', round, totals, candidates: candidatesWithPercent([...candidateInfo.values()], totals.valid), zones: detailByZone.size, sections: sectionCount, pollingPlaces: placeGroups.size, nonInstalledSections });
+    summaries.push({ ...municipality, electionCode: scope.electionCodes[round], round, totals, candidates: candidatesWithPercent([...candidateInfo.values()], totals.valid), zones: detailByZone.size, sections: sectionCount, pollingPlaces: placeGroups.size, nonInstalledSections });
   }
   return { summaries, zones: allZones, places: allPlaces };
 }

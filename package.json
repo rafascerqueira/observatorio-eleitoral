@@ -16,9 +16,11 @@
     "import:pilot": "npm run build -w @observatorio/contracts && npm run import -w @observatorio/importer",
     "import:national": "npm run build -w @observatorio/contracts && npm run national -w @observatorio/importer",
     "import:exterior": "npm run build -w @observatorio/contracts && npm run exterior -w @observatorio/importer",
+    "import:state": "npm run build -w @observatorio/contracts && npm run state -w @observatorio/importer --",
     "smoke:national": "node scripts/smoke-national.mjs",
     "smoke:summary": "node scripts/smoke-summary.mjs",
     "smoke:exterior": "node scripts/smoke-forms-exterior.mjs",
+    "smoke:governor": "node scripts/smoke-governor.mjs",
     "db:up": "docker compose up -d --wait db",
     "db:stop": "docker compose stop db",
     "compose:up": "docker compose --profile app up --build -d --wait"

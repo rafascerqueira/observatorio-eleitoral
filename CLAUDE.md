@@ -31,9 +31,9 @@ npm test -w @observatorio/api # uma workspace
 cd apps/api && npx tsx --test --test-name-pattern="trecho" test/api.test.ts  # um teste
 ```
 
-Smoke tests exigem web, API e banco em execução com dados importados (endereços alternativos via `SMOKE_API_URL`/`SMOKE_WEB_URL`): `npm run smoke`, `smoke:pilot`, `smoke:places`, `smoke:national`, `smoke:exterior`, `smoke:summary` (tabela no README). `npm run compose:up` sobe tudo em contêineres (perfil `app`).
+Smoke tests exigem web, API e banco em execução com dados importados (endereços alternativos via `SMOKE_API_URL`/`SMOKE_WEB_URL`): `npm run smoke`, `smoke:pilot`, `smoke:places`, `smoke:national`, `smoke:exterior`, `smoke:summary`, `smoke:governor` (tabela no README). `npm run compose:up` sobe tudo em contêineres (perfil `app`).
 
-Importações (demoradas, leem ~816 MiB de ZIPs do TSE): `import:pilot`, `import:national`, `import:exterior`, seguidas de `npm run verify:national -w @observatorio/importer`.
+Importações (demoradas, leem ZIPs grandes do TSE): `import:pilot`, `import:national`, `import:exterior`, seguidas de `npm run verify:national -w @observatorio/importer`; cargos estaduais com `npm run import:state -- --office governor --uf SP` (verificação persistida embutida).
 
 ## Arquitetura
 
@@ -50,5 +50,5 @@ Importações (demoradas, leem ~816 MiB de ZIPs do TSE): `import:pilot`, `import
 - Exterior (`ZZ`) é escopo próprio: zona 1, localidades não são municípios nem países.
 - Mudança de fonte ou de regra de importação exige nova versão do importador/dataset e validação própria; nunca reescrever uma publicação existente. Não sobrescrever originais.
 - Não apagar `data/` (fora do Git) nem o volume PostgreSQL sem backup.
-- O escopo atual está fixo em Presidência 2022 (`datasetSchema` com `year`/`office` literais, códigos de eleição 544/545, `CD_CARGO === '1'`, brancos/nulos 95/96); generalize deliberadamente ao incluir outros cargos/anos — votos de legenda e Senado com duas vagas têm regras próprias.
+- Escopo atual: 2022, Presidência (nacional + exterior) e Governador por UF (piloto SP). Cargos são definidos por `ElectionScope` em `apps/importer/src/model.ts` (cargo, eleições por turno, turnos) e por `OFFICES`/`STATE_OFFICES` nos contratos; `datasetSchema.year` ainda é literal 2022. Cargo estadual exige UF e tem uma publicação por UF (`2022/<office>/<UF>`). Ao incluir outros cargos/anos, auditar os originais antes — votos de legenda, Senado com duas vagas e UF sem 2º turno têm regras próprias.
 - Registrar a verificação feita (testes, smoke, auditorias) e o que ficou pendente; não declarar acessibilidade ou cobertura não verificadas.

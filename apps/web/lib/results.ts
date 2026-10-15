@@ -1,4 +1,4 @@
-import { catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery } from '@observatorio/contracts';
+import { catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
 
 export async function getExterior(filters: ExteriorQuery) {
   try {
@@ -17,6 +17,16 @@ export async function getNational(filters: NationalQuery): Promise<{ kind: 'read
     const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
     if (!response.ok) return { kind: 'unavailable' };
     return { kind: 'ready', data: nationalResponseSchema.parse(await response.json()) };
+  } catch { return { kind: 'unavailable' }; }
+}
+
+export async function getState(filters: StateQuery): Promise<{ kind: 'ready'; data: StateResponse } | { kind: 'unavailable' }> {
+  try {
+    const url = new URL('/elections/state', process.env.API_URL ?? 'http://127.0.0.1:3001');
+    for (const [key, value] of Object.entries(filters)) url.searchParams.set(key, value);
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return { kind: 'unavailable' };
+    return { kind: 'ready', data: stateResponseSchema.parse(await response.json()) };
   } catch { return { kind: 'unavailable' }; }
 }
 

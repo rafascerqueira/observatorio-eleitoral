@@ -4,8 +4,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { municipalityQuerySchema, placesQuerySchema, STATES } from '@observatorio/contracts';
 import { ErrorSummary, QuerySelect, TurnField } from '../components/query-fields';
-import { UF_NAMES, queryErrors, rawValue, recoverQuery } from '../lib/query-ui';
-import { brazilHref, formFingerprint, queryHref } from '../lib/query-navigation';
+import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from '../lib/query-ui';
+import { brazilHref, formFingerprint, overviewHref, queryHref } from '../lib/query-navigation';
 
 test('erro em um campo não apaga o contexto nem os valores que precisam de correção', () => {
   const raw = { year: '2026', round: '2', uf: 'RJ', search: 'Rio', page: '0' };
@@ -80,4 +80,15 @@ test('turnos continuam radios nativos e um turno inválido não vira o padrão s
 test('nomes de UFs cobrem somente as 27 UFs do contrato, sem incluir o exterior', () => {
   assert.deepEqual(Object.keys(UF_NAMES).sort(), [...STATES].sort());
   assert.equal(UF_NAMES.SP, 'São Paulo');
+});
+
+test('governador exige UF, rejeita o exterior e os links de volta preservam cargo e UF', () => {
+  assert.equal(officeScopeError('president', undefined), null);
+  assert.equal(officeScopeError('governor', 'SP'), null);
+  assert.match(officeScopeError('governor', undefined)!.message, /cargo estadual/);
+  assert.match(officeScopeError('governor', 'ZZ')!.message, /exterior/);
+  assert.equal(officeScopeError('governor', undefined)!.field, 'uf');
+  assert.equal(municipalityQuerySchema.parse({ office: 'governor', uf: 'SP' }).office, 'governor');
+  assert.deepEqual([...new URL(overviewHref('2022', '2', 'governor', 'SP'), 'http://localhost').searchParams], [['year', '2022'], ['round', '2'], ['office', 'governor'], ['uf', 'SP']]);
+  assert.equal(overviewHref('2022', '1', 'president', 'SP'), brazilHref('2022', '1'));
 });

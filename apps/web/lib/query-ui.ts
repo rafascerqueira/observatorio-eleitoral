@@ -1,4 +1,4 @@
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema } from '@observatorio/contracts';
+import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, isStateOffice, OFFICE_LABELS, type Office } from '@observatorio/contracts';
 
 export type RawQuery = Record<string, string | string[] | undefined>;
 export type QueryError = { field: string; message: string };
@@ -26,11 +26,17 @@ export function recoverQuery(query: RawQuery, mode: 'municipalities' | 'places' 
   }));
 }
 
+/** Cargo estadual sem UF não é consultado: não há consolidado Brasil nem exterior para ele. */
+export function officeScopeError(office: Office, uf: string | undefined): QueryError | null {
+  if (!isStateOffice(office) || (uf && uf !== 'ZZ')) return null;
+  return { field: 'uf', message: `${OFFICE_LABELS[office]} é cargo estadual: escolha uma das 27 UFs.${uf === 'ZZ' ? ' Eleitores no exterior não votam para esse cargo.' : ''}` };
+}
+
 export function queryErrors(query: RawQuery, issues: readonly Issue[], mode: 'municipalities' | 'places' = 'municipalities'): QueryError[] {
   const instructions: Record<string, string> = {
     year: 'Escolha uma eleição disponível no seletor: 2022 ou 2026.',
     round: 'Escolha o 1º ou o 2º turno.',
-    office: 'Este painel consulta apenas Presidência. Envie novamente para usar esse cargo.',
+    office: 'Escolha um cargo disponível no seletor: Presidência ou Governador.',
     uf: mode === 'places' ? 'A UF do endereço é inválida. Uma nova busca remove esse valor; volte à consulta municipal para escolher outra UF.' : 'Escolha Todo o Brasil ou uma das 27 UFs.',
     zone: 'Informe uma zona de 1 a 9999, usando apenas números. Zeros iniciais são aceitos.',
     section: 'Informe uma seção de 1 a 99999, usando apenas números. Zeros iniciais são aceitos.',

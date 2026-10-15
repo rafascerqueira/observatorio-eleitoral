@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, type MunicipalitiesResponse, type PlacesQuery } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, isStateOffice, OFFICE_LABELS, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { nationalSummary } from './national-summary';
 
@@ -17,7 +17,7 @@ export class ElectionsController {
     if (!parsed.success) throw new BadRequestException('Filtros nacionais inválidos.');
     const filters = parsed.data;
     await this.database.check();
-    const dataset = await this.publishedDataset();
+    const dataset = await this.publishedDataset(filters.year, 'president');
     if (!dataset || dataset.level !== 'national' || filters.year !== String(dataset.year)) {
       return nationalResponseSchema.parse({ status: 'awaiting-import', filters, summary: null, dataset: null });
     }
@@ -37,6 +37,32 @@ export class ElectionsController {
     } catch {
       throw new ServiceUnavailableException('Consolidado nacional inconsistente.');
     }
+  }
+
+  @Get('state')
+  async state(@Query() query: Record<string, unknown>) {
+    const parsed = stateQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'Filtros estaduais inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    const filters = parsed.data;
+    await this.database.check();
+    const dataset = await this.publishedDataset(filters.year, filters.office, filters.uf);
+    // O piloto municipal não representa a UF inteira.
+    if (!dataset || !['national', 'state'].includes(dataset.level) || filters.year !== String(dataset.year) || (dataset.level === 'state' && dataset.uf !== filters.uf)) {
+      return stateResponseSchema.parse({ status: 'awaiting-import', filters, summary: null, dataset: null });
+    }
+    const records = await this.database.query<{ result: unknown }>(
+      'SELECT result FROM municipality_results WHERE batch_id=$1 AND year=$2::integer AND round=$3::integer AND office=$4 AND uf=$5 ORDER BY code',
+      [dataset.id, filters.year, filters.round, filters.office, filters.uf],
+    );
+    const coverage = await this.database.query<{ reconciled: number; other: number }>(
+      "SELECT count(*) FILTER (WHERE status='reconciled')::integer AS reconciled, count(*) FILTER (WHERE status<>'reconciled')::integer AS other FROM import_coverage WHERE batch_id=$1 AND office=$2 AND uf=$3",
+      [dataset.id, filters.office, filters.uf],
+    );
+    const { reconciled = 0, other = 1 } = coverage.rows[0] ?? {};
+    if (!reconciled || other || records.rows.length !== reconciled) throw new ServiceUnavailableException('Consolidado da UF incompleto.');
+    try {
+      return stateResponseSchema.parse({ status: 'published', filters, dataset, summary: nationalSummary(records.rows.map((row) => row.result), filters.round) });
+    } catch { throw new ServiceUnavailableException('Consolidado da UF inconsistente.'); }
   }
 
   @Get('exterior')
@@ -62,10 +88,11 @@ export class ElectionsController {
     if (!result.success) {
       throw new BadRequestException({ message: 'Filtros inválidos.', fields: result.error.issues.map((issue) => issue.path.join('.')) });
     }
+    if (isStateOffice(result.data.office) && !result.data.uf) throw new BadRequestException({ message: `${OFFICE_LABELS[result.data.office]} é cargo estadual: informe a UF.`, fields: ['uf'] });
     await this.database.check();
     const { page, pageSize, ...filters } = result.data;
     const empty: MunicipalitiesResponse = { status: 'awaiting-import', items: [], pagination: { page, pageSize, total: 0 }, filters, dataset: null };
-    const dataset = await this.publishedDataset();
+    const dataset = await this.publishedDataset(filters.year, filters.office, filters.uf);
     if (!dataset || filters.year !== String(dataset.year) || (dataset.uf && filters.uf && filters.uf !== dataset.uf)) return empty;
     const search = (filters.search ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     // Identificadores de ordenação vêm somente deste mapa fixo; filtros são parâmetros SQL.
@@ -83,21 +110,23 @@ export class ElectionsController {
     if (!/^\d+$/.test(code)) throw new NotFoundException('Código municipal inválido.');
     const parsed = placesQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException({ message: 'Filtros dos locais inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
-    const dataset = await this.publishedDataset();
+    const { office, uf } = parsed.data;
+    if (isStateOffice(office) && (!uf || uf === 'ZZ')) throw new BadRequestException({ message: `${OFFICE_LABELS[office]} é cargo estadual: informe a UF.`, fields: ['uf'] });
+    const dataset = await this.publishedDataset(parsed.data.year, office, uf === 'ZZ' ? undefined : uf);
     return this.placesForDataset(code, parsed.data, dataset);
   }
 
   @Get('exterior/cities/:code/places')
   async exteriorPlaces(@Param('code') code: string, @Query() query: Record<string, unknown>) {
     if (!/^\d+$/.test(code)) throw new NotFoundException();
-    const parsed = placesQuerySchema.extend({ uf: placesQuerySchema.shape.uf.unwrap().extract(['ZZ']).optional() }).safeParse(query);
+    const parsed = placesQuerySchema.extend({ uf: placesQuerySchema.shape.uf.unwrap().extract(['ZZ']).optional(), office: placesQuerySchema.shape.office.unwrap().extract(['president']).default('president') }).safeParse(query);
     if (!parsed.success) throw new BadRequestException('Filtros dos locais do exterior inválidos.');
     return this.placesForDataset(code, { ...parsed.data, uf: 'ZZ' }, await this.exteriorDataset());
   }
 
   private async placesForDataset(code: string, filters: PlacesQuery, dataset: ReturnType<typeof datasetSchema.parse> | null) {
     const { year, round, page, pageSize, uf, zone, section, local, search } = filters;
-    if (!dataset || year !== String(dataset.year) || (dataset.uf && uf && uf !== dataset.uf)) throw new NotFoundException('Recorte municipal não publicado.');
+    if (!dataset || year !== String(dataset.year) || dataset.office !== filters.office || (dataset.uf && uf && uf !== dataset.uf)) throw new NotFoundException('Recorte municipal não publicado.');
     const municipalityResult = await this.database.query<{ result: { code: string; name: string; uf: string } }>('SELECT result FROM municipality_results WHERE batch_id=$1 AND code=$2 AND year=$3 AND round=$4 AND office=$5 AND ($6::text IS NULL OR uf=$6)', [dataset.id, code, Number(year), Number(round), filters.office, uf ?? null]);
     const municipality = municipalityResult.rows[0]?.result;
     if (!municipality) throw new NotFoundException('Recorte municipal não publicado.');
@@ -140,7 +169,9 @@ export class ElectionsController {
     const batches = registry.rows[0]?.registry ? await this.database.query<{ id: string; scope: string; published: boolean; metadata: Record<string, unknown> }>('SELECT id,scope,published,metadata FROM import_batches ORDER BY imported_at DESC') : { rows: [] };
     const coverageRegistry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_coverage')::text AS registry");
     const coverage = coverageRegistry.rows[0]?.registry ? await this.database.query<{ batch_id: string; uf: string; status: string; municipalities: number; sectionRows: number }>('SELECT batch_id,uf,status,count(*)::integer AS municipalities,sum(section_rows)::integer AS "sectionRows" FROM import_coverage GROUP BY batch_id,uf,status ORDER BY uf,status') : { rows: [] };
-    return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [{ office: 'governor', label: 'Governador', status: 'not-imported' }, { office: 'senator', label: 'Senador', status: 'not-imported' }, { office: 'deputies', label: 'Deputados federais, estaduais e distritais', status: 'not-imported' }] });
+    return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
+      { office: 'governor', label: batches.rows.some((batch) => batch.published && batch.scope.startsWith('2022/governor/')) ? 'Governador — demais UFs' : 'Governador', status: 'not-imported' },
+      { office: 'senator', label: 'Senador', status: 'not-imported' }, { office: 'deputies', label: 'Deputados federais, estaduais e distritais', status: 'not-imported' }] });
   }
 
   @Get('imports/:id/coverage')
@@ -192,9 +223,17 @@ export class ElectionsController {
     return new StreamableFile(createReadStream(path), { type: 'application/zip', disposition: `attachment; filename="${file}"`, length: info.size });
   }
 
-  private async publishedDataset() {
+  /** Presidência: versão nacional, ou o piloto enquanto ela não existir. Cargos estaduais: uma publicação por UF. */
+  private async publishedDataset(year: string, office: Office, uf?: string) {
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_batches')::text AS registry");
     if (!registry.rows[0]?.registry) return null;
+    if (isStateOffice(office)) {
+      if (!uf) return null;
+      const result = await this.database.query<{ metadata: unknown }>('SELECT metadata FROM import_batches WHERE published AND scope=$1 LIMIT 1', [`${year}/${office}/${uf}`]);
+      if (!result.rows[0]) return null;
+      const dataset = datasetSchema.parse(result.rows[0].metadata);
+      return dataset.level === 'state' && dataset.office === office && dataset.uf === uf ? dataset : null;
+    }
     const dataset = await this.database.query<{ metadata: unknown }>("SELECT metadata FROM import_batches WHERE published AND scope IN ('2022/president/BR','2022/president/SP/71072') ORDER BY CASE WHEN scope='2022/president/BR' THEN 0 ELSE 1 END LIMIT 1");
     return dataset.rows[0] ? datasetSchema.parse(dataset.rows[0].metadata) : null;
   }

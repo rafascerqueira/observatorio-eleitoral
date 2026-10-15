@@ -4,7 +4,7 @@ Dashboard público, gratuito e sem fins lucrativos para explorar eleições e co
 
 ## O que está disponível
 
-Presidência de 2022, com turnos sempre separados:
+Eleições de 2022, com turnos sempre separados. Presidência:
 
 - **Todo o Brasil**: consolidado presidencial por turno, somando os 5.570 municípios das 27 UFs e as 181 localidades eleitorais do exterior. O exterior só entra com publicação completa e os mesmos originais/checksums da publicação doméstica; as duas versões ficam identificadas.
 - **Municípios**: listagem paginada por UF ou nome, com participação e votos de todas as candidaturas.
@@ -12,7 +12,9 @@ Presidência de 2022, com turnos sempre separados:
 - **Exterior (`ZZ`)**: consulta própria por localidade eleitoral.
 - **Transparência** (`/fontes`): versões publicadas, cobertura por UF, relatórios de auditoria e download dos originais preservados com SHA-256.
 
-Governador, senador, deputados, 2026 e dados do IBGE ainda não foram importados. Não há inferências sobre renda, motivação individual ou migração de votos.
+Governador (piloto **São Paulo**): resultado da UF somado dos 645 municípios reconciliados, municípios e locais de votação, nos dois turnos. Cargo estadual: a consulta exige UF, sem consolidado Brasil nem exterior. Ao escolher uma UF, a página inicial mostra também o resultado da UF para a Presidência.
+
+Governador das demais UFs, senador, deputados, 2026 e dados do IBGE ainda não foram importados. Não há inferências sobre renda, motivação individual ou migração de votos.
 
 ## Iniciar localmente
 
@@ -50,7 +52,10 @@ Com o banco em execução:
 npm run import:national                              # municípios das 27 UFs
 npm run verify:national -w @observatorio/importer    # reconfere a persistência
 npm run import:exterior                              # exterior (ZZ)
+npm run import:state -- --office governor --uf SP    # Governador, uma UF por vez
 ```
+
+`import:state` usa as entradas da UF nos mesmos ZIPs de apuração e votação nominal e baixa o ZIP de seções da UF (SP: 859 MiB, com todos os cargos estaduais; só o cargo pedido é selecionado). A verificação da persistência roda dentro do importador, antes da publicação.
 
 Na primeira execução, o importador baixa três ZIPs oficiais do TSE (cerca de 816 MiB) e lê o arquivo nacional de seções em fluxo; a preparação inicial pode levar bastante tempo. Espere alguns GiB em `data/` e cerca de 3 GiB no PostgreSQL.
 
@@ -67,6 +72,7 @@ O relatório de cada versão fica em `data/audit/<dataset-id>.json` (cobertura p
 
 - [Importação nacional](docs/importacao-nacional-2022.md): versão `president-2022-national-v2`, normalização dos códigos TSE com cinco dígitos, tentativa v1 rejeitada, seções não instaladas e métricas.
 - [Exterior](docs/exterior-2022.md): versão `president-2022-exterior-v1`, zona única do exterior e os eleitores de seções não instaladas (657 no consolidado Brasil, por turno).
+- [Governador 2022 — SP](docs/governador-2022.md): versão `governor-2022-state-v1`, eleições 546/547, auditoria das fontes da UF e conferência contra os originais.
 
 Seções não instaladas não são somadas à abstenção: aptos = comparecimento + abstenção + eleitores dessas seções. Nomes/endereços divergentes de um mesmo local ficam indisponíveis, com variantes preservadas e aviso no painel. Aptos e abstenção por local permanecem indisponíveis.
 
@@ -101,6 +107,7 @@ Os smoke tests exigem web, API e banco em execução. Endereços alternativos po
 | `npm run smoke:national` | `import:national` | 27 UFs nos dois turnos, locais, transparência e SHA-256 dos originais servidos por HTTP |
 | `npm run smoke:exterior` | `import:exterior` | Formulários (GET, erros por campo, turnos) e consulta do exterior |
 | `npm run smoke:summary` | nacional + exterior | Consolidado Brasil contra todos os agregados domésticos e do exterior |
+| `npm run smoke:governor` | `import:state` (SP) + nacional | Governador SP contra os totais dos originais, UF obrigatória, isolamento entre cargos/UFs e páginas |
 
 ```sh
 curl http://127.0.0.1:3001/health/live
@@ -138,7 +145,7 @@ docker compose exec -T db psql -v ON_ERROR_STOP=1 -U observatorio -d observatori
 
 ## Pendências e próximos passos
 
-- Governador e senador por UF, com regras próprias de cargo e validação. Deputados com apresentação resumida, preservando os dados completos e distinguindo votos nominais e de legenda, sem definir eleitos ou cadeiras sem auditoria específica.
+- Governador nas demais 26 UFs (UFs sem 2º turno exigem distinguir “turno não realizado” de “não importado” na consulta) e senador por UF, com regras próprias de cargo e validação. Deputados com apresentação resumida, preservando os dados completos e distinguindo votos nominais e de legenda, sem definir eleitos ou cadeiras sem auditoria específica.
 - Depois: integração IBGE/TSE no nível municipal e etapa espacial.
 - Interface: autocomplete, revisão visual e auditoria de teclado/leitor de tela em navegador.
 - Resultados de 2026 não foram importados.

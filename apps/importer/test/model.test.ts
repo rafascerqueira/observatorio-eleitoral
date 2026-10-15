@@ -2,16 +2,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { count, type Row } from '../src/csv';
-import { reconcile, reconcileExterior, sectionVote } from '../src/model';
+import { GOVERNOR_2022, reconcile, reconcileExterior, sectionVote } from '../src/model';
 import { percent } from '@observatorio/contracts';
 
-function fixture() {
+function fixture(scope?: typeof GOVERNOR_2022) {
   const details: Row[] = [], nominal: Row[] = [], sections = [];
-  for (const round of ['1', '2']) {
-    const base = { NR_TURNO: round, CD_ELEICAO: round === '1' ? '544' : '545', CD_TIPO_ELEICAO: '2', NR_ZONA: '1', ST_VOTO_EM_TRANSITO: 'N' };
+  for (const round of ['1', '2'] as const) {
+    const base = { NR_TURNO: round, CD_ELEICAO: scope ? scope.electionCodes[round] : round === '1' ? '544' : '545', CD_TIPO_ELEICAO: '2', NR_ZONA: '1', ST_VOTO_EM_TRANSITO: 'N', ...(scope ? { CD_CARGO: scope.cargo } : {}) };
     details.push({ ...base, QT_APTOS: '20', QT_COMPARECIMENTO: '13', QT_ABSTENCOES: '7', QT_TOTAL_VOTOS_VALIDOS: '10', QT_VOTOS_BRANCOS: '1', QT_TOTAL_VOTOS_NULOS: '2', QT_VOTOS: '13', QT_SECOES_PRINCIPAIS: '2', QT_TOTAL_VOTOS_ANULADOS: '0', QT_TOTAL_VOTOS_ANUL_SUBJUD: '0', QT_VOTOS_ANULADOS_APU_SEP: '0', QT_VOTOS_NULOS_TECNICOS: '0', QT_TOTAL_VOTOS_LEG_VALIDOS: '0', QT_SECOES_NAO_INSTALADAS: '0', QT_ELEITORES_SECOES_NAO_INSTALADAS: '0' });
     for (const [number, votes] of [['10', '6'], ['20', '4']]) nominal.push({ ...base, NR_CANDIDATO: number!, NM_URNA_CANDIDATO: `Candidatura teste ${number}`, SG_PARTIDO: 'TESTE', QT_VOTOS_NOMINAIS: votes!, QT_VOTOS_NOMINAIS_VALIDOS: votes!, NM_TIPO_DESTINACAO_VOTOS: 'Válido' });
-    for (const section of ['1', '2']) for (const [number, votes] of [['10', '3'], ['20', '2'], ['95', section === '1' ? '1' : '0'], ['96', '1']]) sections.push(sectionVote({ ...base, NR_SECAO: section, NR_LOCAL_VOTACAO: '100', NR_VOTAVEL: number!, QT_VOTOS: votes!, NM_LOCAL_VOTACAO: 'Local de teste', DS_LOCAL_VOTACAO_ENDERECO: '#NULO' }));
+    for (const section of ['1', '2']) for (const [number, votes] of [['10', '3'], ['20', '2'], ['95', section === '1' ? '1' : '0'], ['96', '1']]) sections.push(sectionVote({ ...base, NR_SECAO: section, NR_LOCAL_VOTACAO: '100', NR_VOTAVEL: number!, QT_VOTOS: votes!, NM_LOCAL_VOTACAO: 'Local de teste', DS_LOCAL_VOTACAO_ENDERECO: '#NULO' }, scope));
   }
   return { details, nominal, sections };
 }
@@ -95,4 +95,23 @@ test('regra nacional preserva eleitores de seções não instaladas, sem convert
   assert.equal(result.places[0]?.totals.nonInstalledEligible, null);
   f.details[0]!.QT_ELEITORES_SECOES_NAO_INSTALADAS = '83';
   assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: true }), /aptos/);
+});
+test('governador usa eleições e cargo próprios, sem aceitar linhas da Presidência', () => {
+  const f = fixture(GOVERNOR_2022);
+  const result = reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 });
+  assert.deepEqual(result.summaries.map((summary) => [summary.round, summary.electionCode]), [['1', '546'], ['2', '547']]);
+  assert.equal(result.summaries[0]?.totals.valid, 10);
+  // Mesmos números com cargo/eleição da Presidência não podem ser publicados como governador.
+  const president = fixture();
+  assert.throws(() => reconcile(president.details, president.nominal, president.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 }), /escopo auditado/);
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections), /Mistura de territórios\/cargos/);
+  assert.throws(() => sectionVote({ ...f.details[0]!, CD_CARGO: '1', NR_SECAO: '1', NR_LOCAL_VOTACAO: '1', NR_VOTAVEL: '10', QT_VOTOS: '1' }, GOVERNOR_2022), /Cargo fora/);
+});
+test('turno não previsto no recorte bloqueia em vez de ser descartado', () => {
+  const f = fixture(GOVERNOR_2022);
+  const oneRound = { ...GOVERNOR_2022, rounds: ['1'] as const };
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: oneRound }), /escopo auditado/);
+  const first = (rows: Row[]) => rows.filter((row) => row.NR_TURNO === '1');
+  const result = reconcile(first(f.details), first(f.nominal), f.sections.filter((vote) => vote.round === '1'), undefined, { allowNonInstalled: false, scope: oneRound });
+  assert.deepEqual(result.summaries.map((summary) => summary.round), ['1']);
 });

@@ -2,13 +2,19 @@ import { z } from 'zod';
 
 export const STATES = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'] as const;
 export const TERRITORIES = [...STATES, 'ZZ'] as const;
+export const OFFICES = ['president', 'governor'] as const;
+export type Office = typeof OFFICES[number];
+export const OFFICE_LABELS: Record<Office, string> = { president: 'Presidência', governor: 'Governador' };
+/** Cargos estaduais: candidaturas diferem por UF; resultados não são comparáveis entre UFs nem somados ao Brasil. */
+export const STATE_OFFICES: readonly Office[] = ['governor'];
+export const isStateOffice = (office: Office) => STATE_OFFICES.includes(office);
 const integerParameter = (minimum: number, maximum: number, fallback: number) =>
   z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(minimum).max(maximum)).default(fallback);
 
 export const municipalityQuerySchema = z.object({
   year: z.enum(['2022', '2026']).default('2022'),
   round: z.enum(['1', '2']).default('1'),
-  office: z.literal('president').default('president'),
+  office: z.enum(OFFICES).default('president'),
   uf: z.enum(STATES).optional(),
   search: z.string().trim().max(100).optional(),
   page: integerParameter(1, 1_000_000, 1),
@@ -17,7 +23,7 @@ export const municipalityQuerySchema = z.object({
   direction: z.enum(['asc', 'desc']).default('asc'),
 }).strict();
 export type MunicipalityQuery = z.infer<typeof municipalityQuerySchema>;
-export const nationalQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true }).strict();
+export const nationalQuerySchema = municipalityQuerySchema.pick({ year: true, round: true }).extend({ office: z.literal('president').default('president') }).strict();
 export type NationalQuery = z.infer<typeof nationalQuerySchema>;
 
 const optionalIdentifier = (maximum: number) => z.string().trim().regex(/^\d+$/)
@@ -58,10 +64,12 @@ export const sourceSchema = z.object({
   downloadedAtBasis: z.enum(['filesystem-mtime', 'download-response']).optional(),
 });
 export const datasetSchema = z.object({
-  id: z.string(), year: z.literal(2022), office: z.literal('president'), municipalityCode: z.string().optional(),
+  id: z.string(), year: z.literal(2022), office: z.enum(OFFICES), municipalityCode: z.string().optional(),
   municipalityName: z.string().optional(), uf: z.enum(TERRITORIES).optional(), importedAt: z.string(), importerVersion: z.string(),
   sources: z.array(sourceSchema), scope: z.string(), validation: z.literal('reconciled'),
-  level: z.enum(['municipality', 'national', 'exterior']).default('municipality'),
+  level: z.enum(['municipality', 'national', 'exterior', 'state']).default('municipality'),
+  // Ausente nas versões antigas (Presidência, dois turnos): não significa turno único.
+  rounds: z.array(z.enum(['1', '2'])).min(1).optional(),
   coverage: z.object({ expected: nonnegative, reconciled: nonnegative, blocked: nonnegative, excluded: nonnegative }).optional(),
 });
 export const coverageItemSchema = z.object({
@@ -74,7 +82,7 @@ export const catalogSchema = z.object({
   imports: z.array(z.object({ id: z.string(), scope: z.string(), published: z.boolean(), failureReason: z.string().nullable().default(null), coverage: z.array(z.object({ uf: z.enum(TERRITORIES), status: coverageItemSchema.shape.status, municipalities: nonnegative, sectionRows: nonnegative })) })),
   plannedOffices: z.array(z.object({ office: z.string(), label: z.string(), status: z.literal('not-imported') })),
 });
-const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.literal('president'), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
+const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
   status: z.literal('awaiting-import'),
   items: z.array(z.never()).length(0),
@@ -101,7 +109,7 @@ export const nationalResponseSchema = z.discriminatedUnion('status', [
     exteriorDataset: datasetSchema.nullable().default(null), includesExterior: z.boolean().default(false) }),
 ]);
 export type NationalResponse = z.infer<typeof nationalResponseSchema>;
-export const exteriorQuerySchema = municipalityQuerySchema.omit({ uf: true, sort: true, direction: true }).strict();
+export const exteriorQuerySchema = municipalityQuerySchema.omit({ uf: true, sort: true, direction: true }).extend({ office: z.literal('president').default('president') }).strict();
 export type ExteriorQuery = z.infer<typeof exteriorQuerySchema>;
 const exteriorFiltersSchema = exteriorQuerySchema.omit({ page: true, pageSize: true }).extend({ page: z.number().int().positive(), pageSize: z.number().int().positive().max(100) });
 export const exteriorResponseSchema = z.discriminatedUnion('status', [
@@ -110,6 +118,13 @@ export const exteriorResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('published'), filters: exteriorFiltersSchema, summary: nationalSummarySchema, dataset: datasetSchema,
     items: z.array(exteriorCitySchema), pagination: z.object({ page: nonnegative, pageSize: nonnegative, total: nonnegative }) }),
 ]);
+export const stateQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true }).extend({ uf: z.enum(STATES) }).strict();
+export type StateQuery = z.infer<typeof stateQuerySchema>;
+export const stateResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('awaiting-import'), filters: stateQuerySchema, summary: z.null(), dataset: z.null() }),
+  z.object({ status: z.literal('published'), filters: stateQuerySchema, summary: nationalSummarySchema, dataset: datasetSchema }),
+]);
+export type StateResponse = z.infer<typeof stateResponseSchema>;
 export const pollingPlaceSchema = z.object({
   zone: z.number().int().positive(), code: z.string(), name: z.string().nullable(), address: z.string().nullable(),
   sections: nonnegative, totals: voteTotalsSchema, candidates: z.array(candidateSchema),

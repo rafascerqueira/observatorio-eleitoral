@@ -14,3 +14,8 @@ export function queryHref(action: string, entries: Iterable<[string, FormDataEnt
 export function brazilHref(year: string, round: string) {
   return `/?${new URLSearchParams({ year, round })}`;
 }
+
+/** Retorno à consulta principal sem perder o cargo; cargos estaduais voltam à própria UF. */
+export function overviewHref(year: string, round: string, office: string, uf?: string) {
+  return office === 'president' ? brazilHref(year, round) : `/?${new URLSearchParams({ year, round, office, ...(uf ? { uf } : {}) })}`;
+}

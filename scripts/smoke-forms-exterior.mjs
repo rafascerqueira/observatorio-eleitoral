@@ -12,7 +12,8 @@ async function request(base, path, status = 200) {
 const home = await (await request(web, '/')).text();
 const form = home.match(/<form[\s\S]*?<\/form>/)?.[0]; assert.ok(form);
 assert.match(form, /action="\/"/); assert.match(form, /method="get"/);
-assert.match(form, /type="radio"/); assert.doesNotMatch(form, /<select[^>]*name="office"/);
+assert.match(form, /type="radio"/); // Com mais de um cargo publicado, o cargo é um seletor; Presidência continua o padrão.
+assert.match(form, /<select id="office" name="office"><option value="president" selected="">/);
 for (const label of ['São Paulo — SP', 'Exterior — ZZ', '2026 — ainda não publicado']) assert.ok(home.includes(label));
 const corrected = await (await request(web, '/?year=2026&round=2&uf=RJ&search=Rio&page=0')).text();
 assert.match(corrected, /id="query-errors"/); assert.match(corrected, /href="#submit-query"/);
