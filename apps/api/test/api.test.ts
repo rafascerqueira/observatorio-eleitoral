@@ -17,6 +17,7 @@ let incomplete = false;
 let exteriorPublished = false;
 let exteriorIncomplete = false;
 let governor = false;
+let governorRounds = ['1', '2'];
 const queries: Array<{ sql: string; parameters: unknown[] }> = [];
 // Metadados e local exclusivamente sintéticos para verificar o contrato HTTP.
 const dataset = { id: 'a'.repeat(64), year: 2022, office: 'president', municipalityCode: '71072', municipalityName: 'São Paulo', uf: 'SP', importedAt: '2026-10-12T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', validation: 'reconciled' };
@@ -31,7 +32,7 @@ before(async () => {
       queries.push({ sql, parameters });
       if (published) {
         if (sql.includes('to_regclass')) return { rows: [{ registry: 'import_batches' }] };
-        if (sql.includes('scope=$1')) return { rows: governor && parameters[0] === '2022/governor/SP' ? [{ metadata: { ...dataset, id: 'c'.repeat(64), office: 'governor', municipalityCode: undefined, municipalityName: undefined, level: 'state', rounds: ['1', '2'], coverage: { expected: 1, reconciled: 1, blocked: 0, excluded: 0 } } }] : [] };
+        if (sql.includes('scope=$1')) return { rows: governor && parameters[0] === '2022/governor/SP' ? [{ metadata: { ...dataset, id: 'c'.repeat(64), office: 'governor', municipalityCode: undefined, municipalityName: undefined, level: 'state', rounds: governorRounds, coverage: { expected: 1, reconciled: 1, blocked: 0, excluded: 0 } } }] : [] };
         if (sql.includes('FROM import_coverage WHERE batch_id=$1 AND office=$2')) return { rows: [{ reconciled: 1, other: 0 }] };
         if (sql.includes('AND uf=$5 ORDER BY code')) return { rows: [{ result: { code: '71072', name: 'São Paulo', uf: 'SP', electionCode: parameters[2] === '1' ? '546' : '547', round: parameters[2], totals: { eligible: 10, turnout: 8, abstentions: 2, nonInstalledEligible: 0, valid: 6, blank: 1, null: 1, totalVotes: 8 }, candidates: [{ number: '10', name: 'Candidatura de teste', party: 'Teste', votes: 6, percentValid: 100 }], zones: 1, sections: 2, pollingPlaces: 1, nonInstalledSections: 0 } }] };
         if (sql.includes("scope='2022/president/ZZ'")) return { rows: exteriorPublished ? [{ metadata: { ...dataset, id: 'b'.repeat(64), municipalityCode: undefined, municipalityName: undefined, uf: 'ZZ', level: 'exterior', coverage: { expected: exteriorIncomplete ? 2 : 1, reconciled: exteriorIncomplete ? 2 : 1, blocked: 0, excluded: 0 } } }] : [] };
@@ -194,4 +195,18 @@ test('governador exige UF, usa publicação própria da UF e não entra no Brasi
     assert.deepEqual(placeSelect.parameters.slice(6, 10), ['71072', 2022, 'governor', 'SP']);
     assert.equal(placeSelect.parameters[0], 'c'.repeat(64));
   } finally { published = false; governor = false; }
+});
+
+test('UF sem 2º turno responde turno não realizado, distinto de dado não importado', async () => {
+  published = true; governor = true; governorRounds = ['1'];
+  try {
+    const state = await (await fetch(`${base}/elections/state?office=governor&uf=SP&round=2`)).json();
+    assert.equal(state.status, 'round-not-held'); assert.equal(state.summary, null); assert.equal(state.dataset.office, 'governor');
+    assert.equal((await (await fetch(`${base}/elections/state?office=governor&uf=SP&round=1`)).json()).status, 'published');
+    const list = await (await fetch(`${base}/elections/municipalities?office=governor&uf=SP&round=2`)).json();
+    assert.equal(list.status, 'round-not-held'); assert.deepEqual(list.items, []);
+    const places = await fetch(`${base}/elections/municipalities/71072/places?office=governor&uf=SP&round=2`);
+    assert.equal(places.status, 404); assert.equal((await places.json()).reason, 'round-not-held');
+    assert.equal((await (await fetch(`${base}/elections/state?office=governor&uf=RJ&round=2`)).json()).status, 'awaiting-import', 'Sem publicação continua awaiting-import');
+  } finally { published = false; governor = false; governorRounds = ['1', '2']; }
 });

@@ -56,3 +56,19 @@ test('exterior só entra explicitamente; Brasil conserva 5570 como contagem dom�
   assert.deepEqual(result.nonInstalledCases, [{ uf: 'ZZ', code: '02550', name: 'Município 02550', electors: 3, sections: 1 }]);
   assert.equal(result.candidates[0]!.percentValid, 110 / 135 * 100);
 });
+test('votos não válidos somam por categoria fora dos válidos; versão sem a categoria gera nulo, não zero', () => {
+  const withNonValid = (code: string) => {
+    const base = municipality(code, 6, 4);
+    return { ...base, totals: { ...base.totals, turnout: 15, totalVotes: 15, eligible: 25, null: 3, annulled: 2, annulledSubJudice: 0, technicalNull: 1 },
+      nonValidVotes: [{ number: '30', name: 'Anulada', party: 'X', category: 'annulled', nameSource: 'nominal', detail: 'INDEFERIDO', votes: 2 },
+        { number: '22', name: 'TECNICO', party: null, category: 'technical-null', nameSource: 'section', detail: null, votes: 1 }] };
+  };
+  const result = nationalSummary([withNonValid('00001'), withNonValid('00002')], '1');
+  assert.equal(result.totals.annulled, 4); assert.equal(result.totals.technicalNull, 2); assert.equal(result.totals.totalVotes, 30);
+  assert.equal(result.candidates.reduce((sum, item) => sum + item.votes, 0), result.totals.valid);
+  assert.deepEqual(result.nonValidVotes?.map((item) => [item.number, item.votes]), [['30', 4], ['22', 2]]);
+  const mixed = nationalSummary([municipality('00001', 9, 1), municipality('00002', 1, 9)], '1');
+  assert.equal(mixed.totals.annulled, null); assert.equal(mixed.nonValidVotes, undefined);
+  const broken = withNonValid('00003'); broken.totals.annulled = 1;
+  assert.throws(() => nationalSummary([broken], '1'));
+});

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice } from '../src';
+import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld } from '../src';
 
 test('aplica defaults e limita a paginação sem coerção de entradas vazias', () => {
   const defaults = municipalityQuerySchema.parse({});
@@ -40,4 +40,6 @@ test('governador é cargo estadual: aceito por UF, rejeitado no Brasil e no exte
   // Versões antigas não têm `rounds`: ausência não vira turno único.
   const old = datasetSchema.parse({ id: 'x', year: 2022, office: 'president', importedAt: 'x', importerVersion: 'x', sources: [], scope: 'x', validation: 'reconciled' });
   assert.equal(old.rounds, undefined);
+  assert.equal(roundHeld(old, '2'), true);
+  assert.equal(roundHeld({ rounds: ['1'] }, '2'), false); assert.equal(roundHeld({ rounds: ['1'] }, '1'), true);
 });

@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, isStateOffice, OFFICE_LABELS, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, isStateOffice, roundHeld, OFFICE_LABELS, STATES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { nationalSummary } from './national-summary';
 
@@ -50,6 +50,7 @@ export class ElectionsController {
     if (!dataset || !['national', 'state'].includes(dataset.level) || filters.year !== String(dataset.year) || (dataset.level === 'state' && dataset.uf !== filters.uf)) {
       return stateResponseSchema.parse({ status: 'awaiting-import', filters, summary: null, dataset: null });
     }
+    if (!roundHeld(dataset, filters.round)) return stateResponseSchema.parse({ status: 'round-not-held', filters, summary: null, dataset });
     const records = await this.database.query<{ result: unknown }>(
       'SELECT result FROM municipality_results WHERE batch_id=$1 AND year=$2::integer AND round=$3::integer AND office=$4 AND uf=$5 ORDER BY code',
       [dataset.id, filters.year, filters.round, filters.office, filters.uf],
@@ -94,6 +95,7 @@ export class ElectionsController {
     const empty: MunicipalitiesResponse = { status: 'awaiting-import', items: [], pagination: { page, pageSize, total: 0 }, filters, dataset: null };
     const dataset = await this.publishedDataset(filters.year, filters.office, filters.uf);
     if (!dataset || filters.year !== String(dataset.year) || (dataset.uf && filters.uf && filters.uf !== dataset.uf)) return empty;
+    if (!roundHeld(dataset, filters.round)) return municipalitiesSchema.parse({ ...empty, status: 'round-not-held', dataset });
     const search = (filters.search ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     // Identificadores de ordenação vêm somente deste mapa fixo; filtros são parâmetros SQL.
     const column = filters.sort === 'uf' ? 'uf' : 'search_name';
@@ -127,6 +129,7 @@ export class ElectionsController {
   private async placesForDataset(code: string, filters: PlacesQuery, dataset: ReturnType<typeof datasetSchema.parse> | null) {
     const { year, round, page, pageSize, uf, zone, section, local, search } = filters;
     if (!dataset || year !== String(dataset.year) || dataset.office !== filters.office || (dataset.uf && uf && uf !== dataset.uf)) throw new NotFoundException('Recorte municipal não publicado.');
+    if (!roundHeld(dataset, round)) throw new NotFoundException({ message: 'Turno não realizado para este cargo na UF, segundo a apuração.', reason: 'round-not-held' });
     const municipalityResult = await this.database.query<{ result: { code: string; name: string; uf: string } }>('SELECT result FROM municipality_results WHERE batch_id=$1 AND code=$2 AND year=$3 AND round=$4 AND office=$5 AND ($6::text IS NULL OR uf=$6)', [dataset.id, code, Number(year), Number(round), filters.office, uf ?? null]);
     const municipality = municipalityResult.rows[0]?.result;
     if (!municipality) throw new NotFoundException('Recorte municipal não publicado.');
@@ -170,7 +173,12 @@ export class ElectionsController {
     const coverageRegistry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_coverage')::text AS registry");
     const coverage = coverageRegistry.rows[0]?.registry ? await this.database.query<{ batch_id: string; uf: string; status: string; municipalities: number; sectionRows: number }>('SELECT batch_id,uf,status,count(*)::integer AS municipalities,sum(section_rows)::integer AS "sectionRows" FROM import_coverage GROUP BY batch_id,uf,status ORDER BY uf,status') : { rows: [] };
     return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
-      { office: 'governor', label: batches.rows.some((batch) => batch.published && batch.scope.startsWith('2022/governor/')) ? 'Governador — demais UFs' : 'Governador', status: 'not-imported' },
+      ...(() => {
+        // Cargo estadual: só as UFs sem publicação continuam pendentes.
+        const published = new Set(batches.rows.filter((batch) => batch.published && batch.scope.startsWith('2022/governor/')).map((batch) => batch.scope.split('/')[2]));
+        const missing = STATES.filter((uf) => !published.has(uf));
+        return missing.length ? [{ office: 'governor', label: published.size ? `Governador — ${missing.join(', ')}` : 'Governador', status: 'not-imported' as const }] : [];
+      })(),
       { office: 'senator', label: 'Senador', status: 'not-imported' }, { office: 'deputies', label: 'Deputados federais, estaduais e distritais', status: 'not-imported' }] });
   }
 

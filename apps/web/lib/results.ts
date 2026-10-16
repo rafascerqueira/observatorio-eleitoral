@@ -61,7 +61,10 @@ export async function getPlaces(code: string, filters: PlacesQuery) {
     const url = new URL(path, process.env.API_URL ?? 'http://127.0.0.1:3001');
     for (const [key, value] of Object.entries(filters)) if (value !== undefined && value !== '') url.searchParams.set(key, String(value));
     const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
-    if (response.status === 404) return { kind: 'missing' as const };
+    if (response.status === 404) {
+      const body = await response.json().catch(() => null) as { reason?: string } | null;
+      return { kind: body?.reason === 'round-not-held' ? 'round-not-held' as const : 'missing' as const };
+    }
     if (!response.ok) return { kind: 'unavailable' as const };
     return { kind: 'ready' as const, data: placesResponseSchema.parse(await response.json()) };
   } catch { return { kind: 'unavailable' as const }; }

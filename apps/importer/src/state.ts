@@ -15,16 +15,24 @@ import { persistTerritory } from './persist';
 /** Cargos estaduais auditados. Senado e deputados têm regras próprias e ainda não entram aqui. */
 const SCOPES: Record<string, ElectionScope> = { governor: GOVERNOR_2022 };
 const LABELS: Record<string, string> = { governor: 'Governador' };
+/** Outras eleições do mesmo cargo presentes nas entradas da UF, excluídas de forma declarada e contada.
+ * Qualquer outro código de eleição continua bloqueando a importação. */
+type Exclusion = { electionCode: string; description: string; reason: string };
+const EXCLUSIONS: Record<string, Record<string, Exclusion[]>> = {
+  governor: { RR: [{ electionCode: '6278', description: 'Eleição Suplementar Governador 2026 (21/06/2026), tipo 1 — Eleição Extraordinária', reason: 'Outra disputa, posterior à eleição ordinária de 2022; não é somada nem misturada a ela. Fica para uma etapa própria, com auditoria específica.' }] },
+};
 type Uf = MunicipalityResult['uf'];
 type Territory = { code: string; uf: Uf; name: string };
 type SourceMetadata = Omit<Awaited<ReturnType<typeof sourceFile>>, 'path'> & { generatedAt: string[]; rowsRead: number; rowsSelected: number };
-type Manifest = { sources: SourceMetadata[]; territories: Record<string, Territory>; partitions: Record<string, { sha256: string; rows: number }>; outsideScope: number };
+type Manifest = { sources: SourceMetadata[]; territories: Record<string, Territory>; partitions: Record<string, { sha256: string; rows: number }>; outsideScope: number;
+  excluded: Record<string, Record<string, number>> };
 
-function selector(scope: ElectionScope, uf: Uf) {
+function selector(scope: ElectionScope, uf: Uf, exclusions: Exclusion[], excluded?: Map<string, number>) {
   return (row: Row) => {
     if (row.ANO_ELEICAO !== String(scope.year) || row.CD_CARGO !== scope.cargo) return false;
     // A entrada é da UF: outra UF no arquivo é inconsistência, não linha a ignorar.
     if (row.SG_UF !== uf) throw new Error(`UF inesperada na entrada de ${uf}: ${row.SG_UF ?? 'ausente'}. Publicação bloqueada.`);
+    if (exclusions.some((item) => item.electionCode === row.CD_ELEICAO)) { excluded?.set(row.CD_ELEICAO!, (excluded.get(row.CD_ELEICAO!) ?? 0) + 1); return false; }
     return true;
   };
 }
@@ -40,10 +48,10 @@ async function smallSourceHash(file: Awaited<ReturnType<typeof sourceFile>>, sel
   return hash.digest('hex');
 }
 
-async function stage(id: string, files: Awaited<ReturnType<typeof sourceFile>>[], scope: ElectionScope, uf: Uf) {
+async function stage(id: string, files: Awaited<ReturnType<typeof sourceFile>>[], scope: ElectionScope, uf: Uf, exclusions: Exclusion[]) {
   const base = resolve(ROOT, 'data/staging/state');
   const directory = resolve(base, id);
-  const select = selector(scope, uf);
+  const select = selector(scope, uf, exclusions);
   const cached = await readFile(resolve(directory, 'manifest.json'), 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; return null; });
   if (cached) {
     console.log('Preparação concluída encontrada; conferindo contra os originais.');
@@ -60,13 +68,15 @@ async function stage(id: string, files: Awaited<ReturnType<typeof sourceFile>>[]
   await mkdir(base, { recursive: true });
   const temporary = await mkdtemp(resolve(base, `${id}.partial-`));
   const writer = new PartitionWriter(temporary);
-  const manifest: Manifest = { sources: [], territories: {}, partitions: {}, outsideScope: 0 };
+  const manifest: Manifest = { sources: [], territories: {}, partitions: {}, outsideScope: 0, excluded: {} };
   try {
     for (const [index, file] of files.entries()) {
       let rowsRead = 0, rowsSelected = 0;
       const generations = new Set<string>();
       const smallRows: Row[] = [];
-      for await (const row of rows(file.path, file.entry, (row) => { rowsRead++; return select(row); })) {
+      const excluded = new Map<string, number>();
+      const counting = selector(scope, uf, exclusions, excluded);
+      for await (const row of rows(file.path, file.entry, (row) => { rowsRead++; return counting(row); })) {
         rowsSelected++;
         const key = keyOf(row);
         const territory: Territory = { uf, code: municipalityCode(row.CD_MUNICIPIO!), name: row.NM_MUNICIPIO! };
@@ -83,7 +93,10 @@ async function stage(id: string, files: Awaited<ReturnType<typeof sourceFile>>[]
       const { path: _path, ...metadata } = file;
       manifest.sources.push({ ...metadata, generatedAt: [...generations], rowsRead, rowsSelected });
       manifest.outsideScope += rowsRead - rowsSelected;
+      for (const [code, count] of excluded) (manifest.excluded[code] ??= {})[file.entry] = count;
     }
+    // Uma exclusão declarada que não encontra linhas indica fonte diferente da auditada.
+    for (const item of exclusions) if (!manifest.excluded[item.electionCode]) throw new Error(`Exclusão declarada sem linhas: eleição ${item.electionCode}. Auditar a fonte.`);
     manifest.partitions = await writer.close();
     await writeFile(resolve(temporary, 'manifest.json'), JSON.stringify(manifest));
     await rename(temporary, directory);
@@ -98,12 +111,14 @@ function grouped(records: Row[]) {
 
 async function run() {
   const { values } = parseArgs({ options: { office: { type: 'string' }, uf: { type: 'string' } } });
-  const scope = SCOPES[values.office ?? ''];
+  let scope = SCOPES[values.office ?? ''];
   const uf = values.uf as Uf | undefined;
   if (!scope || !uf || !(STATES as readonly string[]).includes(uf)) throw new Error(`Uso: --office ${Object.keys(SCOPES).join('|')} --uf <UF>`);
   config({ path: resolve(ROOT, '.env'), quiet: true });
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL obrigatória.');
-  const version = `${scope.office}-${scope.year}-state-v1`;
+  // v2: votos Anulado/Anulado sub judice/nulos técnicos reconciliados e exclusões declaradas.
+  const version = `${scope.office}-${scope.year}-state-v2`;
+  const exclusions = EXCLUSIONS[scope.office]?.[uf] ?? [];
   const scopeKey = `${scope.year}/${scope.office}/${uf}`;
   const started = performance.now();
   const files = await Promise.all(stateSources(uf).map(sourceFile));
@@ -119,19 +134,22 @@ async function run() {
     for (const file of files) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [file.sha256, file.file, file.sizeBytes]);
     const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
     if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}; originais e checksums conferidos. Nenhuma duplicação.`); return; }
-    const { directory, manifest } = await stage(id, files, scope, uf);
+    const { directory, manifest } = await stage(id, files, scope, uf, exclusions);
     const details = grouped(JSON.parse(await readFile(resolve(directory, 'detail.json'), 'utf8')) as Row[]);
     const nominal = grouped(JSON.parse(await readFile(resolve(directory, 'nominal.json'), 'utf8')) as Row[]);
-    // Turnos realizados na UF segundo a apuração; a interface ainda não trata UF sem 2º turno.
-    const rounds = [...new Set([...details.values()].flat().map((row) => row.NR_TURNO ?? 'ausente'))].sort();
-    if (rounds.join(',') !== scope.rounds.join(',')) throw new Error(`Turnos na apuração de ${uf}: ${rounds.join(', ')}. UF sem 2º turno exige tratamento próprio na consulta; publicação bloqueada.`);
+    // Turnos realizados na UF segundo a apuração: 1º, ou 1º e 2º. Cada município precisa ter todos eles;
+    // linhas de turno fora desse conjunto no nominal ou nas seções bloqueiam a reconciliação.
+    const rounds = [...new Set([...details.values()].flat().map((row) => row.NR_TURNO ?? 'ausente'))].sort() as Array<'1' | '2'>;
+    if (!['1', '1,2'].includes(rounds.join(','))) throw new Error(`Turnos na apuração de ${uf}: ${rounds.join(', ')}. Publicação bloqueada.`);
+    scope = { ...scope, rounds };
     const territories = new Map<string, Territory>();
     for (const item of Object.values(manifest.territories)) territories.set(territoryKey(item.uf, item.code), { ...item, code: municipalityCode(item.code) });
     const partitionKeys = new Map<string, string[]>();
     for (const rawKey of Object.keys(manifest.partitions)) { const key = normalizeTerritoryKey(rawKey); const group = partitionKeys.get(key) ?? []; group.push(rawKey); partitionKeys.set(key, group); }
     const partitionCount = (key: string) => (partitionKeys.get(key) ?? []).reduce((sum, rawKey) => sum + manifest.partitions[rawKey]!.rows, 0);
     const label = LABELS[scope.office]!;
-    const dataset = datasetSchema.parse({ id, year: scope.year, office: scope.office, level: 'state', uf, rounds, importedAt: new Date().toISOString(), importerVersion: version, sources: manifest.sources, validation: 'reconciled',
+    const dataset = datasetSchema.parse({ id, year: scope.year, office: scope.office, level: 'state', uf, rounds,
+      ...(exclusions.length ? { exclusions: exclusions.map((item) => ({ ...item, rows: manifest.excluded[item.electionCode] ?? {} })) } : {}), importedAt: new Date().toISOString(), importerVersion: version, sources: manifest.sources, validation: 'reconciled',
       scope: `${label} ${scope.year}, municípios de ${uf}; turnos separados, reconciliados por município e zona. Resultado estadual: soma dos municípios reconciliados, sem comparação com outras UFs. Registros descrevem local de votação, não residência.` });
     await client.query('INSERT INTO import_batches(id,scope,metadata) VALUES($1,$2,$3) ON CONFLICT(id) DO NOTHING', [id, scopeKey, dataset]);
     for (const [key, territory] of territories) {
@@ -170,8 +188,9 @@ async function run() {
     const verification = await verifyPersisted(client, id, scope, rounds);
     const records = await client.query('SELECT uf,code,name,status,reason,section_rows AS "sectionRows",metadata_conflicts AS "metadataConflicts" FROM import_coverage WHERE batch_id=$1 ORDER BY uf,code', [id]);
     const report = { dataset, coverage: records.rows, rowsOutsideScope: manifest.outsideScope, persistedVerification: verification,
-      checks: [`Somente ${label} (CD_CARGO ${scope.cargo}), eleições ${Object.values(scope.electionCodes).join('/')} e UF ${uf}; outra UF na entrada bloqueia`, 'Unicidade eleição/turno/cargo/UF/município/zona/seção/votável', 'Candidaturas e composição dos votos reconciliadas por zona em cada turno realizado', 'Aptos = comparecimento + abstenção + eleitores de seções não instaladas; seções principais = com votos + não instaladas', 'Checksum das partições e CRC das entradas ZIP', 'Votos persistidos por turno/votável e registros por município conferidos antes da publicação', 'Publicação atômica apenas com todos os municípios da UF reconciliados'],
-      limitations: ['ST_PENDENTE_TOT_FINAL ausente na apuração: não presumido.', 'Fontes de apuração/nominal e de seções têm datas de geração distintas; a compatibilidade é conferida pela reconciliação, não presumida.', 'Eleitores de seções não instaladas não são reclassificados como abstenção.', 'Aptos, comparecimento e abstenção por local permanecem null.', 'Resultado estadual não é comparável entre UFs: candidaturas diferem.', 'Nenhuma associação residencial, IBGE ou socioeconômica.'],
+      checks: [`Somente ${label} (CD_CARGO ${scope.cargo}), eleições ${Object.values(scope.electionCodes).join('/')} e UF ${uf}; outra UF na entrada bloqueia`, 'Unicidade eleição/turno/cargo/UF/município/zona/seção/votável', 'Candidaturas e composição dos votos reconciliadas por zona em cada turno realizado', 'Aptos = comparecimento + abstenção + eleitores de seções não instaladas; seções principais = com votos + não instaladas', 'Checksum das partições e CRC das entradas ZIP', 'Votos persistidos por turno/votável e registros por município conferidos antes da publicação', 'Publicação atômica apenas com todos os municípios da UF reconciliados',
+        'Votos = válidos + brancos + nulos (incluindo nulos técnicos) + anulados + anulados sub judice, por zona; cada candidatura anulada e cada votável de nulo técnico conferidos por zona', 'Outras eleições somente por exclusão declarada e contada'],
+      limitations: ['ST_PENDENTE_TOT_FINAL ausente na apuração: não presumido.', 'Fontes de apuração/nominal e de seções têm datas de geração distintas; a compatibilidade é conferida pela reconciliação, não presumida.', 'Eleitores de seções não instaladas não são reclassificados como abstenção.', 'Aptos, comparecimento e abstenção por local permanecem null.', 'Resultado estadual não é comparável entre UFs: candidaturas diferem.', 'Nulo técnico não tem linha no nominal: nome do votável vem do arquivo de seções, sem partido nem situação.', 'Nenhuma associação residencial, IBGE ou socioeconômica.'],
       elapsedSeconds: Math.round((performance.now() - started) / 1000), peakRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) };
     await mkdir(resolve(ROOT, 'data/audit'), { recursive: true });
     await writeFile(resolve(ROOT, 'data/audit', `${id}.json`), JSON.stringify(report, null, 2));
@@ -191,7 +210,8 @@ async function verifyPersisted(client: import('pg').PoolClient, id: string, scop
   const stored = await client.query(`SELECT round,vote_number,sum(votes)::text AS votes FROM national_section_votes WHERE batch_id=$1 GROUP BY round,vote_number ORDER BY round,vote_number`, [id]);
   const expected = await client.query(`SELECT round,c->>'number' AS vote_number,sum((c->>'votes')::bigint)::text AS votes FROM municipality_results CROSS JOIN LATERAL jsonb_array_elements(result->'candidates') c WHERE batch_id=$1 GROUP BY round,c->>'number'
     UNION ALL SELECT round,'95',sum((result->'totals'->>'blank')::bigint)::text FROM municipality_results WHERE batch_id=$1 GROUP BY round
-    UNION ALL SELECT round,'96',sum((result->'totals'->>'null')::bigint)::text FROM municipality_results WHERE batch_id=$1 GROUP BY round ORDER BY round,vote_number`, [id]);
+    UNION ALL SELECT round,n->>'number',sum((n->>'votes')::bigint)::text FROM municipality_results CROSS JOIN LATERAL jsonb_array_elements(coalesce(result->'nonValidVotes','[]'::jsonb)) n WHERE batch_id=$1 GROUP BY round,n->>'number'
+    UNION ALL SELECT round,'96',sum((result->'totals'->>'null')::bigint - coalesce((result->'totals'->>'technicalNull')::bigint,0))::text FROM municipality_results WHERE batch_id=$1 GROUP BY round ORDER BY round,vote_number`, [id]);
   const mismatched = await client.query<{ count: number }>(`SELECT count(*)::integer AS count FROM (
     SELECT uf,municipality_code,count(*) AS rows FROM national_section_votes WHERE batch_id=$1 GROUP BY uf,municipality_code
   ) s FULL JOIN (SELECT uf,code,section_rows FROM import_coverage WHERE batch_id=$1 AND status='reconciled') c ON s.uf=c.uf AND s.municipality_code=c.code WHERE s.rows IS DISTINCT FROM c.section_rows::bigint`, [id]);

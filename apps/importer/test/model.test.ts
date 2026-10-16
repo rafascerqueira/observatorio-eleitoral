@@ -9,7 +9,7 @@ function fixture(scope?: typeof GOVERNOR_2022) {
   const details: Row[] = [], nominal: Row[] = [], sections = [];
   for (const round of ['1', '2'] as const) {
     const base = { NR_TURNO: round, CD_ELEICAO: scope ? scope.electionCodes[round] : round === '1' ? '544' : '545', CD_TIPO_ELEICAO: '2', NR_ZONA: '1', ST_VOTO_EM_TRANSITO: 'N', ...(scope ? { CD_CARGO: scope.cargo } : {}) };
-    details.push({ ...base, QT_APTOS: '20', QT_COMPARECIMENTO: '13', QT_ABSTENCOES: '7', QT_TOTAL_VOTOS_VALIDOS: '10', QT_VOTOS_BRANCOS: '1', QT_TOTAL_VOTOS_NULOS: '2', QT_VOTOS: '13', QT_SECOES_PRINCIPAIS: '2', QT_TOTAL_VOTOS_ANULADOS: '0', QT_TOTAL_VOTOS_ANUL_SUBJUD: '0', QT_VOTOS_ANULADOS_APU_SEP: '0', QT_VOTOS_NULOS_TECNICOS: '0', QT_TOTAL_VOTOS_LEG_VALIDOS: '0', QT_SECOES_NAO_INSTALADAS: '0', QT_ELEITORES_SECOES_NAO_INSTALADAS: '0' });
+    details.push({ ...base, QT_APTOS: '20', QT_COMPARECIMENTO: '13', QT_ABSTENCOES: '7', QT_TOTAL_VOTOS_VALIDOS: '10', QT_VOTOS_BRANCOS: '1', QT_TOTAL_VOTOS_NULOS: '2', QT_VOTOS: '13', QT_SECOES_PRINCIPAIS: '2', QT_TOTAL_VOTOS_ANULADOS: '0', QT_TOTAL_VOTOS_ANUL_SUBJUD: '0', QT_VOTOS_ANULADOS_APU_SEP: '0', QT_VOTOS_NULOS_TECNICOS: '0', QT_TOTAL_VOTOS_LEG_VALIDOS: '0', QT_SECOES_NAO_INSTALADAS: '0', QT_ELEITORES_SECOES_NAO_INSTALADAS: '0', QT_VOTOS_NULOS: '2', QT_VOTOS_NOMINAIS_ANULADOS: '0', QT_VOTOS_NOMINAIS_ANUL_SUBJUD: '0', QT_VOTOS_LEGENDA_ANULADOS: '0', QT_VOTOS_LEGENDA_ANUL_SUBJUD: '0' });
     for (const [number, votes] of [['10', '6'], ['20', '4']]) nominal.push({ ...base, NR_CANDIDATO: number!, NM_URNA_CANDIDATO: `Candidatura teste ${number}`, SG_PARTIDO: 'TESTE', QT_VOTOS_NOMINAIS: votes!, QT_VOTOS_NOMINAIS_VALIDOS: votes!, NM_TIPO_DESTINACAO_VOTOS: 'Válido' });
     for (const section of ['1', '2']) for (const [number, votes] of [['10', '3'], ['20', '2'], ['95', section === '1' ? '1' : '0'], ['96', '1']]) sections.push(sectionVote({ ...base, NR_SECAO: section, NR_LOCAL_VOTACAO: '100', NR_VOTAVEL: number!, QT_VOTOS: votes!, NM_LOCAL_VOTACAO: 'Local de teste', DS_LOCAL_VOTACAO_ENDERECO: '#NULO' }, scope));
   }
@@ -114,4 +114,41 @@ test('turno não previsto no recorte bloqueia em vez de ser descartado', () => {
   const first = (rows: Row[]) => rows.filter((row) => row.NR_TURNO === '1');
   const result = reconcile(first(f.details), first(f.nominal), f.sections.filter((vote) => vote.round === '1'), undefined, { allowNonInstalled: false, scope: oneRound });
   assert.deepEqual(result.summaries.map((summary) => summary.round), ['1']);
+});
+
+function withNonValid() {
+  // Zona sintética: candidatura 30 anulada (nominal) e votável 22 nulo técnico (só nas seções).
+  const f = fixture(GOVERNOR_2022);
+  for (const row of f.details) Object.assign(row, { QT_COMPARECIMENTO: '17', QT_ABSTENCOES: '3', QT_VOTOS: '17', QT_TOTAL_VOTOS_NULOS: '4', QT_VOTOS_NULOS: '2', QT_VOTOS_NULOS_TECNICOS: '2', QT_TOTAL_VOTOS_ANULADOS: '2', QT_VOTOS_NOMINAIS_ANULADOS: '2', QT_VOTOS_NOMINAIS_ANUL_SUBJUD: '0', QT_VOTOS_LEGENDA_ANULADOS: '0', QT_VOTOS_LEGENDA_ANUL_SUBJUD: '0' });
+  for (const round of ['1', '2'] as const) {
+    const base = { NR_TURNO: round, CD_ELEICAO: GOVERNOR_2022.electionCodes[round], CD_TIPO_ELEICAO: '2', NR_ZONA: '1', ST_VOTO_EM_TRANSITO: 'N', CD_CARGO: '3' };
+    f.nominal.push({ ...base, NR_CANDIDATO: '30', NM_URNA_CANDIDATO: 'Candidatura anulada teste', SG_PARTIDO: 'TESTE', QT_VOTOS_NOMINAIS: '2', QT_VOTOS_NOMINAIS_VALIDOS: '0', NM_TIPO_DESTINACAO_VOTOS: 'Anulado', DS_DETALHE_SITUACAO_CAND: 'INDEFERIDO' });
+    for (const [number, name] of [['30', 'NOME COMPLETO ANULADO'], ['22', 'NOME COMPLETO TECNICO']]) f.sections.push(sectionVote({ ...base, NR_SECAO: '1', NR_LOCAL_VOTACAO: '100', NR_VOTAVEL: number!, NM_VOTAVEL: name!, QT_VOTOS: '1', NM_LOCAL_VOTACAO: 'Local de teste', DS_LOCAL_VOTACAO_ENDERECO: '#NULO' }, GOVERNOR_2022), sectionVote({ ...base, NR_SECAO: '2', NR_LOCAL_VOTACAO: '100', NR_VOTAVEL: number!, NM_VOTAVEL: name!, QT_VOTOS: '1', NM_LOCAL_VOTACAO: 'Local de teste', DS_LOCAL_VOTACAO_ENDERECO: '#NULO' }, GOVERNOR_2022));
+  }
+  return f;
+}
+test('anulados e nulos técnicos ficam fora dos válidos, reconciliados por zona e identificados', () => {
+  const f = withNonValid();
+  const result = reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 });
+  const summary = result.summaries[0]!;
+  assert.deepEqual([summary.totals.valid, summary.totals.blank, summary.totals.null, summary.totals.annulled, summary.totals.technicalNull, summary.totals.totalVotes], [10, 1, 4, 2, 2, 17]);
+  assert.equal(summary.candidates[0]?.percentValid, 60, 'Denominador continua sendo os válidos');
+  assert.deepEqual(summary.nonValidVotes?.map((item) => [item.number, item.category, item.nameSource, item.votes]), [['22', 'technical-null', 'section', 2], ['30', 'annulled', 'nominal', 2]]);
+  assert.equal(summary.nonValidVotes?.find((item) => item.number === '30')?.detail, 'INDEFERIDO');
+  assert.ok(summary.candidates.every((candidate) => !['22', '30'].includes(candidate.number)));
+  assert.equal(result.places[0]?.nonValidVotes?.length, 2);
+  // Presidência não aceita a mesma regra: número desconhecido continua bloqueando.
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: { ...GOVERNOR_2022, nonValidVotes: false } }));
+});
+test('divergência em anulados ou nulos técnicos bloqueia em vez de reclassificar', () => {
+  let f = withNonValid(); f.details[0]!.QT_VOTOS_NULOS_TECNICOS = '1'; f.details[0]!.QT_VOTOS_NULOS = '3';
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 }), /technicalNull|nulos \(96\)/);
+  f = withNonValid(); f.nominal.find((row) => row.NR_CANDIDATO === '30')!.QT_VOTOS_NOMINAIS_VALIDOS = '2';
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 }), /Votos válidos de candidatura Anulado/);
+  f = withNonValid(); f.nominal.find((row) => row.NR_CANDIDATO === '30')!.NM_TIPO_DESTINACAO_VOTOS = 'Válido (legenda)';
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 }), /Destinação/);
+  f = withNonValid(); f.details[0]!.QT_VOTOS_ANULADOS_APU_SEP = '1';
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 }), /APU_SEP/);
+  f = withNonValid(); f.sections.find((vote) => vote.number === '22')!.votableName = null;
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 }), /sem nome/);
 });

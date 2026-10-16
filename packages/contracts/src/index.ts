@@ -47,11 +47,22 @@ export const voteTotalsSchema = z.object({
   eligible: nonnegative.nullable(), turnout: nonnegative.nullable(), abstentions: nonnegative.nullable(),
   valid: nonnegative, blank: nonnegative, null: nonnegative, totalVotes: nonnegative,
   nonInstalledEligible: nonnegative.nullable().optional(),
+  // Recortes com votos não computados como válidos (Governador v2). Ausentes nas versões anteriores:
+  // não significam zero. `technicalNull` está contido em `null`; anulados ficam fora de válidos e nulos.
+  annulled: nonnegative.nullable().optional(), annulledSubJudice: nonnegative.nullable().optional(), technicalNull: nonnegative.nullable().optional(),
+});
+export const NON_VALID_CATEGORIES = ['annulled', 'annulled-sub-judice', 'technical-null'] as const;
+export const NON_VALID_LABELS: Record<typeof NON_VALID_CATEGORIES[number], string> = { annulled: 'Anulado', 'annulled-sub-judice': 'Anulado sub judice', 'technical-null': 'Nulo técnico' };
+/** Votos em candidaturas que o TSE não computa como válidos; sem percentual sobre válidos. */
+export const nonValidVoteSchema = z.object({
+  number: z.string(), name: z.string(), party: z.string().nullable(), category: z.enum(NON_VALID_CATEGORIES),
+  // Nome de urna e situação vêm do arquivo nominal; para nulo técnico, só o nome do arquivo de seções existe.
+  nameSource: z.enum(['nominal', 'section']), detail: z.string().nullable(), votes: nonnegative,
 });
 export const municipalitySchema = z.object({
   code: z.string(), name: z.string(), uf: z.enum(STATES), electionCode: z.string(), round: z.enum(['1', '2']),
   totals: voteTotalsSchema, candidates: z.array(candidateSchema), zones: nonnegative, sections: nonnegative, pollingPlaces: nonnegative,
-  nonInstalledSections: nonnegative.optional(),
+  nonInstalledSections: nonnegative.optional(), nonValidVotes: z.array(nonValidVoteSchema).optional(),
 });
 export type MunicipalityResult = z.infer<typeof municipalitySchema>;
 export const exteriorCitySchema = municipalitySchema.extend({ uf: z.literal('ZZ') });
@@ -71,6 +82,8 @@ export const datasetSchema = z.object({
   // Ausente nas versões antigas (Presidência, dois turnos): não significa turno único.
   rounds: z.array(z.enum(['1', '2'])).min(1).optional(),
   coverage: z.object({ expected: nonnegative, reconciled: nonnegative, blocked: nonnegative, excluded: nonnegative }).optional(),
+  // Linhas de outra eleição presentes nas entradas e excluídas explicitamente (ex.: suplementar posterior).
+  exclusions: z.array(z.object({ electionCode: z.string(), description: z.string(), reason: z.string(), rows: z.record(z.string(), nonnegative) })).optional(),
 });
 export const coverageItemSchema = z.object({
   uf: z.enum(TERRITORIES), code: z.string(), name: z.string(),
@@ -95,11 +108,17 @@ export const municipalitiesSchema = z.discriminatedUnion('status', [emptyMunicip
   status: z.literal('published'), items: z.array(municipalitySchema),
   pagination: z.object({ page: z.number().int().positive(), pageSize: z.number().int().positive().max(100), total: nonnegative }),
   filters: filtersSchema, dataset: datasetSchema,
+}), z.object({
+  // A publicação existe, mas a apuração não registra este turno para o cargo na UF.
+  status: z.literal('round-not-held'), items: z.array(z.never()).length(0),
+  pagination: z.object({ page: z.number().int().positive(), pageSize: z.number().int().positive().max(100), total: z.literal(0) }),
+  filters: filtersSchema, dataset: datasetSchema,
 })]);
 export type MunicipalitiesResponse = z.infer<typeof municipalitiesSchema>;
 export const nationalSummarySchema = z.object({
   municipalities: nonnegative, sections: nonnegative, pollingPlaces: nonnegative,
   nonInstalledSections: nonnegative.nullable(), totals: voteTotalsSchema, candidates: z.array(candidateSchema),
+  nonValidVotes: z.array(nonValidVoteSchema).optional(),
   exteriorCities: nonnegative.default(0),
   nonInstalledCases: z.array(z.object({ uf: z.enum(TERRITORIES), code: z.string(), name: z.string(), electors: nonnegative, sections: nonnegative.nullable() })).default([]),
 });
@@ -123,12 +142,13 @@ export type StateQuery = z.infer<typeof stateQuerySchema>;
 export const stateResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('awaiting-import'), filters: stateQuerySchema, summary: z.null(), dataset: z.null() }),
   z.object({ status: z.literal('published'), filters: stateQuerySchema, summary: nationalSummarySchema, dataset: datasetSchema }),
+  z.object({ status: z.literal('round-not-held'), filters: stateQuerySchema, summary: z.null(), dataset: datasetSchema }),
 ]);
 export type StateResponse = z.infer<typeof stateResponseSchema>;
 export const pollingPlaceSchema = z.object({
   zone: z.number().int().positive(), code: z.string(), name: z.string().nullable(), address: z.string().nullable(),
   sections: nonnegative, totals: voteTotalsSchema, candidates: z.array(candidateSchema),
-  metadataConflict: z.boolean(),
+  metadataConflict: z.boolean(), nonValidVotes: z.array(nonValidVoteSchema).optional(),
   metadataVariants: z.array(z.object({ name: z.string().nullable(), address: z.string().nullable() })),
 });
 export const placesResponseSchema = z.object({
@@ -136,6 +156,10 @@ export const placesResponseSchema = z.object({
   total: nonnegative, page: z.number().int().positive(), pageSize: z.number().int().positive().max(100), dataset: datasetSchema,
   municipality: municipalitySchema.pick({ code: true, name: true, uf: true }).extend({ uf: z.enum(TERRITORIES) }).optional(),
 });
+/** Turno realizado segundo a publicação. Sem `rounds` (versões antigas), não se presume turno único. */
+export function roundHeld(dataset: { rounds?: Array<'1' | '2'> | undefined }, round: string) {
+  return !dataset.rounds || (dataset.rounds as string[]).includes(round);
+}
 export function percent(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : numerator / denominator * 100;
 }

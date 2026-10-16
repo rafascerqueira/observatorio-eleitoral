@@ -1,6 +1,6 @@
 # API de consultas — Presidência e Governador 2022
 
-As rotas são públicas e de leitura. A consulta prioriza a versão nacional publicada; durante sua preparação, preserva o piloto São Paulo (71072). Turnos permanecem separados. O catálogo informa a cobertura real. Governador é consultável apenas nas UFs com publicação própria (piloto: SP); senador e deputados ainda não são cargos consultáveis.
+As rotas são públicas e de leitura. A consulta prioriza a versão nacional publicada; durante sua preparação, preserva o piloto São Paulo (71072). Turnos permanecem separados. O catálogo informa a cobertura real. Governador é consultável por UF, com uma publicação por UF; senador e deputados ainda não são cargos consultáveis.
 
 | Rota | Resposta |
 | --- | --- |
@@ -31,7 +31,7 @@ As rotas são públicas e de leitura. A consulta prioriza a versão nacional pub
 | `sort` | `municipality`, `uf` | `municipality` |
 | `direction` | `asc`, `desc` | `asc` |
 
-Parâmetros desconhecidos, repetidos ou fora do domínio são rejeitados. `uf` sem filtro deve ser omitido. Com `office=governor`, `uf` é obrigatória (`400` com `fields: ["uf"]`): cargo estadual não tem consulta nacional, e cada UF tem publicação própria. Uma UF sem publicação para o cargo retorna `awaiting-import`. Nenhum ano ou turno nos filtros confirma disponibilidade ou totalização.
+Parâmetros desconhecidos, repetidos ou fora do domínio são rejeitados. `uf` sem filtro deve ser omitido. Com `office=governor`, `uf` é obrigatória (`400` com `fields: ["uf"]`): cargo estadual não tem consulta nacional, e cada UF tem publicação própria. Uma UF sem publicação para o cargo retorna `awaiting-import`. Um turno que não ocorreu na UF (eleição decidida no 1º turno, segundo a apuração) retorna `status: "round-not-held"`, com `items: []`, `total: 0` e o `dataset` da publicação — não é ausência de dados. Nenhum ano ou turno nos filtros confirma disponibilidade ou totalização.
 
 Exemplo sem publicação (como 2026):
 
@@ -57,11 +57,11 @@ Exemplo sem publicação (como 2026):
 
 `status: published` inclui `dataset` com versão, fontes, datas, checksums e escopo. `items` contém municípios, com `totals`, `candidates`, eleição, turno e quantidades de zonas, seções principais e identificadores de local. A paginação é de municípios; candidaturas não são paginadas separadamente.
 
-`dataset.level` diferencia `municipality`, `national`, `exterior` e `state` (publicação de um cargo estadual em uma UF, com `uf` e `rounds`). `rounds` lista os turnos realizados segundo a apuração; ausente nas versões anteriores, não indica turno único. Identidade municipal/UF no dataset fica ausente na publicação nacional; cada item contém sua identidade. A publicação exterior tem `uf: ZZ`, sem identidade municipal. `coverage` informa municípios domésticos esperados/reconciliados/bloqueados e unidades do exterior separadas. As fontes nacionais informam o total lido, incluindo `ZZ`, não apenas as linhas publicadas no banco. `originalUrl` é a rota da API para os bytes que correspondem ao SHA-256; `url` é o endereço do TSE, sujeito a atualização. `sizeBytes` é o tamanho do ZIP. `downloadedAtBasis` explicita data da resposta HTTP ou data recuperada do arquivo local.
+`dataset.level` diferencia `municipality`, `national`, `exterior` e `state` (publicação de um cargo estadual em uma UF, com `uf` e `rounds`). `rounds` lista os turnos realizados segundo a apuração; ausente nas versões anteriores, não indica turno único. `exclusions`, quando presente, registra outra eleição encontrada nas entradas e excluída de forma declarada (código, descrição, motivo e linhas por entrada), como a suplementar de 2026 em RR. Identidade municipal/UF no dataset fica ausente na publicação nacional; cada item contém sua identidade. A publicação exterior tem `uf: ZZ`, sem identidade municipal. `coverage` informa municípios domésticos esperados/reconciliados/bloqueados e unidades do exterior separadas. As fontes nacionais informam o total lido, incluindo `ZZ`, não apenas as linhas publicadas no banco. `originalUrl` é a rota da API para os bytes que correspondem ao SHA-256; `url` é o endereço do TSE, sujeito a atualização. `sizeBytes` é o tamanho do ZIP. `downloadedAtBasis` explicita data da resposta HTTP ou data recuperada do arquivo local.
 
 `importedAt` registra o cadastro da versão no início da carga reconciliada, não a hora exata da troca pública. O relatório registra também a data da verificação posterior da persistência (`persistedVerification.at`).
 
-`totals` inclui `eligible`, `turnout`, `abstentions`, `valid`, `blank`, `null` e `totalVotes`. Cada candidatura inclui número, nome de urna, partido, votos e `percentValid`. Percentuais usam o denominador do mesmo turno e recorte; denominador zero produz `null`.
+`totals` inclui `eligible`, `turnout`, `abstentions`, `valid`, `blank`, `null` e `totalVotes`. Publicações de Governador v2 incluem também `annulled`, `annulledSubJudice` e `technicalNull` (este contido em `null`): `totalVotes = valid + blank + null + annulled + annulledSubJudice`. Em versões anteriores esses campos são ausentes ou, em somas que misturam versões, `null` — nunca zero presumido. Itens, zonas, locais e consolidados dessas versões trazem `nonValidVotes`: número, nome, partido (ou `null`), `category` (`annulled`, `annulled-sub-judice`, `technical-null`), `nameSource` (`nominal` ou `section`, este para nulo técnico, sem linha no nominal), `detail` (situação do registro na fonte) e votos, sem percentual sobre válidos. Cada candidatura inclui número, nome de urna, partido, votos e `percentValid`. Percentuais usam o denominador do mesmo turno e recorte; denominador zero produz `null`.
 
 Municípios com seções não instaladas expõem `totals.nonInstalledEligible` e `nonInstalledSections`. Aptos = comparecimento + abstenção + eleitores de seções não instaladas. Esses eleitores não são somados à abstenção. `sections` conta seções principais com registros; o total oficial de principais é `sections + nonInstalledSections`. Campos novos são opcionais para preservar versões anteriores; não interpretar ausência como zero. Nos locais, `nonInstalledEligible` é `null`, sem correspondência por seção inventada.
 
@@ -81,7 +81,7 @@ Quando ZZ está publicado integralmente, a API exige os mesmos arquivos, entrada
 
 ## Consolidado da UF
 
-`GET /elections/state` aceita somente `year`, `round`, `office` e `uf` (obrigatória, uma das 27 UFs; `ZZ` é rejeitada). Para Presidência usa a publicação nacional; para Governador, a publicação da UF (`scope` `2022/governor/<UF>`). O piloto municipal da Presidência não é tratado como UF inteira e retorna `awaiting-import`.
+`GET /elections/state` aceita somente `year`, `round`, `office` e `uf` (obrigatória, uma das 27 UFs; `ZZ` é rejeitada). Para Presidência usa a publicação nacional; para Governador, a publicação da UF (`scope` `2022/governor/<UF>`). O piloto municipal da Presidência não é tratado como UF inteira e retorna `awaiting-import`. Turno não realizado retorna `round-not-held` com `summary: null`.
 
 A resposta segue o formato do consolidado Brasil (`status`, `filters`, `dataset`, `summary`), com `exteriorCities: 0`. A soma exige que todos os municípios da UF na cobertura da publicação estejam reconciliados e presentes no turno; caso contrário, `503`. Percentuais são recalculados sobre os totais da UF. Resultados de Governador de UFs diferentes não são comparáveis: as candidaturas diferem.
 
@@ -108,7 +108,7 @@ A busca textual usa normalização Unicode do PostgreSQL, remoção de marcas co
 
 Exemplo: `/elections/municipalities/71072/places?year=2022&round=1&zone=0001&section=0001`. O filtro de seção **localiza o local**; a resposta continua contendo os votos agregados do local inteiro. Não constitui um endpoint de resultados isolados da seção.
 
-`eligible`, `turnout` e `abstentions` são `null` nos locais. `totalVotes` é a soma dos votos no cargo consultado, não uma estimativa de eleitores inscritos no prédio. `metadataConflict` indica múltiplos nomes/endereços; `metadataVariants` preserva todas as variantes. O campo divergente fica `null`.
+`eligible`, `turnout` e `abstentions` são `null` nos locais. Turno não realizado retorna `404` com `reason: "round-not-held"`. `totalVotes` é a soma dos votos no cargo consultado, não uma estimativa de eleitores inscritos no prédio. `metadataConflict` indica múltiplos nomes/endereços; `metadataVariants` preserva todas as variantes. O campo divergente fica `null`.
 
 As consultas nacionais e estaduais de locais e seções usam UF, localidade, ano, turno e cargo em todas as junções. Para `office=governor`, `uf` é obrigatória e a publicação usada é a da UF. Se um código vier a existir em mais de uma UF, a rota exige `uf` para desambiguar. A lista municipal não aceita `ZZ`; seus locais são consultados exclusivamente na rota própria do exterior, com publicação e identidade territorial separadas.
 

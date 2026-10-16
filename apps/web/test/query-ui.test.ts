@@ -92,3 +92,16 @@ test('governador exige UF, rejeita o exterior e os links de volta preservam carg
   assert.deepEqual([...new URL(overviewHref('2022', '2', 'governor', 'SP'), 'http://localhost').searchParams], [['year', '2022'], ['round', '2'], ['office', 'governor'], ['uf', 'SP']]);
   assert.equal(overviewHref('2022', '1', 'president', 'SP'), brazilHref('2022', '1'));
 });
+
+test('quadro de votos não válidos identifica a fonte do nome e não exibe percentual sobre válidos', async () => {
+  const { NonValidVotesTable } = await import('../components/non-valid-votes');
+  assert.equal(renderToStaticMarkup(createElement(NonValidVotesTable, { items: [], context: 'Teste' })), '');
+  assert.equal(renderToStaticMarkup(createElement(NonValidVotesTable, { items: undefined, context: 'Teste' })), '');
+  const html = renderToStaticMarkup(createElement(NonValidVotesTable, { context: 'UF sintética', items: [
+    { number: '22', name: 'NOME SINTETICO', party: null, category: 'technical-null', nameSource: 'section', detail: null, votes: 5 },
+    { number: '30', name: 'Anulada sintética', party: 'TESTE', category: 'annulled', nameSource: 'nominal', detail: 'INDEFERIDO', votes: 0 },
+  ] }));
+  assert.match(html, /Nulo técnico/); assert.match(html, /nome no arquivo de seções/); assert.match(html, /Não informado na fonte/);
+  assert.doesNotMatch(html, /Anulada sintética/, 'Linha sem votos no recorte não é listada');
+  assert.doesNotMatch(html, /%/);
+});

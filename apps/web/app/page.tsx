@@ -6,6 +6,7 @@ import { QueryForm } from '../components/query-form';
 import { ErrorSummary, FieldError, QuerySelect, TurnField } from '../components/query-fields';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from '../lib/query-ui';
 import { overviewHref } from '../lib/query-navigation';
+import { NonValidVotesTable } from '../components/non-valid-votes';
 
 export const dynamic = 'force-dynamic';
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -45,6 +46,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   const items = nationalData ? [{ ...nationalData.summary, code: 'BR', name: 'Todo o Brasil', uf: null, zones: null }]
     : municipalData?.items ?? [];
   const published = data?.status === 'published';
+  const roundNotHeld = data?.status === 'round-not-held' || (stateResult?.kind === 'ready' && stateResult.data.status === 'round-not-held');
+  const firstRoundHref = `/?${new URLSearchParams({ year: filters.year, round: '1', office: filters.office, ...(filters.uf ? { uf: filters.uf } : {}), ...(filters.search ? { search: filters.search } : {}) })}`;
   const number = (value: number | null) => value === null ? 'Indisponível' : new Intl.NumberFormat('pt-BR').format(value);
   const rate = (value: number | null) => value === null ? 'Indisponível' : `${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
   const totalsGrid = (totals: MunicipalityResult['totals']) => <dl className="totals-grid">{[
@@ -53,7 +56,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
     ['Abstenção', `${number(totals.abstentions)} (${rate(totals.eligible !== null && totals.abstentions !== null ? percent(totals.abstentions, totals.eligible) : null)})`],
     ['Votos válidos', number(totals.valid)],
     ['Brancos', `${number(totals.blank)} (${rate(percent(totals.blank, totals.totalVotes))})`],
-    ['Nulos', `${number(totals.null)} (${rate(percent(totals.null, totals.totalVotes))})`],
+    ['Nulos', `${number(totals.null)} (${rate(percent(totals.null, totals.totalVotes))})${totals.technicalNull ? ` — dos quais nulos técnicos: ${number(totals.technicalNull)}` : ''}`],
+    // Categorias só existem nas versões que as reconciliam; ausência não é exibida como zero.
+    ...(totals.annulled ? [['Anulados', `${number(totals.annulled)} (${rate(percent(totals.annulled, totals.totalVotes))})`]] : []),
+    ...(totals.annulledSubJudice ? [['Anulados sub judice', `${number(totals.annulledSubJudice)} (${rate(percent(totals.annulledSubJudice, totals.totalVotes))})`]] : []),
   ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
   const placesLink = (code: string, uf: string) => `/municipios/${code}?${new URLSearchParams({ year: filters.year, round: filters.round, uf, ...(filters.office === 'president' ? {} : { office: filters.office }) })}`;
   function pageHref(page: number) {
@@ -68,7 +74,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
         <div className="eyebrow"><span aria-hidden="true" /> DADOS PÚBLICOS · BRASIL</div>
         <h1 id="titulo">Um olhar sobre as eleições.<br /><span>Com contexto e transparência.</span></h1>
         <p className="hero-description">Explore os resultados eleitorais, consulte seus municípios e conheça o contexto dos territórios. Fontes oficiais, critérios explícitos e espaço para suas próprias perguntas.</p>
-        <div className="project-note"><span className="badge">{published ? data.dataset.level === 'national' ? 'Cobertura nacional' : data.dataset.level === 'state' ? 'Publicação estadual' : 'Piloto municipal' : 'Cobertura e fontes'}</span><p>{published ? data.dataset.level === 'state' ? `${officeLabel} · 2022 · ${data.dataset.uf} · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados${data.dataset.rounds ? ` em ${data.dataset.rounds.length === 2 ? 'dois turnos' : 'turno único'}` : ''}. Demais UFs ainda não publicadas para este cargo.` : data.dataset.level === 'national' ? `Presidência · 2022 · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados nas 27 UFs. ${nationalData?.includesExterior ? 'Exterior incluído no consolidado Brasil.' : 'Exterior consultável à parte; confira a cobertura nas fontes.'}` : 'São Paulo · Presidência · 2022. A expansão nacional só aparece após a reconciliação.' : 'A disponibilidade depende do recorte consultado. Veja as versões publicadas e o andamento das importações na transparência.'}</p></div>
+        <div className="project-note"><span className="badge">{published ? data.dataset.level === 'national' ? 'Cobertura nacional' : data.dataset.level === 'state' ? 'Publicação estadual' : 'Piloto municipal' : 'Cobertura e fontes'}</span><p>{published ? data.dataset.level === 'state' ? `${officeLabel} · 2022 · ${data.dataset.uf} · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados${data.dataset.rounds ? ` em ${data.dataset.rounds.length === 2 ? 'dois turnos' : 'turno único'}` : ''}. Cada UF tem publicação própria, com fontes e cobertura na transparência.` : data.dataset.level === 'national' ? `Presidência · 2022 · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados nas 27 UFs. ${nationalData?.includesExterior ? 'Exterior incluído no consolidado Brasil.' : 'Exterior consultável à parte; confira a cobertura nas fontes.'}` : 'São Paulo · Presidência · 2022. A expansão nacional só aparece após a reconciliação.' : 'A disponibilidade depende do recorte consultado. Veja as versões publicadas e o andamento das importações na transparência.'}</p></div>
       </section>
 
       <section className="explorer" aria-labelledby="explorar">
@@ -88,9 +94,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
             aria-invalid={invalid('search') || undefined} aria-describedby={invalid('search') ? 'search-error municipality-help' : 'municipality-help'} /><FieldError field="search" errors={errors} /></div>
         </QueryForm>
         <p className="query-note" id="municipality-help">Na Presidência, sem UF e sem busca, a consulta mostra o consolidado do Brasil. Selecione uma UF para ver o resultado da UF e de seus municípios, ou busque um município, com ou sem acentos. Governador exige uma UF.</p>
-        <div className="table-toolbar"><span>{valid ? 'Consulta aplicada: ' : 'Filtros não aplicados · '}{officeLabel} · {filters.year} · {filters.round}º turno{filters.uf ? ` · ${filters.uf}` : national ? ' · Todo o Brasil' : ' · Busca em todas as UFs'}</span><span>{published ? 'Recorte reconciliado · TSE' : 'Recorte sem publicação disponível'}</span></div>
+        <div className="table-toolbar"><span>{valid ? 'Consulta aplicada: ' : 'Filtros não aplicados · '}{officeLabel} · {filters.year} · {filters.round}º turno{filters.uf ? ` · ${filters.uf}` : national ? ' · Todo o Brasil' : ' · Busca em todas as UFs'}</span><span>{published ? 'Recorte reconciliado · TSE' : roundNotHeld ? 'Turno não realizado' : 'Recorte sem publicação disponível'}</span></div>
         {nationalData && <p className="notice scope-notice">{nationalData.includesExterior ? <>O quadro Brasil inclui os 5.570 municípios das 27 UFs e {number(nationalData.summary.exteriorCities)} localidades eleitorais do exterior (ZZ). <Link href={`/exterior?round=${filters.round}`}>Consultar somente o exterior</Link>. </> : <>O quadro Brasil reúne os municípios das 27 UFs. Não inclui os votos no exterior (ZZ), ainda separados na transparência; portanto, não representa o total oficial com exterior. </>}<Link href="/fontes">Ver cobertura e fontes</Link>.</p>}
-        {stateView && valid && (stateData ? <section className="municipality-summary state-summary" aria-labelledby="resultado-uf">
+        {stateView && valid && !roundNotHeld && (stateData ? <section className="municipality-summary state-summary" aria-labelledby="resultado-uf">
           <div className="section-heading"><h3 id="resultado-uf">Todo o estado: {UF_NAMES[stateView]} / {stateView}</h3></div>
           {totalsGrid(stateData.summary.totals)}
           <p className="query-note">Soma dos {number(stateData.summary.municipalities)} municípios reconciliados da UF · {number(stateData.summary.sections)} seções principais · {number(stateData.summary.pollingPlaces)} locais identificados por município, zona e número. Percentuais recalculados sobre os totais da UF, não por média municipal.{stateOffice ? ' Resultado não comparável com o de outras UFs: as candidaturas diferem.' : ''}</p>
@@ -100,11 +106,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
               <tbody>{stateData.summary.candidates.map((candidate) => <tr key={candidate.number}><th scope="row">{candidate.name} <span className="candidate-number">{candidate.number}</span></th><td>{candidate.party}</td><td>{number(candidate.votes)}</td><td>{rate(candidate.percentValid)}</td></tr>)}</tbody>
             </table>
           </div>
+          <NonValidVotesTable items={stateData.summary.nonValidVotes} context={UF_NAMES[stateView]} />
+          {stateData.dataset.exclusions?.map((item) => <p className="notice" key={item.electionCode}>Não incluída: {item.description}. {item.reason} <Link href="/fontes">Ver registro da exclusão</Link>.</p>)}
         </section> : stateResult?.kind === 'unavailable' && <p className="notice" role="status">O resultado consolidado de {UF_NAMES[stateView]} não pôde ser consultado agora. Os resultados municipais abaixo não foram somados nesta página.</p>)}
         {stateData && items.length > 0 && <h3 className="municipal-heading">Municípios de {UF_NAMES[stateView!]}</h3>}
         {items.map((item) => <section className="municipality-summary" key={item.code} aria-label={`Participação em ${item.name}`}>
           <div className="section-heading"><h3>{item.name}{item.uf ? ` / ${item.uf}` : ''}</h3>{item.uf && <Link prefetch={false} href={placesLink(item.code, item.uf)} className="text-link">Abrir locais de votação ↗</Link>}</div>
           {totalsGrid(item.totals)}
+          {!national && <NonValidVotesTable items={item.nonValidVotes} context={`${item.name} / ${item.uf}`} />}
           {item.totals.nonInstalledEligible != null && item.totals.nonInstalledEligible > 0 && <details className="notice installation-note"><summary>A fonte registra {number(item.totals.nonInstalledEligible)} eleitores aptos em {item.nonInstalledSections} seção(ões) não instalada(s). O que significa?</summary>
             <p>São eleitores aptos associados a seções que o TSE classificou como não instaladas — não uma quantidade de votos. Permanecem separados da abstenção: aptos = comparecimento + abstenção + eleitores de seções não instaladas. A fonte de apuração não informa aqui o motivo da não instalação.</p>
             {nationalData ? <><p>Origem do total neste turno:</p><ul>{nationalData.summary.nonInstalledCases.map((entry) => <li key={`${entry.uf}/${entry.code}`}><Link href={entry.uf === 'ZZ' ? `/exterior?round=${filters.round}&search=${encodeURIComponent(entry.name)}` : `/?year=${filters.year}&round=${filters.round}&uf=${entry.uf}&search=${encodeURIComponent(entry.name)}`}>{entry.name} / {entry.uf}</Link>: {number(entry.electors)} eleitores aptos · {number(entry.sections)} seção(ões) não instalada(s).</li>)}</ul></> : <p>Este quantitativo pertence a {item.name} / {item.uf}, no {filters.round}º turno. Não some os mesmos eleitores entre os turnos.</p>}
@@ -118,7 +127,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
             <tbody>{items.length > 0 ? items.flatMap((item) => item.candidates.map((candidate) => <tr key={`${item.uf ?? 'BR'}/${item.code}/${candidate.number}`}>{!national && <td>{item.name} / {item.uf}</td>}<th scope="row">{candidate.name} <span className="candidate-number">{candidate.number}</span></th><td>{candidate.party}</td><td>{number(candidate.votes)}</td><td>{rate(candidate.percentValid)}</td></tr>)) : <tr><td colSpan={national ? 4 : 5}>
               <div className="empty-state" role="status">
                 <span className="empty-symbol" aria-hidden="true">≡</span>
-                {!valid ? <><h3>Confira os filtros da consulta</h3><p>{scopeError ? scopeError.message : 'Há um parâmetro inválido no endereço.'} Escolha os filtros acima e consulte novamente.</p></> : state?.kind === 'unavailable' ? <><h3>Não foi possível consultar os dados</h3><p>O serviço está indisponível no momento. Tente consultar novamente em instantes.</p></> : published ? <><h3>Nenhum município nesta página da consulta</h3><p>Confira o nome pesquisado e a página. A cobertura está discriminada na transparência.</p><Link className="text-link" href={overviewHref('2022', filters.round, filters.office, filters.uf)}>Voltar à primeira página</Link></> : <><h3>Nenhuma base publicada para este recorte</h3><p>Os resultados aparecerão aqui após a importação e a conferência dos dados oficiais do TSE.</p><Link href="/fontes" className="text-link">Conheça a cobertura <span aria-hidden="true">↗</span></Link></>}
+                {!valid ? <><h3>Confira os filtros da consulta</h3><p>{scopeError ? scopeError.message : 'Há um parâmetro inválido no endereço.'} Escolha os filtros acima e consulte novamente.</p></> : state?.kind === 'unavailable' ? <><h3>Não foi possível consultar os dados</h3><p>O serviço está indisponível no momento. Tente consultar novamente em instantes.</p></> : roundNotHeld ? <><h3>Não houve {filters.round}º turno para {officeLabel}{filters.uf ? ` em ${UF_NAMES[filters.uf]}` : ''} em {filters.year}</h3><p>Segundo a apuração do TSE publicada para este cargo e UF, a eleição foi decidida no 1º turno. Isso não é ausência de dados.</p><Link className="text-link" href={firstRoundHref}>Ver o 1º turno</Link></> : published ? <><h3>Nenhum município nesta página da consulta</h3><p>Confira o nome pesquisado e a página. A cobertura está discriminada na transparência.</p><Link className="text-link" href={overviewHref('2022', filters.round, filters.office, filters.uf)}>Voltar à primeira página</Link></> : <><h3>Nenhuma base publicada para este recorte</h3><p>Os resultados aparecerão aqui após a importação e a conferência dos dados oficiais do TSE.</p><Link href="/fontes" className="text-link">Conheça a cobertura <span aria-hidden="true">↗</span></Link></>}
               </div>
             </td></tr>}</tbody>
           </table>

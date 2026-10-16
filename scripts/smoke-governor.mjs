@@ -55,11 +55,63 @@ for (const round of ['1', '2']) {
   assert.equal(section.total, 1); assert.ok(section.items[0].sectionNumbers.includes(1));
 }
 
+// Todas as UFs publicadas para Governador: invariantes, turnos realizados e categorias não válidas.
+const SECOND_ROUND = ['AL', 'AM', 'BA', 'ES', 'MS', 'PB', 'PE', 'RO', 'RS', 'SC', 'SE', 'SP'];
+const governorDatasets = catalog.datasets.filter((item) => item.level === 'state' && item.office === 'governor');
+for (const item of governorDatasets) {
+  assert.equal(item.coverage.blocked, 0); assert.equal(item.coverage.expected, item.coverage.reconciled);
+  assert.deepEqual(item.rounds, SECOND_ROUND.includes(item.uf) ? ['1', '2'] : ['1'], `turnos de ${item.uf}`);
+  for (const round of ['1', '2']) {
+    const state = await json(`/elections/state?office=governor&uf=${item.uf}&round=${round}`);
+    if (!item.rounds.includes(round)) {
+      assert.equal(state.status, 'round-not-held', `${item.uf} ${round}`);
+      assert.equal((await json(`/elections/municipalities?office=governor&uf=${item.uf}&round=${round}`)).status, 'round-not-held');
+      continue;
+    }
+    const { totals, candidates, nonValidVotes = [] } = state.summary;
+    assert.equal(state.summary.municipalities, item.coverage.reconciled);
+    assert.equal(candidates.reduce((sum, candidate) => sum + candidate.votes, 0), totals.valid);
+    assert.equal(totals.totalVotes, totals.valid + totals.blank + totals.null + (totals.annulled ?? 0) + (totals.annulledSubJudice ?? 0), `${item.uf} ${round}: composição`);
+    assert.equal(totals.eligible, totals.turnout + totals.abstentions + (totals.nonInstalledEligible ?? 0));
+    if (item.importerVersion.endsWith('-v2')) {
+      for (const [category, field] of [['annulled', 'annulled'], ['annulled-sub-judice', 'annulledSubJudice'], ['technical-null', 'technicalNull']]) {
+        assert.equal(nonValidVotes.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.votes, 0), totals[field], `${item.uf} ${round}: ${category}`);
+      }
+      assert.ok(nonValidVotes.every((entry) => !candidates.some((candidate) => candidate.number === entry.number)));
+    }
+  }
+}
+// Casos auditados nos originais: nulos técnicos (SE), anulados (PR), sub judice (AM) e exclusão declarada (RR).
+const known = { SE: ['technicalNull', 457922, '22'], PR: ['annulled', 10337, '33'], AM: ['annulledSubJudice', 1895, '36'] };
+for (const [uf, [field, votes, numberWithVotes]] of Object.entries(known)) {
+  if (!governorDatasets.some((item) => item.uf === uf)) continue;
+  const state = await json(`/elections/state?office=governor&uf=${uf}&round=1`);
+  assert.equal(state.summary.totals[field], votes, `${uf}: ${field}`);
+  assert.equal(state.summary.nonValidVotes.find((entry) => entry.number === numberWithVotes)?.votes, votes);
+}
+const roraima = governorDatasets.find((item) => item.uf === 'RR');
+if (roraima) {
+  assert.equal(roraima.exclusions?.[0]?.electionCode, '6278');
+  assert.ok(Object.values(roraima.exclusions[0].rows).every((rows) => rows > 0));
+  const state = await json('/elections/state?office=governor&uf=RR&round=1');
+  assert.equal(state.dataset.id, roraima.id); assert.equal(state.summary.totals.annulledSubJudice, 0, 'Sub judice da suplementar de 2026 não entra em 2022');
+  assert.equal(state.summary.totals.totalVotes, 304319);
+}
+if (governorDatasets.some((item) => item.uf === 'SE')) {
+  const page = await html('/?office=governor&uf=SE&round=1');
+  for (const text of ['Votos não computados como válidos', 'VALMIR DOS SANTOS COSTA', 'Nulo técnico', 'dos quais nulos técnicos: 457.922']) assert.ok(page.includes(text), text);
+  const second = await html('/?office=governor&uf=CE&round=2');
+  if (governorDatasets.some((item) => item.uf === 'CE')) assert.ok(second.includes('Não houve 2º turno para Governador em Ceará'));
+}
+
 // Cargo estadual sem UF, com ZZ ou em outra UF não publicada.
 for (const path of ['/elections/municipalities?office=governor', '/elections/national?office=governor', '/elections/exterior?office=governor', '/elections/state?office=governor', '/elections/municipalities/71072/places?office=governor']) await request(api, path, 400);
-assert.equal((await json('/elections/state?office=governor&uf=RJ')).status, 'awaiting-import');
-assert.equal((await json('/elections/municipalities?office=governor&uf=RJ')).status, 'awaiting-import');
-await request(api, '/elections/municipalities/60011/places?office=governor&uf=RJ', 404);
+const unpublished = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SE', 'TO'].find((uf) => !governorDatasets.some((item) => item.uf === uf));
+if (unpublished) {
+  assert.equal((await json(`/elections/state?office=governor&uf=${unpublished}`)).status, 'awaiting-import');
+  assert.equal((await json(`/elections/municipalities?office=governor&uf=${unpublished}`)).status, 'awaiting-import');
+}
+await request(api, '/elections/municipalities/71072/places?office=governor&uf=RJ', 404);
 
 const page = await html('/?office=governor&uf=SP&round=2');
 for (const text of ['Todo o estado: São Paulo / SP', 'TARCÍSIO', 'FERNANDO HADDAD', 'Municípios de São Paulo', 'Cargo: Governador']) assert.ok(page.includes(text), text);
@@ -71,4 +123,4 @@ const placesPage = await html('/municipios/71072?office=governor&uf=SP&round=1')
 assert.ok(placesPage.includes('Governador · 2022 · 1º turno')); assert.ok(placesPage.includes('name="office" value="governor"'));
 const sources = await html('/fontes');
 assert.ok(sources.includes('Arquivos — Governador SP')); assert.ok(sources.includes('votacao_secao_2022_SP.zip'));
-console.log(`Smoke de Governador 2022/SP aprovado: ${requests} requisições.`);
+console.log(`Smoke de Governador 2022 aprovado: ${governorDatasets.length} UF(s), ${requests} requisições.`);
