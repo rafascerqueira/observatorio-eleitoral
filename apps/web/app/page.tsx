@@ -50,17 +50,17 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   const firstRoundHref = `/?${new URLSearchParams({ year: filters.year, round: '1', office: filters.office, ...(filters.uf ? { uf: filters.uf } : {}), ...(filters.search ? { search: filters.search } : {}) })}`;
   const number = (value: number | null) => value === null ? 'Indisponível' : new Intl.NumberFormat('pt-BR').format(value);
   const rate = (value: number | null) => value === null ? 'Indisponível' : `${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
-  const totalsGrid = (totals: MunicipalityResult['totals']) => <dl className="totals-grid">{[
+  const totalsGrid = (totals: MunicipalityResult['totals']) => <dl className="totals-grid">{([
     ['Eleitores aptos', number(totals.eligible)],
     ['Comparecimento', number(totals.turnout)],
     ['Abstenção', `${number(totals.abstentions)} (${rate(totals.eligible !== null && totals.abstentions !== null ? percent(totals.abstentions, totals.eligible) : null)})`],
     ['Votos válidos', number(totals.valid)],
     ['Brancos', `${number(totals.blank)} (${rate(percent(totals.blank, totals.totalVotes))})`],
-    ['Nulos', `${number(totals.null)} (${rate(percent(totals.null, totals.totalVotes))})${totals.technicalNull ? ` — dos quais nulos técnicos: ${number(totals.technicalNull)}` : ''}`],
+    ['Nulos', `${number(totals.null)} (${rate(percent(totals.null, totals.totalVotes))})`, totals.technicalNull ? `dos quais nulos técnicos: ${number(totals.technicalNull)}` : null],
     // Categorias só existem nas versões que as reconciliam; ausência não é exibida como zero.
     ...(totals.annulled ? [['Anulados', `${number(totals.annulled)} (${rate(percent(totals.annulled, totals.totalVotes))})`]] : []),
     ...(totals.annulledSubJudice ? [['Anulados sub judice', `${number(totals.annulledSubJudice)} (${rate(percent(totals.annulledSubJudice, totals.totalVotes))})`]] : []),
-  ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
+  ] as Array<[string, string, (string | null)?]>).map(([label, value, detail]) => <div key={label}><dt>{label}</dt><dd>{value}{detail && <span className="totals-detail">{detail}</span>}</dd></div>)}</dl>;
   const placesLink = (code: string, uf: string) => `/municipios/${code}?${new URLSearchParams({ year: filters.year, round: filters.round, uf, ...(filters.office === 'president' ? {} : { office: filters.office }) })}`;
   function pageHref(page: number) {
     const params = new URLSearchParams();
@@ -118,7 +118,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
             <p>São eleitores aptos associados a seções que o TSE classificou como não instaladas — não uma quantidade de votos. Permanecem separados da abstenção: aptos = comparecimento + abstenção + eleitores de seções não instaladas. A fonte de apuração não informa aqui o motivo da não instalação.</p>
             {nationalData ? <><p>Origem do total neste turno:</p><ul>{nationalData.summary.nonInstalledCases.map((entry) => <li key={`${entry.uf}/${entry.code}`}><Link href={entry.uf === 'ZZ' ? `/exterior?round=${filters.round}&search=${encodeURIComponent(entry.name)}` : `/?year=${filters.year}&round=${filters.round}&uf=${entry.uf}&search=${encodeURIComponent(entry.name)}`}>{entry.name} / {entry.uf}</Link>: {number(entry.electors)} eleitores aptos · {number(entry.sections)} seção(ões) não instalada(s).</li>)}</ul></> : <p>Este quantitativo pertence a {item.name} / {item.uf}, no {filters.round}º turno. Não some os mesmos eleitores entre os turnos.</p>}
           </details>}
-          <p className="query-note">{nationalData ? `${number(nationalData.summary.municipalities)} municípios · 27 UFs${nationalData.includesExterior ? ` · ${number(nationalData.summary.exteriorCities)} localidades no exterior` : ''}` : `${item.zones} zonas`} · {number(item.sections)} seções principais · {number(item.pollingPlaces)} locais identificados por {national ? 'UF, município ou localidade, ' : ''}zona e número. Abstenção ÷ aptos; brancos e nulos ÷ total de votos no cargo.</p>
+          <p className="query-note">{nationalData ? `${number(nationalData.summary.municipalities)} municípios · 27 UFs${nationalData.includesExterior ? ` · ${number(nationalData.summary.exteriorCities)} localidades no exterior` : ''}` : `${item.zones} ${item.zones === 1 ? 'zona' : 'zonas'}`} · {number(item.sections)} seções principais · {number(item.pollingPlaces)} locais identificados por {national ? 'UF, município ou localidade, ' : ''}zona e número. Abstenção ÷ aptos; brancos e nulos ÷ total de votos no cargo.</p>
         </section>)}
         <div className="table-scroll" role="region" aria-label={national ? 'Tabela do resultado presidencial no Brasil' : 'Tabela de resultados por município'} tabIndex={0}>
           <table className={national ? 'national-table' : undefined}>
@@ -132,7 +132,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
             </td></tr>}</tbody>
           </table>
         </div>
-        <div className="table-footer"><span role="status" aria-live="polite" aria-atomic="true">{nationalData ? `Consolidado de ${number(nationalData.summary.municipalities)} municípios · sem paginação` : municipalData ? `${municipalData.pagination.total} município(s) encontrado(s) · página ${filters.page}` : 'Consulta sem resultados publicados'}</span><span>% da candidatura = votos ÷ votos válidos × 100. Totais de participação aparecem uma única vez.</span></div>
+        <div className="table-footer"><span role="status" aria-live="polite" aria-atomic="true">{nationalData ? `Consolidado de ${number(nationalData.summary.municipalities)} municípios · sem paginação` : municipalData ? `${municipalData.pagination.total} município(s) encontrado(s) · página ${filters.page}` : roundNotHeld ? 'Turno não realizado para este cargo na UF' : 'Consulta sem resultados publicados'}</span><span>% da candidatura = votos ÷ votos válidos × 100. Totais de participação aparecem uma única vez.</span></div>
         {municipalData && (filters.page > 1 || filters.page * filters.pageSize < municipalData.pagination.total) && <nav className="pagination" aria-label="Paginação de municípios">{filters.page > 1 && <Link href={pageHref(filters.page - 1)}>Página anterior</Link>}{filters.page * filters.pageSize < municipalData.pagination.total && <Link href={pageHref(filters.page + 1)}>Próxima página</Link>}</nav>}
         {published && <p className="dataset-note">Fonte: TSE · {data.dataset.level === 'state' ? `Versão ${officeLabel} ${data.dataset.uf}` : 'Versão doméstica'} {data.dataset.id.slice(0, 12)}{nationalData?.exteriorDataset ? ` · Versão exterior ${nationalData.exteriorDataset.id.slice(0, 12)}` : ''} · Votos por seção reconciliados por zona com os arquivos de apuração e votação nominal, de gerações distintas. <Link href="/fontes">Arquivos, datas e checksums</Link>.</p>}
       </section>

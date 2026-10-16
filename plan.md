@@ -221,3 +221,16 @@ A auditoria prévia mostrou que só 10 UFs cabiam nas regras do piloto: as demai
 Implementada a versão `governor-2022-state-v2` (regra por zona para anulados, sub judice e nulos técnicos; exclusões só por declaração; novos campos opcionais `annulled`, `annulledSubJudice`, `technicalNull`, `nonValidVotes` e `exclusions`, que não são lidos como zero em versões antigas). A Presidência e suas publicações não mudaram. As versões v1 (AC, AL, CE, ES, MA, SP) foram substituídas e mantidas como não publicadas.
 
 Resultado: 27 UFs publicadas, 5.570 municípios, 4.404.307 registros, nenhum bloqueio; comparação independente com os CSVs de apuração e nominal sem divergências (522 conferências); 46 testes, tipos, build, smoke de governador (27 UFs) e regressão completa da Presidência passaram; reexecução idempotente. Detalhes em `docs/governador-2022.md`. Sem publicação externa. Pendentes: revisão visual/acessibilidade em navegador, suplementar de RR, senador.
+
+## 19. Revisão visual e de acessibilidade — 15/10/2026
+
+Primeira pendência da lista. Sem a extensão do Chrome conectada, a revisão usou o Firefox 157 do sistema em headless com `puppeteer-core` e axe-core 4.14, instalados fora do repositório. 11 páginas em 1280/375 px e refluxo a 320 px: axe sem violações (com controle positivo), contraste medido pixel a pixel sobre os gradientes, ordem de Tab e foco visível, estrutura de títulos/regiões/tabelas e inspeção das capturas.
+
+Corrigidos: rolagem horizontal em `/fontes` no celular, três contrastes abaixo de 4,5:1 no hero e nos cartões, linha de nulos técnicos, recuos, aviso desatualizado e ordem das importações em `/fontes`, rodapé do turno não realizado e plural de zona. Registro e limites em `docs/acessibilidade.md`. Não verificados: leitor de tela real, Chrome/Safari e dispositivos móveis reais, zoom de texto e alto contraste do sistema. Testes e smokes repetidos sem regressão.
+
+### Decisões pendentes para a próxima sessão
+
+1. Suplementar de Governador de RR (eleição 6278, 21/06/2026, presente nos arquivos marcados como 2022): como tratá-la (proposta: recorte próprio "suplementar 2026", sem somar nem comparar com a ordinária de 2022); como apresentar os 160.004 votos "Anulado sub judice", maiores que os válidos (102.845), deixando explícita a provisoriedade da classificação; conferir situação da totalização e eventual 2º turno antes de importar.
+2. Senador 2022 (uma vaga por UF; 2026 terá duas): auditoria e regras.
+3. Página de UF longa (25 municípios com quadros por página): rever apresentação.
+4. Incorporar ao repositório as verificações de acessibilidade (exigiria `puppeteer-core`, `axe-core` e `pngjs` como dependências de desenvolvimento) e testar com leitor de tela real e outros navegadores.

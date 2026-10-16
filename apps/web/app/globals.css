@@ -56,10 +56,15 @@ tbody th { color: var(--ink); white-space: normal; text-align: left; }
 .candidate-number { color: var(--muted); font-size: 12px; margin-left: 8px; font-weight: 400; }
 .source-note { color: var(--muted); font-size: 12px; font-weight: 400; }
 .non-valid-votes { margin-top: 16px; }
-.non-valid-votes caption { text-align: left; font-size: 13px; color: var(--muted); padding-bottom: 6px; }
+.non-valid-votes caption { text-align: left; font-size: 13px; color: var(--muted); padding: 0 28px 6px; }
+.municipal-heading { margin: 0; padding: 28px 28px 0; font-size: 18px; }
+.dataset-files { margin-top: 10px; }
+.dataset-files > summary { font-weight: 600; cursor: pointer; padding: 6px 0; }
+.dataset-files[open] > summary { margin-bottom: 8px; }
 .totals-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 28px; margin: 0; padding: 0 28px 20px; }
 .totals-grid dt { font-size: 12px; color: var(--muted); }
 .totals-grid dd { margin: 3px 0 0; font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.totals-grid .totals-detail { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--muted); }
 .municipality-summary { border-bottom: 1px solid var(--border); }
 .dataset-note { padding: 0 28px 16px; margin: 12px 0 0; font-size: 12px; color: var(--muted); }
 .pagination { padding: 14px 28px; justify-content: space-between; }
@@ -106,7 +111,7 @@ h3 { font-size: 16px; line-height: 1.4; margin: 0 0 8px; }
 .principles p { color: var(--muted); font-size: 13px; max-width: 330px; margin-bottom: 0; }
 .site-footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1px solid var(--border); padding-block: 20px 28px; color: var(--muted); font-size: 11px; }
 .site-footer p { margin: 0; }
-.prose { max-width: 770px; padding-block: 60px; }
+.prose { max-width: 770px; padding-block: 60px; overflow-wrap: break-word; }
 .prose h2 { margin-top: 36px; margin-bottom: 12px; }
 .prose p, .prose li { color: #445c54; }
 .prose .lead { font-size: 19px; }

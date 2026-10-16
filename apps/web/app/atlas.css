@@ -58,9 +58,10 @@ nav a { color: var(--ink); }
 h1 { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; letter-spacing: -1.6px; }
 .hero h1 { font-size: clamp(36px, 4.3vw, 60px); line-height: 1.12; margin-bottom: 22px; }
 .hero h1 span { color: #dec4a2; }
-.hero-description { max-width: 625px; color: #e0e7e5; font-size: 16px; line-height: 1.75; margin-bottom: 27px; }
+.hero-description { max-width: 625px; color: #eef2f0; font-size: 16px; line-height: 1.75; margin-bottom: 27px; }
 .hero .project-note { max-width: 720px; padding-top: 20px; border-top: 1px solid #f4f0e729; }
-.hero .project-note p { color: #d6dfde; font-size: 12px; }
+/* Contraste medido sobre o gradiente real, inclusive no celular (≥ 4,5:1). */
+.hero .project-note p { color: #fafbfa; font-size: 12px; }
 .hero .badge { background: #dec4a21a; color: #f0ddc5; border-color: #dec4a266; border-radius: 3px; }
 
 .explorer { border-radius: 5px; box-shadow: 0 12px 36px #102c3507; }
@@ -81,7 +82,7 @@ th { font-size: 12px; background: #f6f5ef; }
 
 .principles { gap: 36px; padding-block: 34px 48px; }
 .principles article { position: relative; border-top-color: #244e5b40; padding-top: 22px; }
-.card-number { color: var(--copper); font-size: 12px; letter-spacing: 2px; }
+.card-number { color: #86492c; font-size: 12px; letter-spacing: 2px; }
 .principles h2 { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; font-size: 23px; margin-top: 11px; }
 .principles p { font-size: 14px; }
 .site-footer { font-size: 12px; border-top-color: #244e5b30; }

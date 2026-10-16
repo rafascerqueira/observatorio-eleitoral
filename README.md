@@ -115,7 +115,7 @@ curl http://127.0.0.1:3001/health/ready
 curl 'http://127.0.0.1:3001/elections/municipalities?year=2022&round=1&uf=SP&page=1&pageSize=25'
 ```
 
-Smoke tests e testes HTTP não substituem revisão visual nem auditoria de acessibilidade em navegador, que permanecem pendentes.
+Smoke tests e testes HTTP não substituem revisão em navegador. A primeira revisão visual e de acessibilidade (Firefox headless, axe-core, contraste medido sobre gradientes, teclado e refluxo) está em [acessibilidade](docs/acessibilidade.md); leitor de tela real e outros navegadores continuam pendentes.
 
 ## Estrutura
 
@@ -147,6 +147,6 @@ docker compose exec -T db psql -v ON_ERROR_STOP=1 -U observatorio -d observatori
 
 - Senador por UF (2022 elegeu uma vaga; 2026 terá duas), com regras próprias de cargo e validação. Suplementar de governador de RR (2026), em etapa própria. Deputados com apresentação resumida, preservando os dados completos e distinguindo votos nominais e de legenda, sem definir eleitos ou cadeiras sem auditoria específica.
 - Depois: integração IBGE/TSE no nível municipal e etapa espacial.
-- Interface: autocomplete, revisão visual e auditoria de teclado/leitor de tela em navegador.
+- Interface: autocomplete; teste com leitor de tela real e em Chrome/Safari/dispositivos móveis (revisão automatizada em Firefox feita: [acessibilidade](docs/acessibilidade.md)); página de UF longa (25 municípios com quadros por página).
 - Resultados de 2026 não foram importados.
 - Licença, nome definitivo e hospedagem não foram decididos. Não foi copiado código do repositório de referência.
