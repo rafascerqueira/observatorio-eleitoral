@@ -5,12 +5,14 @@ import { count, type Row } from './csv';
 export const IMPORTER_VERSION = 'sao-paulo-2022-v1';
 type Round = '1' | '2';
 /** Recorte auditado de uma eleição: cargo, códigos de eleição por turno e turnos esperados. */
-export type ElectionScope = { year: 2022; office: Office; cargo: string; electionCodes: Record<Round, string>; rounds: readonly Round[];
+export type ElectionScope = { year: 2022; office: Office; cargo: string; electionCodes: Partial<Record<Round, string>>; rounds: readonly Round[];
   /** Aceita votos Anulado / Anulado sub judice (nominal) e nulos técnicos (seções), reconciliados por zona. */
   nonValidVotes?: boolean };
 export const PRESIDENT_2022: ElectionScope = { year: 2022, office: 'president', cargo: '1', electionCodes: { '1': '544', '2': '545' }, rounds: ['1', '2'] };
 // Eleições estaduais de 2022 (546/547), auditadas nos originais das 27 UFs.
 export const GOVERNOR_2022: ElectionScope = { year: 2022, office: 'governor', cargo: '3', electionCodes: { '1': '546', '2': '547' }, rounds: ['1', '2'], nonValidVotes: true };
+// Senado 2022: uma vaga por UF, um voto por eleitor, maioria simples em turno único (eleição 546 apenas).
+export const SENATOR_2022: ElectionScope = { year: 2022, office: 'senator', cargo: '5', electionCodes: { '1': '546' }, rounds: ['1'], nonValidVotes: true };
 export type SectionVote = { electionCode: string; round: string; zone: number; section: number; local: string; number: string; votes: number; name: string | null; address: string | null; uf?: string; municipalityCode?: string; votableName?: string | null };
 type NonValid = z.infer<typeof nonValidVoteSchema>;
 type Classifier = (number: string) => 'blank' | 'null' | 'valid' | NonValid['category'];
@@ -240,7 +242,7 @@ function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: 
       allPlaces.push({ round, zone: first.zone, code: first.local, name: names.size === 1 ? first.name : null, address: addresses.size === 1 ? first.address : null, metadataConflict: variants.length > 1, metadataVariants: variants, sections: new Set(group.map((vote) => vote.section)).size, totals: placeTotals, candidates: candidatesWithPercent([...candidateInfo.values()].map((candidate) => ({ ...candidate, votes: counts.get(candidate.number) ?? 0 })), placeTotals.valid), ...(scope.nonValidVotes ? { nonValidVotes: nonValidList(counts, false) } : {}) });
     }
     const municipalNonValid = new Map<string, number>([...[...nonValidInfo.values()].map((item) => [item.number, item.votes] as const), ...technicalTotals]);
-    summaries.push({ ...municipality, electionCode: scope.electionCodes[round], round, totals: totals as Totals, candidates: candidatesWithPercent([...candidateInfo.values()], totals.valid!), zones: detailByZone.size, sections: sectionCount, pollingPlaces: placeGroups.size, nonInstalledSections, ...(scope.nonValidVotes ? { nonValidVotes: nonValidList(municipalNonValid, true) } : {}) });
+    summaries.push({ ...municipality, electionCode: scope.electionCodes[round]!, round, totals: totals as Totals, candidates: candidatesWithPercent([...candidateInfo.values()], totals.valid!), zones: detailByZone.size, sections: sectionCount, pollingPlaces: placeGroups.size, nonInstalledSections, ...(scope.nonValidVotes ? { nonValidVotes: nonValidList(municipalNonValid, true) } : {}) });
   }
   return { summaries, zones: allZones, places: allPlaces };
 }

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld } from '../src';
+import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES } from '../src';
 
 test('aplica defaults e limita a paginação sem coerção de entradas vazias', () => {
   const defaults = municipalityQuerySchema.parse({});
   assert.equal(defaults.year, '2022');
   assert.equal(defaults.pageSize, 25);
   assert.equal(municipalityQuerySchema.parse({ page: '2', pageSize: '100' }).page, 2);
-  for (const input of [{ page: '0' }, { page: '' }, { page: '1.5' }, { pageSize: '101' }, { uf: 'XX' }, { year: '2024' }, { round: '3' }, { office: 'senator' }, { unknown: 'field' }, { year: ['2022', '2026'] }]) {
+  for (const input of [{ page: '0' }, { page: '' }, { page: '1.5' }, { pageSize: '101' }, { uf: 'XX' }, { year: '2024' }, { round: '3' }, { office: 'deputies' }, { unknown: 'field' }, { year: ['2022', '2026'] }]) {
     assert.equal(municipalityQuerySchema.safeParse(input).success, false, JSON.stringify(input));
   }
 });
@@ -42,4 +42,12 @@ test('governador é cargo estadual: aceito por UF, rejeitado no Brasil e no exte
   assert.equal(old.rounds, undefined);
   assert.equal(roundHeld(old, '2'), true);
   assert.equal(roundHeld({ rounds: ['1'] }, '2'), false); assert.equal(roundHeld({ rounds: ['1'] }, '1'), true);
+});
+
+test('senador é cargo estadual de turno único', () => {
+  assert.equal(isStateOffice('senator'), true);
+  assert.equal(municipalityQuerySchema.parse({ office: 'senator', uf: 'RJ' }).office, 'senator');
+  for (const schema of [nationalQuerySchema, exteriorQuerySchema]) assert.equal(schema.safeParse({ office: 'senator' }).success, false);
+  assert.equal(stateQuerySchema.safeParse({ office: 'senator', uf: 'ZZ' }).success, false);
+  assert.deepEqual(SINGLE_ROUND_OFFICES, ['senator']);
 });

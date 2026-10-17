@@ -4,17 +4,20 @@ import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
-import { datasetSchema, municipalitySchema, pollingPlaceSchema, STATES, type MunicipalityResult } from '@observatorio/contracts';
+import { datasetSchema, municipalitySchema, pollingPlaceSchema, SINGLE_ROUND_OFFICES, STATES, type MunicipalityResult } from '@observatorio/contracts';
 import { rows, type Row } from './csv';
-import { GOVERNOR_2022, reconcile, sectionVote, type ElectionScope, type SectionVote } from './model';
+import { GOVERNOR_2022, SENATOR_2022, reconcile, sectionVote, type ElectionScope, type SectionVote } from './model';
 import { ROOT, sourceFile, stateSources } from './sources';
 import { PartitionWriter, readPartition } from './partition';
 import { municipalityCode, territoryKey, normalizeTerritoryKey } from './territory';
 import { persistTerritory } from './persist';
 
-/** Cargos estaduais auditados. Senado e deputados têm regras próprias e ainda não entram aqui. */
-const SCOPES: Record<string, ElectionScope> = { governor: GOVERNOR_2022 };
-const LABELS: Record<string, string> = { governor: 'Governador' };
+/** Cargos estaduais auditados. Deputados têm regras próprias (legenda, proporcional) e ainda não entram aqui. */
+const SCOPES: Record<string, ElectionScope> = { governor: GOVERNOR_2022, senator: SENATOR_2022 };
+const LABELS: Record<string, string> = { governor: 'Governador', senator: 'Senador' };
+/** Versão por cargo; publicações existentes nunca são reescritas. Governador v3: mesma regra de reconciliação da v2,
+ * mas locais e zonas passam a gravar `nonValidVotes` (a v2 os descartava na persistência) e a verificação inclui os locais. */
+const VERSIONS: Record<string, string> = { governor: 'governor-2022-state-v3', senator: 'senator-2022-state-v1' };
 /** Outras eleições do mesmo cargo presentes nas entradas da UF, excluídas de forma declarada e contada.
  * Qualquer outro código de eleição continua bloqueando a importação. */
 type Exclusion = { electionCode: string; description: string; reason: string };
@@ -116,8 +119,8 @@ async function run() {
   if (!scope || !uf || !(STATES as readonly string[]).includes(uf)) throw new Error(`Uso: --office ${Object.keys(SCOPES).join('|')} --uf <UF>`);
   config({ path: resolve(ROOT, '.env'), quiet: true });
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL obrigatória.');
-  // v2: votos Anulado/Anulado sub judice/nulos técnicos reconciliados e exclusões declaradas.
-  const version = `${scope.office}-${scope.year}-state-v2`;
+  // Governador v2 e Senador v1: votos Anulado/Anulado sub judice/nulos técnicos reconciliados e exclusões declaradas.
+  const version = VERSIONS[scope.office]!;
   const exclusions = EXCLUSIONS[scope.office]?.[uf] ?? [];
   const scopeKey = `${scope.year}/${scope.office}/${uf}`;
   const started = performance.now();
@@ -140,7 +143,8 @@ async function run() {
     // Turnos realizados na UF segundo a apuração: 1º, ou 1º e 2º. Cada município precisa ter todos eles;
     // linhas de turno fora desse conjunto no nominal ou nas seções bloqueiam a reconciliação.
     const rounds = [...new Set([...details.values()].flat().map((row) => row.NR_TURNO ?? 'ausente'))].sort() as Array<'1' | '2'>;
-    if (!['1', '1,2'].includes(rounds.join(','))) throw new Error(`Turnos na apuração de ${uf}: ${rounds.join(', ')}. Publicação bloqueada.`);
+    // Turno fora do recorte do cargo (ex.: 2º turno de Senador) bloqueia, em vez de ser descartado.
+    if (!['1', '1,2'].includes(rounds.join(',')) || rounds.some((round) => !scope!.rounds.includes(round))) throw new Error(`Turnos na apuração de ${uf}: ${rounds.join(', ')}. Publicação bloqueada.`);
     scope = { ...scope, rounds };
     const territories = new Map<string, Territory>();
     for (const item of Object.values(manifest.territories)) territories.set(territoryKey(item.uf, item.code), { ...item, code: municipalityCode(item.code) });
@@ -150,7 +154,7 @@ async function run() {
     const label = LABELS[scope.office]!;
     const dataset = datasetSchema.parse({ id, year: scope.year, office: scope.office, level: 'state', uf, rounds,
       ...(exclusions.length ? { exclusions: exclusions.map((item) => ({ ...item, rows: manifest.excluded[item.electionCode] ?? {} })) } : {}), importedAt: new Date().toISOString(), importerVersion: version, sources: manifest.sources, validation: 'reconciled',
-      scope: `${label} ${scope.year}, municípios de ${uf}; turnos separados, reconciliados por município e zona. Resultado estadual: soma dos municípios reconciliados, sem comparação com outras UFs. Registros descrevem local de votação, não residência.` });
+      scope: `${label} ${scope.year}, municípios de ${uf}; ${SINGLE_ROUND_OFFICES.includes(scope.office) ? 'turno único' : 'turnos separados'}, reconciliados por município e zona. Resultado estadual: soma dos municípios reconciliados, sem comparação com outras UFs. Registros descrevem local de votação, não residência.` });
     await client.query('INSERT INTO import_batches(id,scope,metadata) VALUES($1,$2,$3) ON CONFLICT(id) DO NOTHING', [id, scopeKey, dataset]);
     for (const [key, territory] of territories) {
       await client.query(`INSERT INTO import_coverage(batch_id,year,office,uf,code,name,status,reason,section_rows) VALUES($1,$2,$3,$4,$5,$6,'pending',NULL,$7) ON CONFLICT DO NOTHING`, [id, scope.year, scope.office, territory.uf, territory.code, territory.name, partitionCount(key)]);
@@ -188,7 +192,7 @@ async function run() {
     const verification = await verifyPersisted(client, id, scope, rounds);
     const records = await client.query('SELECT uf,code,name,status,reason,section_rows AS "sectionRows",metadata_conflicts AS "metadataConflicts" FROM import_coverage WHERE batch_id=$1 ORDER BY uf,code', [id]);
     const report = { dataset, coverage: records.rows, rowsOutsideScope: manifest.outsideScope, persistedVerification: verification,
-      checks: [`Somente ${label} (CD_CARGO ${scope.cargo}), eleições ${Object.values(scope.electionCodes).join('/')} e UF ${uf}; outra UF na entrada bloqueia`, 'Unicidade eleição/turno/cargo/UF/município/zona/seção/votável', 'Candidaturas e composição dos votos reconciliadas por zona em cada turno realizado', 'Aptos = comparecimento + abstenção + eleitores de seções não instaladas; seções principais = com votos + não instaladas', 'Checksum das partições e CRC das entradas ZIP', 'Votos persistidos por turno/votável e registros por município conferidos antes da publicação', 'Publicação atômica apenas com todos os municípios da UF reconciliados',
+      checks: [`Somente ${label} (CD_CARGO ${scope.cargo}), eleições ${Object.values(scope.electionCodes).join('/')} e UF ${uf}; outra UF na entrada bloqueia`, 'Unicidade eleição/turno/cargo/UF/município/zona/seção/votável', 'Candidaturas e composição dos votos reconciliadas por zona em cada turno realizado', 'Aptos = comparecimento + abstenção + eleitores de seções não instaladas; seções principais = com votos + não instaladas', 'Checksum das partições e CRC das entradas ZIP', 'Votos persistidos por turno/votável (a partir dos municípios e dos locais) e registros por município conferidos antes da publicação', 'Publicação atômica apenas com todos os municípios da UF reconciliados',
         'Votos = válidos + brancos + nulos (incluindo nulos técnicos) + anulados + anulados sub judice, por zona; cada candidatura anulada e cada votável de nulo técnico conferidos por zona', 'Outras eleições somente por exclusão declarada e contada'],
       limitations: ['ST_PENDENTE_TOT_FINAL ausente na apuração: não presumido.', 'Fontes de apuração/nominal e de seções têm datas de geração distintas; a compatibilidade é conferida pela reconciliação, não presumida.', 'Eleitores de seções não instaladas não são reclassificados como abstenção.', 'Aptos, comparecimento e abstenção por local permanecem null.', 'Resultado estadual não é comparável entre UFs: candidaturas diferem.', 'Nulo técnico não tem linha no nominal: nome do votável vem do arquivo de seções, sem partido nem situação.', 'Nenhuma associação residencial, IBGE ou socioeconômica.'],
       elapsedSeconds: Math.round((performance.now() - started) / 1000), peakRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) };
@@ -215,11 +219,17 @@ async function verifyPersisted(client: import('pg').PoolClient, id: string, scop
   const mismatched = await client.query<{ count: number }>(`SELECT count(*)::integer AS count FROM (
     SELECT uf,municipality_code,count(*) AS rows FROM national_section_votes WHERE batch_id=$1 GROUP BY uf,municipality_code
   ) s FULL JOIN (SELECT uf,code,section_rows FROM import_coverage WHERE batch_id=$1 AND status='reconciled') c ON s.uf=c.uf AND s.municipality_code=c.code WHERE s.rows IS DISTINCT FROM c.section_rows::bigint`, [id]);
-  const dimensions = await client.query<{ count: number }>(`SELECT count(*)::integer AS count FROM national_section_votes WHERE batch_id=$1 AND (year<>$2 OR office<>$3 OR NOT (round::text = ANY($4::text[])) OR election_code<>CASE WHEN round=1 THEN $5 ELSE $6 END)`, [id, scope.year, scope.office, rounds, scope.electionCodes['1'], scope.electionCodes['2']]);
+  const dimensions = await client.query<{ count: number }>(`SELECT count(*)::integer AS count FROM national_section_votes WHERE batch_id=$1 AND (year<>$2 OR office<>$3 OR NOT (round::text = ANY($4::text[])) OR election_code<>CASE WHEN round=1 THEN $5 ELSE $6 END)`, [id, scope.year, scope.office, rounds, scope.electionCodes['1'] ?? null, scope.electionCodes['2'] ?? null]);
   const summaries = await client.query<{ count: number }>('SELECT count(*)::integer AS count FROM municipality_results WHERE batch_id=$1', [id]);
   const reconciled = await client.query<{ count: number }>("SELECT count(*)::integer AS count FROM import_coverage WHERE batch_id=$1 AND status='reconciled'", [id]);
+  // Mesma soma a partir dos locais: candidaturas, não válidos, brancos e nulos comuns precisam reproduzir as seções.
+  const placeVotes = await client.query(`SELECT round,c->>'number' AS vote_number,sum((c->>'votes')::bigint)::text AS votes FROM national_place_results CROSS JOIN LATERAL jsonb_array_elements(result->'candidates') c WHERE batch_id=$1 GROUP BY round,c->>'number'
+    UNION ALL SELECT round,'95',sum((result->'totals'->>'blank')::bigint)::text FROM national_place_results WHERE batch_id=$1 GROUP BY round
+    UNION ALL SELECT round,n->>'number',sum((n->>'votes')::bigint)::text FROM national_place_results CROSS JOIN LATERAL jsonb_array_elements(coalesce(result->'nonValidVotes','[]'::jsonb)) n WHERE batch_id=$1 GROUP BY round,n->>'number'
+    UNION ALL SELECT round,'96',sum((result->'totals'->>'null')::bigint - coalesce((result->'totals'->>'technicalNull')::bigint,0))::text FROM national_place_results WHERE batch_id=$1 GROUP BY round ORDER BY round,vote_number`, [id]);
   const votesMatch = JSON.stringify(stored.rows) === JSON.stringify(expected.rows);
-  const ok = votesMatch && mismatched.rows[0]!.count === 0 && dimensions.rows[0]!.count === 0 && summaries.rows[0]!.count === reconciled.rows[0]!.count * rounds.length;
-  return { at: new Date().toISOString(), ok, votesMatch, mismatchedMunicipalities: mismatched.rows[0]!.count, outOfScopeRows: dimensions.rows[0]!.count, summaries: summaries.rows[0]!.count, votesByRoundAndNumber: stored.rows };
+  const placesMatch = JSON.stringify(stored.rows) === JSON.stringify(placeVotes.rows);
+  const ok = votesMatch && placesMatch && mismatched.rows[0]!.count === 0 && dimensions.rows[0]!.count === 0 && summaries.rows[0]!.count === reconciled.rows[0]!.count * rounds.length;
+  return { at: new Date().toISOString(), ok, votesMatch, placesMatch, mismatchedMunicipalities: mismatched.rows[0]!.count, outOfScopeRows: dimensions.rows[0]!.count, summaries: summaries.rows[0]!.count, votesByRoundAndNumber: stored.rows };
 }
 run().catch((error: unknown) => { console.error(error instanceof Error ? error.message : 'Importação estadual falhou.'); process.exitCode = 1; });

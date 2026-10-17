@@ -14,7 +14,9 @@ Eleições de 2022, com turnos sempre separados. Presidência:
 
 Governador, nas **27 UFs**: resultado da UF somado dos municípios reconciliados, municípios e locais de votação; 2º turno nas 12 UFs onde ocorreu, e “turno não realizado” nas demais. Votos anulados, anulados sub judice e nulos técnicos aparecem por categoria e com identificação da candidatura, fora do denominador dos válidos. Cargo estadual: a consulta exige UF, sem consolidado Brasil nem exterior. Ao escolher uma UF, a página inicial mostra também o resultado da UF para a Presidência.
 
-A suplementar de governador de RR (2026), senador, deputados, 2026 e dados do IBGE ainda não foram importados. Não há inferências sobre renda, motivação individual ou migração de votos.
+Senador, nas **27 UFs**: mesma apresentação do Governador (UF, municípios e locais, com as categorias não válidas identificadas), em turno único — a consulta do 2º turno informa que o cargo não tem 2º turno. Em 2022 cada UF elegeu uma vaga, com um voto por eleitor.
+
+A suplementar de governador de RR (2026), 2026 e dados do IBGE ainda não foram importados. Deputados estão fora do escopo atual. Não há inferências sobre renda, motivação individual ou migração de votos.
 
 ## Iniciar localmente
 
@@ -53,9 +55,10 @@ npm run import:national                              # municípios das 27 UFs
 npm run verify:national -w @observatorio/importer    # reconfere a persistência
 npm run import:exterior                              # exterior (ZZ)
 npm run import:state -- --office governor --uf SP    # Governador, uma UF por vez
+npm run import:state -- --office senator --uf SP     # Senador, uma UF por vez
 ```
 
-`import:state` usa as entradas da UF nos mesmos ZIPs de apuração e votação nominal e baixa o ZIP de seções da UF (2,86 GiB nas 27 UFs; SP: 859 MiB, com todos os cargos estaduais; só o cargo pedido é selecionado). A verificação da persistência roda dentro do importador, antes da publicação. Para todas as UFs: `for uf in AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO; do npm run import:state -- --office governor --uf $uf; done` (cerca de 75 min na primeira execução).
+`import:state` usa as entradas da UF nos mesmos ZIPs de apuração e votação nominal e baixa o ZIP de seções da UF (2,86 GiB nas 27 UFs; SP: 859 MiB, com todos os cargos estaduais; só o cargo pedido é selecionado). A verificação da persistência roda dentro do importador, antes da publicação. Para todas as UFs: `for uf in AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO; do npm run import:state -- --office governor --uf $uf; done` (cerca de 75 min na primeira execução; troque `governor` por `senator` para o Senado).
 
 Na primeira execução, o importador baixa três ZIPs oficiais do TSE (cerca de 816 MiB) e lê o arquivo nacional de seções em fluxo; a preparação inicial pode levar bastante tempo. Espere alguns GiB em `data/` e cerca de 3 GiB no PostgreSQL.
 
@@ -72,7 +75,8 @@ O relatório de cada versão fica em `data/audit/<dataset-id>.json` (cobertura p
 
 - [Importação nacional](docs/importacao-nacional-2022.md): versão `president-2022-national-v2`, normalização dos códigos TSE com cinco dígitos, tentativa v1 rejeitada, seções não instaladas e métricas.
 - [Exterior](docs/exterior-2022.md): versão `president-2022-exterior-v1`, zona única do exterior e os eleitores de seções não instaladas (657 no consolidado Brasil, por turno).
-- [Governador 2022](docs/governador-2022.md): versão `governor-2022-state-v2` nas 27 UFs, eleições 546/547, votos anulados e nulos técnicos, exclusão declarada da suplementar de RR e conferência contra os originais.
+- [Governador 2022](docs/governador-2022.md): versão `governor-2022-state-v2` publicada nas 27 UFs (os locais não trazem o quadro de não válidos; a v3, que corrige isso, está pronta e aguarda reimportação), eleições 546/547, votos anulados e nulos técnicos, exclusão declarada da suplementar de RR e conferência contra os originais.
+- [Senador 2022](docs/senador-2022.md): versão `senator-2022-state-v1` nas 27 UFs, eleição 546 em turno único, categorias não válidas por UF e conferência contra os originais.
 
 Seções não instaladas não são somadas à abstenção: aptos = comparecimento + abstenção + eleitores dessas seções. Nomes/endereços divergentes de um mesmo local ficam indisponíveis, com variantes preservadas e aviso no painel. Aptos e abstenção por local permanecem indisponíveis.
 
@@ -107,7 +111,8 @@ Os smoke tests exigem web, API e banco em execução. Endereços alternativos po
 | `npm run smoke:national` | `import:national` | 27 UFs nos dois turnos, locais, transparência e SHA-256 dos originais servidos por HTTP |
 | `npm run smoke:exterior` | `import:exterior` | Formulários (GET, erros por campo, turnos) e consulta do exterior |
 | `npm run smoke:summary` | nacional + exterior | Consolidado Brasil contra todos os agregados domésticos e do exterior |
-| `npm run smoke:governor` | `import:state` (SP, demais UFs opcionais) + nacional | Governador SP contra os totais dos originais; em todas as UFs publicadas: invariantes, turnos, categorias não válidas, exclusão de RR, UF obrigatória e páginas |
+| `npm run smoke:governor` | `import:state` (SP, demais UFs opcionais) + nacional | Governador SP contra os totais dos originais; em todas as UFs publicadas: invariantes, turnos, categorias não válidas (também nos locais, v3), exclusão de RR, UF obrigatória e páginas |
+| `npm run smoke:senator` | `import:state --office senator` (qualquer UF) + nacional | Em cada UF publicada: aptos, votos, válidos e municípios dos originais, invariantes, turno único, categorias não válidas, casos auditados, locais do Rio com nulos técnicos, separação do Governador e páginas |
 
 ```sh
 curl http://127.0.0.1:3001/health/live
@@ -127,7 +132,7 @@ packages/contracts/  Esquemas Zod e tipos compartilhados entre web, API e import
 scripts/             Inicialização conjunta (dev.mjs) e smoke tests
 docs/                Decisões técnicas, contrato da API, auditorias e análises
 plan.md              Contexto, princípios, decisões e histórico de implementação
-CLAUDE.md            Orientações para assistentes de código
+AGENTS.md            Orientações para assistentes de código (Codex; CLAUDE.md o importa)
 ```
 
 A conexão usa o driver `pg`; Prisma ainda não foi adotado. O esquema está em `apps/importer/src/schema.sql` e `apps/importer/src/migrations/`, aplicados pelos importadores. Versões e referências das escolhas técnicas: [decisões técnicas](docs/decisoes-tecnicas.md).
@@ -145,7 +150,8 @@ docker compose exec -T db psql -v ON_ERROR_STOP=1 -U observatorio -d observatori
 
 ## Pendências e próximos passos
 
-- Senador por UF (2022 elegeu uma vaga; 2026 terá duas), com regras próprias de cargo e validação. Suplementar de governador de RR (2026), em etapa própria. Deputados com apresentação resumida, preservando os dados completos e distinguindo votos nominais e de legenda, sem definir eleitos ou cadeiras sem auditoria específica.
+- Deputados (federais, estaduais e distritais) ficam fora do escopo por enquanto (decisão de 17/10/2026): cerca de 50 milhões de registros de seção em 2022, ~20 GB no PostgreSQL; o armazenamento fica reservado aos dados do IBGE e ao cruzamento IBGE–TSE. Os originais já baixados preservam esses cargos.
+- Senador 2026 (duas vagas, dois votos por eleitor): regra de denominador própria. Suplementar de governador de RR (2026), em etapa própria.
 - Depois: integração IBGE/TSE no nível municipal e etapa espacial.
 - Interface: autocomplete; teste com leitor de tela real e em Chrome/Safari/dispositivos móveis (revisão automatizada em Firefox feita: [acessibilidade](docs/acessibilidade.md)); página de UF longa (25 municípios com quadros por página).
 - Resultados de 2026 não foram importados.

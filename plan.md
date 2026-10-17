@@ -231,6 +231,28 @@ Corrigidos: rolagem horizontal em `/fontes` no celular, três contrastes abaixo 
 ### Decisões pendentes para a próxima sessão
 
 1. Suplementar de Governador de RR (eleição 6278, 21/06/2026, presente nos arquivos marcados como 2022): como tratá-la (proposta: recorte próprio "suplementar 2026", sem somar nem comparar com a ordinária de 2022); como apresentar os 160.004 votos "Anulado sub judice", maiores que os válidos (102.845), deixando explícita a provisoriedade da classificação; conferir situação da totalização e eventual 2º turno antes de importar.
-2. Senador 2022 (uma vaga por UF; 2026 terá duas): auditoria e regras.
+2. Senador 2022 (uma vaga por UF; 2026 terá duas): auditoria e regras. → Concluído no §20.
 3. Página de UF longa (25 municípios com quadros por página): rever apresentação.
 4. Incorporar ao repositório as verificações de acessibilidade (exigiria `puppeteer-core`, `axe-core` e `pngjs` como dependências de desenvolvimento) e testar com leitor de tela real e outros navegadores.
+
+## 20. Senador 2022 nas 27 UFs e mudança de escopo — 17/10/2026
+
+Rafael pediu o Senado diretamente nas 27 UFs, sem piloto. Durante a carga, decidiu **retirar os deputados (federais, estaduais e distritais) do escopo por enquanto**, unicamente para reservar armazenamento à integração do IBGE e ao cruzamento IBGE–TSE, que é o propósito inicial do projeto (§1, §3) e também aumentará o volume de dados. Estimativa que embasou a decisão: em AC e PE, as linhas de seção de Deputado Federal e Estadual somam 13 a 14 vezes as do Senado, ou seja, cerca de 50 milhões de registros em 2022 e uns 20 GB no PostgreSQL, levando o projeto local a 55–60 GB. Os ZIPs por UF já baixados preservam os cargos 6, 7 e 8; nada foi descartado. A interface e o catálogo passam a indicar deputados como fora do escopo atual, não como próxima etapa. Próxima prioridade após o Senado: dados do IBGE e sua correspondência validada com o TSE. Retomar os deputados exige nova decisão de Rafael, considerando o armazenamento já ocupado pelo IBGE, e auditoria própria (legenda, proporcional, cadeiras).
+
+Senado — auditoria prévia dos originais (27 UFs, leitura independente): cargo 5 só na eleição 546, turno 1; sem trânsito, legenda, apuração em separado, duplicatas, outra UF ou suplementar (em RR, a suplementar de 2026 é só de Governador). Seções, apuração e nominal coincidem em todas as UFs. Há anulados, sub judice e nulos técnicos em 18 UFs (RJ: 1.573.388 nulos técnicos; PB: 431.857 anulados), todos dentro da regra decidida para o Governador v2 — por isso nenhuma decisão nova foi necessária. Em AP e MS, "Anulado" convive com registro "deferido"; exibido como na fonte, sem interpretação.
+
+Implementação: `SENATOR_2022` (cargo 5, eleição 546, turnos `['1']`, `electionCodes` parcial); `senator` em `OFFICES`/`STATE_OFFICES` e novo `SINGLE_ROUND_OFFICES` nos contratos; `import:state -- --office senator`, versão `senator-2022-state-v1`; turno da apuração fora do recorte do cargo bloqueia; o catálogo lista UFs pendentes de qualquer cargo estadual; a interface diz "eleito em turno único" no 2º turno do Senado. Nenhuma exclusão declarada.
+
+Defeito encontrado e corrigido no código: `persistTerritory` descartava `nonValidVotes` de locais e zonas (Governador v2: totais certos, quadro de não válidos ausente nos locais; 0 de 1.179 locais de SE). Locais e zonas passam a ser gravados como o objeto validado, e a verificação persistida reconta os votos pelos locais (falha nos dados v2 de SE/PR, passa em AC). O importador do Governador foi para a `governor-2022-state-v3`; a v2 continua publicada e não foi reescrita. **Decisão pendente de Rafael:** reimportar o Governador v3 (cerca de 75 min, ~1,9 GB a mais no banco).
+
+Resultado: 27 UFs publicadas, 5.570 municípios, 3.790.841 registros (igual à auditoria), nenhum bloqueio; cerca de 61 min somados, pico de 509 MiB; banco em 7,7 GB. Verificação: 659 conferências independentes originais × API sem divergência; 49 testes, tipos e build; `smoke:senator` (27 UFs, 132 requisições) e regressão de todos os smokes no build de produção. Achado à parte: em `npm run dev`, a rota de relatório da API serializa o `StreamableFile` como JSON e derruba `smoke:national`/`smoke:exterior`; no build de produção funciona. Defeito anterior, ainda não corrigido. Detalhes em `docs/senador-2022.md`.
+
+Também nesta data: `AGENTS.md` passou a ser o único arquivo de orientações (o `CLAUDE.md` só o importa), com uma seção sobre o revezamento entre Codex e Claude Code.
+
+### Decisões pendentes (atualizado em 17/10/2026)
+
+1. Reimportação do Governador v3 (correção dos locais).
+2. Suplementar de Governador de RR (2026), como no item 1 da lista do §19.
+3. IBGE: escolher as variáveis e a escala municipal e validar a correspondência de códigos TSE–IBGE. É a próxima prioridade.
+4. Página de UF longa; verificações de acessibilidade no repositório; revisão em navegador das páginas do Senado.
+5. Rota de relatório em modo dev (`tsx watch`).

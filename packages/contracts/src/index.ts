@@ -2,11 +2,13 @@ import { z } from 'zod';
 
 export const STATES = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'] as const;
 export const TERRITORIES = [...STATES, 'ZZ'] as const;
-export const OFFICES = ['president', 'governor'] as const;
+export const OFFICES = ['president', 'governor', 'senator'] as const;
 export type Office = typeof OFFICES[number];
-export const OFFICE_LABELS: Record<Office, string> = { president: 'Presidência', governor: 'Governador' };
+export const OFFICE_LABELS: Record<Office, string> = { president: 'Presidência', governor: 'Governador', senator: 'Senador' };
 /** Cargos estaduais: candidaturas diferem por UF; resultados não são comparáveis entre UFs nem somados ao Brasil. */
-export const STATE_OFFICES: readonly Office[] = ['governor'];
+export const STATE_OFFICES: readonly Office[] = ['governor', 'senator'];
+/** Cargos eleitos por maioria simples em turno único: não existe 2º turno, nem a ser importado. */
+export const SINGLE_ROUND_OFFICES: readonly Office[] = ['senator'];
 export const isStateOffice = (office: Office) => STATE_OFFICES.includes(office);
 const integerParameter = (minimum: number, maximum: number, fallback: number) =>
   z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(minimum).max(maximum)).default(fallback);
@@ -47,7 +49,7 @@ export const voteTotalsSchema = z.object({
   eligible: nonnegative.nullable(), turnout: nonnegative.nullable(), abstentions: nonnegative.nullable(),
   valid: nonnegative, blank: nonnegative, null: nonnegative, totalVotes: nonnegative,
   nonInstalledEligible: nonnegative.nullable().optional(),
-  // Recortes com votos não computados como válidos (Governador v2). Ausentes nas versões anteriores:
+  // Recortes com votos não computados como válidos (Governador v2, Senador). Ausentes nas versões anteriores:
   // não significam zero. `technicalNull` está contido em `null`; anulados ficam fora de válidos e nulos.
   annulled: nonnegative.nullable().optional(), annulledSubJudice: nonnegative.nullable().optional(), technicalNull: nonnegative.nullable().optional(),
 });

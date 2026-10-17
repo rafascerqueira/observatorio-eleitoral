@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { placesQuerySchema, OFFICE_LABELS } from '@observatorio/contracts';
+import { placesQuerySchema, OFFICE_LABELS, SINGLE_ROUND_OFFICES } from '@observatorio/contracts';
 import { getPlaces } from '../../../lib/results';
 import { clearPlacesHref, placesHref } from '../../../lib/place-navigation';
 import { QueryForm } from '../../../components/query-form';
@@ -73,7 +73,7 @@ export default async function Municipality({ params, searchParams }: { params: P
     <section id="resultados" className="places-results" aria-labelledby="resultados-titulo" tabIndex={-1}>
       <h2 id="resultados-titulo">Locais encontrados</h2>
       <p className="query-note places-scope">{filters.section ? <>A seção {filters.section}{filters.zone ? ` da zona ${filters.zone}` : ''} é usada para localizar o local. </> : null}Os resultados exibidos são do <strong>local inteiro</strong>. Percentuais de candidaturas usam os votos válidos do local.</p>
-      {!parsed.success || scopeError ? <p>Revise os filtros acima e busque novamente.</p> : response?.kind !== 'ready' ? <div className="place-status" role="status"><h3>{response?.kind === 'round-not-held' ? `Não houve ${filters.round}º turno para ${officeLabel} nesta UF em ${filters.year}` : response?.kind === 'missing' ? 'Recorte sem publicação disponível' : 'Não foi possível consultar os locais'}</h3><p>{response?.kind === 'round-not-held' ? 'Segundo a apuração do TSE, a eleição foi decidida no 1º turno. Escolha o 1º turno acima.' : 'Confira o ano e turno ou tente novamente em instantes.'}</p></div> : <>
+      {!parsed.success || scopeError ? <p>Revise os filtros acima e busque novamente.</p> : response?.kind !== 'ready' ? <div className="place-status" role="status"><h3>{response?.kind === 'round-not-held' ? `Não houve ${filters.round}º turno para ${officeLabel} nesta UF em ${filters.year}` : response?.kind === 'missing' ? 'Recorte sem publicação disponível' : 'Não foi possível consultar os locais'}</h3><p>{response?.kind === 'round-not-held' ? `${SINGLE_ROUND_OFFICES.includes(filters.office) ? `${officeLabel} é eleito por maioria simples, em turno único.` : 'Segundo a apuração do TSE, a eleição foi decidida no 1º turno.'} Escolha o 1º turno acima.` : 'Confira o ano e turno ou tente novamente em instantes.'}</p></div> : <>
       <p className="places-count" role="status">{number(response.data.total)} {response.data.total === 1 ? 'local encontrado' : 'locais encontrados'}{filtered ? ' com os filtros aplicados' : ''}{response.data.items.length > 0 ? ` · exibindo ${number(firstItem)}–${number(lastItem)}` : ''}.</p>
       {pagination('acima')}
       {response.data.items.length === 0 ? <div className="place-status"><h3>{response.data.total === 0 ? 'Nenhum local corresponde à busca' : 'Esta página não contém locais'}</h3><p>{response.data.total === 0 ? 'Confira zona, seção e código do local, ou tente um trecho menor do nome ou endereço.' : 'Os filtros têm resultados, mas a página solicitada está fora do intervalo disponível.'}</p><Link href={response.data.total === 0 ? clearHref : placesHref(code, filters, { page: 1 })}>{response.data.total === 0 ? 'Limpar filtros e ver os locais' : 'Ir para a primeira página da busca'}</Link></div> :

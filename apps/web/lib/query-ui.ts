@@ -36,7 +36,7 @@ export function queryErrors(query: RawQuery, issues: readonly Issue[], mode: 'mu
   const instructions: Record<string, string> = {
     year: 'Escolha uma eleição disponível no seletor: 2022 ou 2026.',
     round: 'Escolha o 1º ou o 2º turno.',
-    office: 'Escolha um cargo disponível no seletor: Presidência ou Governador.',
+    office: 'Escolha um cargo disponível no seletor: Presidência, Governador ou Senador.',
     uf: mode === 'places' ? 'A UF do endereço é inválida. Uma nova busca remove esse valor; volte à consulta municipal para escolher outra UF.' : 'Escolha Todo o Brasil ou uma das 27 UFs.',
     zone: 'Informe uma zona de 1 a 9999, usando apenas números. Zeros iniciais são aceitos.',
     section: 'Informe uma seção de 1 a 99999, usando apenas números. Zeros iniciais são aceitos.',

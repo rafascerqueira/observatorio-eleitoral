@@ -85,3 +85,7 @@ Em SP, os aptos de governador diferem entre os turnos (+2.306) e também dos da 
 - Reexecução com os mesmos originais: "Já publicado", sem duplicação.
 
 Pendentes: revisão visual e auditoria de teclado/leitor de tela em navegador; suplementar de 2026 em RR; senador.
+
+## Correção posterior — 17/10/2026
+
+Na v2, locais e zonas foram gravados sem `nonValidVotes` (lista fixa de colunas na persistência); os totais estão corretos, mas o quadro de candidaturas não válidas não aparece nos locais. A afirmação acima de que o quadro aparece "nos locais" não vale para a v2. O importador passou à `governor-2022-state-v3`, que grava o objeto reconciliado inteiro e reconta os votos pelos locais antes de publicar; a reimportação ainda não foi feita. Detalhes em [Senador 2022](senador-2022.md#correção-na-gravação-de-locais-e-zonas-governador-v3).

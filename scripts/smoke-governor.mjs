@@ -73,7 +73,7 @@ for (const item of governorDatasets) {
     assert.equal(candidates.reduce((sum, candidate) => sum + candidate.votes, 0), totals.valid);
     assert.equal(totals.totalVotes, totals.valid + totals.blank + totals.null + (totals.annulled ?? 0) + (totals.annulledSubJudice ?? 0), `${item.uf} ${round}: composição`);
     assert.equal(totals.eligible, totals.turnout + totals.abstentions + (totals.nonInstalledEligible ?? 0));
-    if (item.importerVersion.endsWith('-v2')) {
+    if (!item.importerVersion.endsWith('-v1')) {
       for (const [category, field] of [['annulled', 'annulled'], ['annulled-sub-judice', 'annulledSubJudice'], ['technical-null', 'technicalNull']]) {
         assert.equal(nonValidVotes.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.votes, 0), totals[field], `${item.uf} ${round}: ${category}`);
       }
@@ -96,6 +96,14 @@ if (roraima) {
   const state = await json('/elections/state?office=governor&uf=RR&round=1');
   assert.equal(state.dataset.id, roraima.id); assert.equal(state.summary.totals.annulledSubJudice, 0, 'Sub judice da suplementar de 2026 não entra em 2022');
   assert.equal(state.summary.totals.totalVotes, 304319);
+}
+// v3: locais guardam as candidaturas não válidas (a v2 as descartava na gravação).
+const sergipe = governorDatasets.find((item) => item.uf === 'SE');
+if (sergipe && !['-v1', '-v2'].some((suffix) => sergipe.importerVersion.endsWith(suffix))) {
+  const places = await json('/elections/municipalities/31054/places?office=governor&uf=SE&round=1&pageSize=100');
+  assert.ok(places.items.length > 0);
+  for (const place of places.items) assert.equal((place.nonValidVotes ?? []).filter((entry) => entry.category === 'technical-null').reduce((sum, entry) => sum + entry.votes, 0), place.totals.technicalNull, `local ${place.zone}/${place.code}`);
+  assert.ok(places.items.some((place) => place.nonValidVotes?.some((entry) => entry.number === '22' && entry.votes > 0)));
 }
 if (governorDatasets.some((item) => item.uf === 'SE')) {
   const page = await html('/?office=governor&uf=SE&round=1');

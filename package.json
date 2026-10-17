@@ -21,6 +21,7 @@
     "smoke:summary": "node scripts/smoke-summary.mjs",
     "smoke:exterior": "node scripts/smoke-forms-exterior.mjs",
     "smoke:governor": "node scripts/smoke-governor.mjs",
+    "smoke:senator": "node scripts/smoke-senator.mjs",
     "db:up": "docker compose up -d --wait db",
     "db:stop": "docker compose stop db",
     "compose:up": "docker compose --profile app up --build -d --wait"

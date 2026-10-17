@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, isStateOffice, roundHeld, OFFICE_LABELS, STATES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { nationalSummary } from './national-summary';
 
@@ -173,13 +173,14 @@ export class ElectionsController {
     const coverageRegistry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_coverage')::text AS registry");
     const coverage = coverageRegistry.rows[0]?.registry ? await this.database.query<{ batch_id: string; uf: string; status: string; municipalities: number; sectionRows: number }>('SELECT batch_id,uf,status,count(*)::integer AS municipalities,sum(section_rows)::integer AS "sectionRows" FROM import_coverage GROUP BY batch_id,uf,status ORDER BY uf,status') : { rows: [] };
     return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
-      ...(() => {
-        // Cargo estadual: só as UFs sem publicação continuam pendentes.
-        const published = new Set(batches.rows.filter((batch) => batch.published && batch.scope.startsWith('2022/governor/')).map((batch) => batch.scope.split('/')[2]));
+      // Cargo estadual: só as UFs sem publicação continuam pendentes.
+      ...STATE_OFFICES.flatMap((office) => {
+        const published = new Set(batches.rows.filter((batch) => batch.published && batch.scope.startsWith(`2022/${office}/`)).map((batch) => batch.scope.split('/')[2]));
         const missing = STATES.filter((uf) => !published.has(uf));
-        return missing.length ? [{ office: 'governor', label: published.size ? `Governador — ${missing.join(', ')}` : 'Governador', status: 'not-imported' as const }] : [];
-      })(),
-      { office: 'senator', label: 'Senador', status: 'not-imported' }, { office: 'deputies', label: 'Deputados federais, estaduais e distritais', status: 'not-imported' }] });
+        return missing.length ? [{ office, label: published.size ? `${OFFICE_LABELS[office]} — ${missing.join(', ')}` : OFFICE_LABELS[office], status: 'not-imported' as const }] : [];
+      }),
+      // Fora do escopo atual (decisão de 17/10/2026): volume ~13× o do Senado; armazenamento reservado ao IBGE.
+      { office: 'deputies', label: 'Deputados federais, estaduais e distritais (fora do escopo atual)', status: 'not-imported' }] });
   }
 
   @Get('imports/:id/coverage')

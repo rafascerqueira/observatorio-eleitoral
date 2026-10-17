@@ -14,6 +14,8 @@ export async function persistTerritory(client: PoolClient, id: string, scope: El
   for (let start = 0; start < sections.length; start += 2000) {
     await client.query(`INSERT INTO national_section_votes SELECT $1,$2,x."electionCode",x.round::integer,$3,$4,$5,x.zone,x.section,x.local,x.number,x.votes FROM jsonb_to_recordset($6::jsonb) AS x("electionCode" text,round text,zone integer,section integer,local text,number text,votes integer)`, [...key, JSON.stringify(sections.slice(start, start + 2000))]);
   }
-  await client.query(`INSERT INTO national_zone_results SELECT $1,$2,$3,$4,$5,x.round::integer,x.zone,to_jsonb(x) FROM jsonb_to_recordset($6::jsonb) AS x(round text,zone integer,totals jsonb,candidates jsonb)`, [...key, JSON.stringify(results.zones)]);
-  await client.query(`INSERT INTO national_place_results SELECT $1,$2,$3,$4,$5,x.round::integer,x.zone,x.code,to_jsonb(x) FROM jsonb_to_recordset($6::jsonb) AS x(round text,zone integer,code text,name text,address text,sections integer,totals jsonb,candidates jsonb,"metadataConflict" boolean,"metadataVariants" jsonb)`, [...key, JSON.stringify(results.places)]);
+  // Zonas e locais são gravados como o objeto reconciliado inteiro. Uma lista fixa de colunas (até Governador v2)
+  // descartava `nonValidVotes` dos locais e zonas sem bloquear a publicação.
+  await client.query(`INSERT INTO national_zone_results SELECT $1,$2,$3,$4,$5,(x->>'round')::integer,(x->>'zone')::integer,x FROM jsonb_array_elements($6::jsonb) AS x`, [...key, JSON.stringify(results.zones)]);
+  await client.query(`INSERT INTO national_place_results SELECT $1,$2,$3,$4,$5,(x->>'round')::integer,(x->>'zone')::integer,x->>'code',x FROM jsonb_array_elements($6::jsonb) AS x`, [...key, JSON.stringify(results.places)]);
 }

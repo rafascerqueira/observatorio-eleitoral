@@ -1,6 +1,6 @@
-# API de consultas — Presidência e Governador 2022
+# API de consultas — Presidência, Governador e Senador 2022
 
-As rotas são públicas e de leitura. A consulta prioriza a versão nacional publicada; durante sua preparação, preserva o piloto São Paulo (71072). Turnos permanecem separados. O catálogo informa a cobertura real. Governador é consultável por UF, com uma publicação por UF; senador e deputados ainda não são cargos consultáveis.
+As rotas são públicas e de leitura. A consulta prioriza a versão nacional publicada; durante sua preparação, preserva o piloto São Paulo (71072). Turnos permanecem separados. O catálogo informa a cobertura real. Governador e Senador são consultáveis por UF, com uma publicação por UF e cargo; deputados ainda não são cargos consultáveis.
 
 | Rota | Resposta |
 | --- | --- |
@@ -23,7 +23,7 @@ As rotas são públicas e de leitura. A consulta prioriza a versão nacional pub
 | --- | --- | --- |
 | `year` | `2022`, `2026` | `2022` |
 | `round` | `1`, `2` | `1` |
-| `office` | `president`, `governor` | `president` |
+| `office` | `president`, `governor`, `senator` | `president` |
 | `uf` | Sigla oficial de UF, em maiúsculas | Sem restrição |
 | `search` | Nome municipal, até 100 caracteres | Sem restrição |
 | `page` | Inteiro de 1 a 1.000.000 | `1` |
@@ -31,7 +31,7 @@ As rotas são públicas e de leitura. A consulta prioriza a versão nacional pub
 | `sort` | `municipality`, `uf` | `municipality` |
 | `direction` | `asc`, `desc` | `asc` |
 
-Parâmetros desconhecidos, repetidos ou fora do domínio são rejeitados. `uf` sem filtro deve ser omitido. Com `office=governor`, `uf` é obrigatória (`400` com `fields: ["uf"]`): cargo estadual não tem consulta nacional, e cada UF tem publicação própria. Uma UF sem publicação para o cargo retorna `awaiting-import`. Um turno que não ocorreu na UF (eleição decidida no 1º turno, segundo a apuração) retorna `status: "round-not-held"`, com `items: []`, `total: 0` e o `dataset` da publicação — não é ausência de dados. Nenhum ano ou turno nos filtros confirma disponibilidade ou totalização.
+Parâmetros desconhecidos, repetidos ou fora do domínio são rejeitados. `uf` sem filtro deve ser omitido. Com `office=governor` ou `office=senator`, `uf` é obrigatória (`400` com `fields: ["uf"]`): cargo estadual não tem consulta nacional, e cada UF tem publicação própria. Uma UF sem publicação para o cargo retorna `awaiting-import`. Um turno que não ocorreu na UF (eleição decidida no 1º turno, segundo a apuração, ou cargo de turno único, como Senador) retorna `status: "round-not-held"`, com `items: []`, `total: 0` e o `dataset` da publicação — não é ausência de dados. Nenhum ano ou turno nos filtros confirma disponibilidade ou totalização.
 
 Exemplo sem publicação (como 2026):
 
@@ -61,7 +61,7 @@ Exemplo sem publicação (como 2026):
 
 `importedAt` registra o cadastro da versão no início da carga reconciliada, não a hora exata da troca pública. O relatório registra também a data da verificação posterior da persistência (`persistedVerification.at`).
 
-`totals` inclui `eligible`, `turnout`, `abstentions`, `valid`, `blank`, `null` e `totalVotes`. Publicações de Governador v2 incluem também `annulled`, `annulledSubJudice` e `technicalNull` (este contido em `null`): `totalVotes = valid + blank + null + annulled + annulledSubJudice`. Em versões anteriores esses campos são ausentes ou, em somas que misturam versões, `null` — nunca zero presumido. Itens, zonas, locais e consolidados dessas versões trazem `nonValidVotes`: número, nome, partido (ou `null`), `category` (`annulled`, `annulled-sub-judice`, `technical-null`), `nameSource` (`nominal` ou `section`, este para nulo técnico, sem linha no nominal), `detail` (situação do registro na fonte) e votos, sem percentual sobre válidos. Cada candidatura inclui número, nome de urna, partido, votos e `percentValid`. Percentuais usam o denominador do mesmo turno e recorte; denominador zero produz `null`.
+`totals` inclui `eligible`, `turnout`, `abstentions`, `valid`, `blank`, `null` e `totalVotes`. Publicações de Governador v2/v3 e de Senador incluem também `annulled`, `annulledSubJudice` e `technicalNull` (este contido em `null`): `totalVotes = valid + blank + null + annulled + annulledSubJudice`. Em versões anteriores esses campos são ausentes ou, em somas que misturam versões, `null` — nunca zero presumido. Itens, locais e consolidados dessas versões trazem `nonValidVotes` (nos locais e zonas, só a partir de Governador v3 e Senador v1; na v2 o campo ficou ausente nos locais, sem significar zero): número, nome, partido (ou `null`), `category` (`annulled`, `annulled-sub-judice`, `technical-null`), `nameSource` (`nominal` ou `section`, este para nulo técnico, sem linha no nominal), `detail` (situação do registro na fonte) e votos, sem percentual sobre válidos. Cada candidatura inclui número, nome de urna, partido, votos e `percentValid`. Percentuais usam o denominador do mesmo turno e recorte; denominador zero produz `null`.
 
 Municípios com seções não instaladas expõem `totals.nonInstalledEligible` e `nonInstalledSections`. Aptos = comparecimento + abstenção + eleitores de seções não instaladas. Esses eleitores não são somados à abstenção. `sections` conta seções principais com registros; o total oficial de principais é `sections + nonInstalledSections`. Campos novos são opcionais para preservar versões anteriores; não interpretar ausência como zero. Nos locais, `nonInstalledEligible` é `null`, sem correspondência por seção inventada.
 
@@ -81,9 +81,9 @@ Quando ZZ está publicado integralmente, a API exige os mesmos arquivos, entrada
 
 ## Consolidado da UF
 
-`GET /elections/state` aceita somente `year`, `round`, `office` e `uf` (obrigatória, uma das 27 UFs; `ZZ` é rejeitada). Para Presidência usa a publicação nacional; para Governador, a publicação da UF (`scope` `2022/governor/<UF>`). O piloto municipal da Presidência não é tratado como UF inteira e retorna `awaiting-import`. Turno não realizado retorna `round-not-held` com `summary: null`.
+`GET /elections/state` aceita somente `year`, `round`, `office` e `uf` (obrigatória, uma das 27 UFs; `ZZ` é rejeitada). Para Presidência usa a publicação nacional; para Governador e Senador, a publicação da UF e do cargo (`scope` `2022/governor/<UF>`, `2022/senator/<UF>`). O piloto municipal da Presidência não é tratado como UF inteira e retorna `awaiting-import`. Turno não realizado retorna `round-not-held` com `summary: null`.
 
-A resposta segue o formato do consolidado Brasil (`status`, `filters`, `dataset`, `summary`), com `exteriorCities: 0`. A soma exige que todos os municípios da UF na cobertura da publicação estejam reconciliados e presentes no turno; caso contrário, `503`. Percentuais são recalculados sobre os totais da UF. Resultados de Governador de UFs diferentes não são comparáveis: as candidaturas diferem.
+A resposta segue o formato do consolidado Brasil (`status`, `filters`, `dataset`, `summary`), com `exteriorCities: 0`. A soma exige que todos os municípios da UF na cobertura da publicação estejam reconciliados e presentes no turno; caso contrário, `503`. Percentuais são recalculados sobre os totais da UF. Resultados de cargos estaduais de UFs diferentes não são comparáveis: as candidaturas diferem.
 
 ## Exterior
 
@@ -110,7 +110,7 @@ Exemplo: `/elections/municipalities/71072/places?year=2022&round=1&zone=0001&sec
 
 `eligible`, `turnout` e `abstentions` são `null` nos locais. Turno não realizado retorna `404` com `reason: "round-not-held"`. `totalVotes` é a soma dos votos no cargo consultado, não uma estimativa de eleitores inscritos no prédio. `metadataConflict` indica múltiplos nomes/endereços; `metadataVariants` preserva todas as variantes. O campo divergente fica `null`.
 
-As consultas nacionais e estaduais de locais e seções usam UF, localidade, ano, turno e cargo em todas as junções. Para `office=governor`, `uf` é obrigatória e a publicação usada é a da UF. Se um código vier a existir em mais de uma UF, a rota exige `uf` para desambiguar. A lista municipal não aceita `ZZ`; seus locais são consultados exclusivamente na rota própria do exterior, com publicação e identidade territorial separadas.
+As consultas nacionais e estaduais de locais e seções usam UF, localidade, ano, turno e cargo em todas as junções. Para cargos estaduais (`governor`, `senator`), `uf` é obrigatória e a publicação usada é a da UF e do cargo. Se um código vier a existir em mais de uma UF, a rota exige `uf` para desambiguar. A lista municipal não aceita `ZZ`; seus locais são consultados exclusivamente na rota própria do exterior, com publicação e identidade territorial separadas.
 
 Os códigos retornados são strings numéricas de cinco dígitos (`02550`, por exemplo); preserve os zeros ao construir URLs. O catálogo inclui `failureReason` em tentativas interrompidas/rejeitadas. Seus diagnósticos não devem ser confundidos com a cobertura da versão publicada.
 
