@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { parse } from 'csv-parse';
 
 export type Row = Record<string, string>;
@@ -30,3 +30,11 @@ export function count(row: Row, field: string): number {
 export function pilot(row: Row): boolean {
   return row.ANO_ELEICAO === '2022' && row.CD_MUNICIPIO === '71072' && row.CD_CARGO === '1' && row.SG_UF === 'SP';
 }
+
+/** Entradas de um ZIP, na ordem do arquivo. */
+export function entries(archive: string): string[] {
+  const listing = spawnSync('unzip', ['-Z1', archive], { encoding: 'utf8' });
+  if (listing.status !== 0) throw new Error(`ZIP inválido: ${archive}: ${listing.stderr}`);
+  return listing.stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+

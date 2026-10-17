@@ -13,6 +13,9 @@ As rotas são públicas e de leitura. A consulta prioriza a versão nacional pub
 | `GET /elections/exterior/cities/:code/places` | Locais de uma localidade de ZZ; `uf` omitida ou `ZZ`. Outra UF retorna `400`; localidade/ano não publicado retorna `404`. |
 | `GET /elections/municipalities/:code/places` | Locais paginados por zona e código; `404` para município/ano/UF não publicado. Inclui identidade `municipality` na resposta. |
 | `GET /elections/municipalities/suggest` | Até 8 municípios publicados no recorte (`q` com 2–60 caracteres, `year`, `office`, `uf`), para sugestões enquanto se digita. Trigramas (`pg_trgm`) sobre o nome normalizado: início do nome, início de palavra, trecho e grafia parecida (`match`). Cargo estadual exige `uf`; sem o índice de trigramas, `503` (nunca varredura). |
+| `GET /elections/municipalities/:code/context` | Contexto do município (`uf` obrigatória): Censo 2022 por código IBGE e perfis do TSE como base própria; distribuições com `kind` (universo, amostra, cadastro), `null` para suprimido, `undistributed`/`roundingDifference` quando a fonte não fecha a soma; `turnout` `null` no DF. |
+| `GET /elections/map/geometry` | Malha do IBGE em TopoJSON: Brasil por UF (sem parâmetro) ou `uf` por município; polígonos com `codarea` (código IBGE). |
+| `GET /elections/map/values` | `indicator` (`income-upto-half-mw`, `college-18`, `literacy-15`, `abstention`), `round`, `uf`: numerador, denominador e percentual por município ou UF (soma de numeradores e denominadores). |
 | `GET /elections/catalog` | Publicações, importações em andamento, cobertura por UF/situação e cargos ainda não importados. |
 | `GET /elections/imports/:id/coverage` | Cobertura por município: `page`, `pageSize`; status, motivo, registros e conflitos. |
 | `GET /elections/imports/:id/report` | Relatório JSON concluído; `404` enquanto não existir ou versão desconhecida. |

@@ -117,6 +117,40 @@
 .suggestion-match { grid-column: 1 / -1; font-size: 12px; color: var(--round-ink); }
 @keyframes suggestions-in { from { opacity: 0; transform: translateY(-4px); } }
 @media (max-width: 480px) { .suggestions [role="option"] { grid-template-columns: minmax(0, 1fr); } }
+/* Contexto do município: tabelas por fonte, com o tipo do dado sempre visível. */
+.context-panel { margin-bottom: 28px; }
+.context-intro { font-size: 13px; }
+.context-section { margin: 0 28px 18px; border-top: 1px solid var(--border); }
+.context-section > summary { min-height: 48px; padding-block: 12px; font-weight: 600; color: var(--teal); }
+.context-section .query-note { margin-inline: 0; font-size: 13px; }
+.context-table { margin-bottom: 18px; border: 1px solid var(--border); border-radius: 8px; }
+.context-table caption { padding: 12px 14px 8px; text-align: left; font-size: 13px; color: var(--muted); }
+.context-caption { font-weight: 700; color: var(--ink); }
+.context-table th:first-child { padding-left: 14px; }
+.context-table tbody tr:has(th) td:first-child { padding-left: 14px; }
+.context-table td { font-variant-numeric: tabular-nums; }
+.context-table .total-row th, .context-table .total-row td { font-weight: 700; }
+.kind-badge { margin-left: 4px; font-size: 11px; }
+.kind-amostra { background: #f5e9df; color: var(--round-ink); border-color: #e3c9b6; }
+.kind-cadastro { background: #e6eef2; color: #244e5b; border-color: #c6d6de; }
+/* Mapas: dois coropléticos lado a lado, cada um com sua escala sequencial. */
+.choropleth-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; padding: 8px 28px 0; }
+.map-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.choropleth { margin: 0; min-width: 0; }
+.choropleth figcaption { display: grid; gap: 2px; margin-bottom: 8px; }
+.choropleth-title { font-weight: 700; font-size: 15px; line-height: 1.35; color: var(--ink); }
+.choropleth svg { display: block; width: 100%; height: auto; }
+.choropleth-area { stroke: #fffefb; stroke-width: .5; vector-effect: non-scaling-stroke; transition: opacity var(--motion-feedback) var(--motion-ease); }
+.choropleth a:hover .choropleth-area, .choropleth-area:hover { stroke: var(--ink); stroke-width: 1.5; }
+.map-inset rect { fill: none; stroke: #b9b7ad; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.map-inset text { font-size: 11px; fill: var(--muted); }
+.choropleth-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.choropleth-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 14px; height: 14px; border-radius: 3px; }
+.swatch-missing { background: #dedcd3; box-shadow: inset 0 0 0 1px #b9b7ad; }
+.choropleth-note { margin: 6px 0 0; font-size: 12px; }
+.map-caveats { font-size: 13px; }
+.map-table { margin-top: 8px; }
 /* Filtros aplicados: chips; remover é um link GET. */
 .applied-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
 .applied-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -167,6 +201,8 @@
   .municipality-filters, .places-advanced, .group-election, .group-territory { grid-template-columns: minmax(0, 1fr); }
   .query-group { padding: 14px; }
   .round-note { margin-inline: 18px; }
+  .context-section { margin-inline: 18px; }
+  .choropleth-pair { grid-template-columns: minmax(0, 1fr); padding-inline: 18px; }
   .section-heading .badge-round { margin-left: 0; }
   .query-context, .query-errors { margin-inline: 18px; }
   .installation-note, .exterior-cities { margin-inline: 18px; }
@@ -186,6 +222,8 @@
   ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) { animation: none !important; }
 }
 @media (forced-colors: active) {
+  .choropleth-area { forced-color-adjust: none; }
+  .swatch { forced-color-adjust: none; }
   .segmented::before { display: none; }
   .segmented-choice:has(input:checked) { outline: 2px solid Highlight; outline-offset: -2px; color: Highlight; }
   .segmented-choice:has(input:focus-visible) { outline: 3px solid Highlight; outline-offset: 2px; }

@@ -3,8 +3,8 @@ export function formFingerprint(entries: Iterable<[string, FormDataEntryValue]>)
 }
 
 export function queryHref(action: string, entries: Iterable<[string, FormDataEntryValue]>) {
-  // As duas ações do painel são internas; nenhum parâmetro pode virar URL de destino.
-  if (!/^\/(?:(?:municipios|exterior)\/\d+|exterior)?(?:#[a-z][a-z0-9-]*)?$/.test(action)) throw new Error('Ação de consulta inválida.');
+  // As ações do painel são internas; nenhum parâmetro pode virar URL de destino.
+  if (!/^\/(?:(?:municipios|exterior)\/\d+|exterior|mapa)?(?:#[a-z][a-z0-9-]*)?$/.test(action)) throw new Error('Ação de consulta inválida.');
   const [path, hash] = action.split('#');
   const params = new URLSearchParams();
   for (const [key, value] of entries) if (typeof value === 'string' && value.trim() !== '') params.append(key, value.trim());

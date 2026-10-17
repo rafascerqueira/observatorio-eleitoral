@@ -252,7 +252,14 @@ Também nesta data: `AGENTS.md` passou a ser o único arquivo de orientações (
 ### Decisões pendentes (atualizado em 17/10/2026)
 
 2. Suplementar de Governador de RR (2026), como no item 1 da lista do §19.
-3. IBGE: próxima prioridade. Pesquisa e plano em `docs/plano-ibge.md` (17/10/2026): correspondência oficial TSE–IBGE auditada (5.570/5.570, 22 nomes divergentes), cor/raça do eleitorado 2022 100% não informada, renda per capita em classes de salário mínimo disponível por município (SIDRA 10296, amostra), coordenadas de locais ausentes em até 31% numa UF. Aguarda as decisões listadas no documento.
+3. IBGE: etapa municipal publicada em 17/10/2026 (contexto Censo 2022 + perfis do TSE como base própria, 5.570 municípios) e protótipo de mapas (malhas do IBGE, `/mapa`). Detalhes, regras de soma e verificação em `docs/plano-ibge.md`. Próximo: fase 3 (PostGIS, locais → setores) e métrica E (resultados por escolaridade e renda do entorno do local).
 4. Página de UF longa; verificações de acessibilidade no repositório; revisão em navegador das páginas do Senado.
 5. Rota de relatório em modo dev (`tsx watch`).
 6. Formulários e exibição: plano em `docs/plano-ux-formularios.md`. Decisões de Rafael registradas (componente próprio de sugestões, cargo em opções visíveis, manter "Consultar", ordem 1→2→3→5+6→4). Todas as fases implementadas em 17/10/2026, inclusive a busca com sugestões (`pg_trgm`, migration 005, rota `suggest`, combobox próprio). Pendentes: leitor de tela real (condição para declarar a busca acessível), Chrome/Safari e o enriquecimento da busca com distritos do IBGE.
+
+## 21. IBGE (Censo 2022) no nível municipal e mapas — 17/10/2026
+
+Rafael aprovou o plano de `docs/plano-ibge.md`: etapa municipal primeiro, PostGIS na fase de setores, sem microdados de acesso controlado, perfil por seção como marginais por local e métrica E por escolaridade e renda do entorno do local de votação. A auditoria mostrou que os perfis do TSE (cadastro e comparecimento) não fecham com os resultados por município e que o comparecimento por perfil de 2022 não traz o DF; Rafael decidiu publicá-los como base própria, declarada, com a diferença exibida.
+
+Publicados o contexto municipal (`municipal-context-2022-v1`: Censo 2022 via SIDRA ligado aos 5.570 municípios do TSE pela correspondência oficial de códigos; perfil do eleitorado e comparecimento por perfil do TSE) e as malhas do IBGE para mapas (`maps-ibge-2022-v2`). Na página do município, o painel "Território e eleitorado" separa universo, amostra e cadastro; em `/mapa`, dois coropléticos lado a lado (indicador do Censo e abstenção), com quintis, tabela equivalente e avisos de leitura (sem causa, sem voto de grupos, viés de área). Detalhes e números em `docs/plano-ibge.md`. Banco: +38 MB; disco: +0,8 GB. Sem publicação externa.
+

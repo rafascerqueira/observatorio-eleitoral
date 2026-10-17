@@ -15,7 +15,7 @@ button, input, select { font: inherit; }
 .brand-symbol i { display: block; background: var(--teal); width: 7px; height: 12px; border-radius: 2px 2px 0 0; }
 .brand-symbol i:nth-child(2) { height: 22px; }
 .brand-symbol i:nth-child(3) { height: 29px; }
-nav { display: flex; gap: 32px; }
+nav { display: flex; flex-wrap: wrap; gap: 8px 32px; }
 nav a { text-decoration: none; font-size: 14px; font-weight: 600; color: var(--muted); padding-block: 10px; }
 nav a:hover { color: var(--teal); text-decoration: underline; }
 .hero { padding: 66px 0 46px; max-width: 850px; }
@@ -124,7 +124,7 @@ h3 { font-size: 16px; line-height: 1.4; margin: 0 0 8px; }
 @media (max-width: 650px) {
   .container { width: calc(100% - 32px); }
   .header-inner { align-items: flex-start; flex-direction: column; gap: 8px; padding-block: 18px 10px; }
-  nav { gap: 25px; }
+  nav { gap: 4px 22px; }
   .hero { padding: 38px 0 28px; }
   h1 { letter-spacing: -1px; }
   .hero-description { font-size: 16px; }

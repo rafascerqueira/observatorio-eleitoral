@@ -1,4 +1,4 @@
-import { catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
+import { mapGeometrySchema, mapValuesSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
 
 export async function getExterior(filters: ExteriorQuery) {
   try {
@@ -69,3 +69,25 @@ export async function getPlaces(code: string, filters: PlacesQuery) {
     return { kind: 'ready' as const, data: placesResponseSchema.parse(await response.json()) };
   } catch { return { kind: 'unavailable' as const }; }
 }
+
+export async function getContext(code: string, uf: string, year: string) {
+  try {
+    const url = new URL(`/elections/municipalities/${encodeURIComponent(code)}/context`, process.env.API_URL ?? 'http://127.0.0.1:3001');
+    url.searchParams.set('uf', uf); url.searchParams.set('year', year);
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (response.status === 404) return { kind: 'missing' as const };
+    if (!response.ok) return { kind: 'unavailable' as const };
+    return { kind: 'ready' as const, data: contextResponseSchema.parse(await response.json()) };
+  } catch { return { kind: 'unavailable' as const }; }
+}
+
+async function mapRequest(path: 'geometry' | 'values', params: Record<string, string | undefined>): Promise<unknown> {
+  try {
+    const url = new URL(`/elections/map/${path}`, process.env.API_URL ?? 'http://127.0.0.1:3001');
+    for (const [key, value] of Object.entries(params)) if (value) url.searchParams.set(key, value);
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    return response.ok ? await response.json() : null;
+  } catch { return null; }
+}
+export async function getMapGeometry(uf?: string) { const body = await mapRequest('geometry', { uf }); const parsed = mapGeometrySchema.safeParse(body); return parsed.success ? parsed.data : null; }
+export async function getMapValues(params: Record<string, string | undefined>) { const body = await mapRequest('values', params); const parsed = mapValuesSchema.safeParse(body); return parsed.success ? parsed.data : null; }

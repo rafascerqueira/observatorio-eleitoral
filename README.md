@@ -16,7 +16,9 @@ Governador, nas **27 UFs**: resultado da UF somado dos municípios reconciliados
 
 Senador, nas **27 UFs**: mesma apresentação do Governador (UF, municípios e locais, com as categorias não válidas identificadas), em turno único — a consulta do 2º turno informa que o cargo não tem 2º turno. Em 2022 cada UF elegeu uma vaga, com um voto por eleitor.
 
-A suplementar de governador de RR (2026), 2026 e dados do IBGE ainda não foram importados. Deputados estão fora do escopo atual. Não há inferências sobre renda, motivação individual ou migração de votos.
+**Território e eleitorado** (Censo 2022 e perfis do TSE): na página de cada município, população, cor ou raça, alfabetização, instrução e rendimento per capita em salários mínimos (IBGE), cadastro do eleitorado e comparecimento por perfil (TSE, base própria declarada). **Mapa** (`/mapa`): indicador do Censo e abstenção lado a lado, por UF ou por município.
+
+A suplementar de governador de RR (2026), 2026, setores censitários e o entorno dos locais de votação ainda não foram importados. Deputados estão fora do escopo atual. Não há inferências sobre renda, motivação individual ou migração de votos.
 
 ## Iniciar localmente
 
@@ -56,6 +58,8 @@ npm run verify:national -w @observatorio/importer    # reconfere a persistência
 npm run import:exterior                              # exterior (ZZ)
 npm run import:state -- --office governor --uf SP    # Governador, uma UF por vez
 npm run import:state -- --office senator --uf SP     # Senador, uma UF por vez
+npm run import:context                               # Censo 2022 (SIDRA) + perfis do TSE, por município
+npm run import:maps                                  # malhas do IBGE para os mapas
 ```
 
 `import:state` usa as entradas da UF nos mesmos ZIPs de apuração e votação nominal e baixa o ZIP de seções da UF (2,86 GiB nas 27 UFs; SP: 859 MiB, com todos os cargos estaduais; só o cargo pedido é selecionado). A verificação da persistência roda dentro do importador, antes da publicação. Para todas as UFs: `for uf in AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO; do npm run import:state -- --office governor --uf $uf; done` (cerca de 75 min na primeira execução; troque `governor` por `senator` para o Senado).
@@ -112,6 +116,7 @@ Os smoke tests exigem web, API e banco em execução. Endereços alternativos po
 | `npm run smoke:exterior` | `import:exterior` | Formulários (GET, erros por campo, turnos) e consulta do exterior |
 | `npm run smoke:summary` | nacional + exterior | Consolidado Brasil contra todos os agregados domésticos e do exterior |
 | `npm run smoke:governor` | `import:state` (SP, demais UFs opcionais) + nacional | Governador SP contra os totais dos originais; em todas as UFs publicadas: invariantes, turnos, categorias não válidas (também nos locais, v3), exclusão de RR, UF obrigatória e páginas |
+| `npm run smoke:context` | `import:context` + `import:maps` + nacional | Contexto de SP contra a SIDRA, correspondência por código, DF sem comparecimento, totais nacionais, UF = soma dos municípios, mapas e páginas |
 | `npm run smoke:senator` | `import:state --office senator` (qualquer UF) + nacional | Em cada UF publicada: aptos, votos, válidos e municípios dos originais, invariantes, turno único, categorias não válidas, casos auditados, locais do Rio com nulos técnicos, separação do Governador e páginas |
 
 ```sh
@@ -152,7 +157,7 @@ docker compose exec -T db psql -v ON_ERROR_STOP=1 -U observatorio -d observatori
 
 - Deputados (federais, estaduais e distritais) ficam fora do escopo por enquanto (decisão de 17/10/2026): cerca de 50 milhões de registros de seção em 2022, ~20 GB no PostgreSQL; o armazenamento fica reservado aos dados do IBGE e ao cruzamento IBGE–TSE. Os originais já baixados preservam esses cargos.
 - Senador 2026 (duas vagas, dois votos por eleitor): regra de denominador própria. Suplementar de governador de RR (2026), em etapa própria.
-- Depois: integração IBGE/TSE no nível municipal e etapa espacial.
+- IBGE: fase 3 (PostGIS; locais de votação → setores censitários, com cobertura de coordenadas por UF) e resultados por escolaridade e renda do entorno do local (`docs/plano-ibge.md`).
 - Interface: autocomplete; teste com leitor de tela real e em Chrome/Safari/dispositivos móveis (revisão automatizada em Firefox feita: [acessibilidade](docs/acessibilidade.md)); página de UF longa (25 municípios com quadros por página).
 - Resultados de 2026 não foram importados.
 - Licença, nome definitivo e hospedagem não foram decididos. Não foi copiado código do repositório de referência.

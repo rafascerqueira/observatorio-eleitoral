@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { nationalSummary } from './national-summary';
 
@@ -135,6 +135,74 @@ export class ElectionsController {
     return suggestResponseSchema.parse({ status: 'published', items: rows.rows });
   }
 
+  /** Malha do IBGE: Brasil por UF ou uma UF por município (publicação `2022/maps/ibge`). */
+  @Get('map/geometry')
+  async mapGeometry(@Query() query: Record<string, unknown>) {
+    const parsed = municipalityQuerySchema.pick({ uf: true }).strict().safeParse(query);
+    if (!parsed.success) throw new BadRequestException('UF inválida.');
+    const level = parsed.data.uf ? 'municipality' as const : 'uf' as const; const uf = parsed.data.uf ?? 'BR';
+    await this.database.check();
+    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.map_geometries')::text AS registry");
+    const row = registry.rows[0]?.registry ? await this.database.query<{ batch_id: string; topology: unknown }>("SELECT g.batch_id, g.topology FROM map_geometries g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope='2022/maps/ibge' WHERE g.level=$1 AND g.uf=$2", [level, uf]) : { rows: [] };
+    return mapGeometrySchema.parse(row.rows[0] ? { status: 'published', level, uf, batchId: row.rows[0].batch_id, topology: row.rows[0].topology } : { status: 'awaiting-import', level, uf, batchId: null, topology: null });
+  }
+
+  /** Valores do mapa: numerador e denominador somados por município ou UF; percentual só com denominador positivo. */
+  @Get('map/values')
+  async mapValues(@Query() query: Record<string, unknown>) {
+    const parsed = mapQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'Filtros do mapa inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    const { indicator, round, uf, year } = parsed.data;
+    const level = uf ? 'municipality' as const : 'uf' as const;
+    const empty = mapValuesSchema.parse({ status: 'awaiting-import', indicator, level, round, items: [] });
+    if (year !== '2022') return empty;
+    await this.database.check();
+    let rows: Array<{ id: string; code: string; uf: string; name: string; numerator: string | null; denominator: string | null }>;
+    if (MAP_INDICATORS[indicator].family === 'ibge') {
+      // Indicadores derivados na importação (tabela `municipality_indicators`), sem ler o JSON de contexto inteiro.
+      const batch = await this.database.query<{ id: string }>("SELECT id FROM import_batches WHERE published AND scope='2022/context/municipal' LIMIT 1");
+      if (!batch.rows[0]) return empty;
+      const unit = await this.database.query<typeof rows[number]>(`SELECT ibge_code AS id, code, uf, name, numerator::text, denominator::text FROM municipality_indicators
+        WHERE batch_id=$1 AND indicator=$2 AND ($3::text IS NULL OR uf=$3)`, [batch.rows[0].id, indicator, uf ?? null]);
+      rows = unit.rows;
+    } else {
+      const dataset = await this.publishedDataset(year, 'president');
+      if (!dataset || dataset.level !== 'national') return empty;
+      const context = await this.database.query<{ id: string }>("SELECT id FROM import_batches WHERE published AND scope='2022/context/municipal' LIMIT 1");
+      if (!context.rows[0]) return empty;
+      const unit = await this.database.query<typeof rows[number]>(`SELECT c.ibge_code AS id, m.code, m.uf, m.result->>'name' AS name, m.result->'totals'->>'abstentions' AS numerator, m.result->'totals'->>'eligible' AS denominator
+        FROM municipality_results m JOIN municipality_context c ON c.batch_id=$4 AND c.uf=m.uf AND c.code=m.code
+        WHERE m.batch_id=$1 AND m.round=$2::integer AND m.office='president' AND m.uf<>'ZZ' AND ($3::text IS NULL OR m.uf=$3)`, [dataset.id, round, uf ?? null, context.rows[0].id]);
+      rows = unit.rows;
+    }
+    const value = (numerator: number | null, denominator: number | null) => numerator === null || denominator === null || denominator === 0 ? null : numerator / denominator * 100;
+    let items = rows.map((row) => { const numerator = row.numerator === null ? null : Number(row.numerator); const denominator = row.denominator === null ? null : Number(row.denominator); return { id: row.id, code: row.code, uf: row.uf, name: row.name, numerator, denominator, value: value(numerator, denominator) }; });
+    if (level === 'uf') {
+      // UF: soma de numeradores e de denominadores dos municípios (nunca média de percentuais); um nulo torna a UF nula.
+      const byUf = new Map<string, { numerator: number | null; denominator: number | null }>();
+      for (const item of items) { const sum = byUf.get(item.uf) ?? { numerator: 0, denominator: 0 }; byUf.set(item.uf, { numerator: sum.numerator === null || item.numerator === null ? null : sum.numerator + item.numerator, denominator: sum.denominator === null || item.denominator === null ? null : sum.denominator + item.denominator }); }
+      items = [...byUf].map(([code, sum]) => ({ id: items.find((item) => item.uf === code)!.id.slice(0, 2), code, uf: code, name: code, ...sum, value: value(sum.numerator, sum.denominator) }));
+    }
+    return mapValuesSchema.parse({ status: 'published', indicator, level, round, items: items.sort((a, b) => a.uf.localeCompare(b.uf) || a.name.localeCompare(b.name, 'pt-BR')) });
+  }
+
+  /** Contexto do município: Censo 2022 (IBGE) e perfis do TSE como base própria; nada é estimado aqui, só lido da publicação. */
+  @Get('municipalities/:code/context')
+  async context(@Param('code') code: string, @Query() query: Record<string, unknown>) {
+    if (!/^\d+$/.test(code)) throw new NotFoundException('Código municipal inválido.');
+    const parsed = municipalityQuerySchema.pick({ year: true }).extend({ uf: municipalityQuerySchema.shape.uf.unwrap() }).strict().safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'Informe ano e UF do município.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    await this.database.check();
+    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.municipality_context')::text AS registry");
+    const batch = registry.rows[0]?.registry ? await this.database.query<{ metadata: unknown }>("SELECT metadata FROM import_batches WHERE published AND scope='2022/context/municipal' LIMIT 1") : { rows: [] };
+    if (!batch.rows[0] || parsed.data.year !== '2022') return contextResponseSchema.parse({ status: 'awaiting-import', dataset: null, item: null });
+    const dataset = contextDatasetSchema.parse(batch.rows[0].metadata);
+    const item = await this.database.query<{ result: unknown }>('SELECT result FROM municipality_context WHERE batch_id=$1 AND uf=$2 AND code=$3', [dataset.id, parsed.data.uf, code.padStart(5, '0')]);
+    if (!item.rows[0]) throw new NotFoundException('Município sem contexto publicado.');
+    try { return contextResponseSchema.parse({ status: 'published', dataset, item: item.rows[0].result }); }
+    catch { throw new ServiceUnavailableException('Contexto municipal inconsistente.'); }
+  }
+
   @Get('municipalities/:code/places')
   async places(@Param('code') code: string, @Query() query: Record<string, unknown>) {
     if (!/^\d+$/.test(code)) throw new NotFoundException('Código municipal inválido.');
@@ -200,7 +268,11 @@ export class ElectionsController {
     const batches = registry.rows[0]?.registry ? await this.database.query<{ id: string; scope: string; published: boolean; metadata: Record<string, unknown> }>('SELECT id,scope,published,metadata FROM import_batches ORDER BY imported_at DESC') : { rows: [] };
     const coverageRegistry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_coverage')::text AS registry");
     const coverage = coverageRegistry.rows[0]?.registry ? await this.database.query<{ batch_id: string; uf: string; status: string; municipalities: number; sectionRows: number }>('SELECT batch_id,uf,status,count(*)::integer AS municipalities,sum(section_rows)::integer AS "sectionRows" FROM import_coverage GROUP BY batch_id,uf,status ORDER BY uf,status') : { rows: [] };
-    return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
+    // Contexto municipal (IBGE + perfis do TSE) tem formato próprio, separado das publicações de cargo.
+    const isContext = (scope: string) => scope.startsWith('2022/context/'); const isMap = (scope: string) => scope.startsWith('2022/maps/');
+    return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published && !isContext(batch.scope) && !isMap(batch.scope)).map((batch) => batch.metadata),
+      contextDatasets: batches.rows.filter((batch) => batch.published && isContext(batch.scope)).map((batch) => batch.metadata),
+      mapDatasets: batches.rows.filter((batch) => batch.published && isMap(batch.scope)).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
       // Cargo estadual: só as UFs sem publicação continuam pendentes.
       ...STATE_OFFICES.flatMap((office) => {
         const published = new Set(batches.rows.filter((batch) => batch.published && batch.scope.startsWith(`2022/${office}/`)).map((batch) => batch.scope.split('/')[2]));
@@ -242,7 +314,7 @@ export class ElectionsController {
   private verifiedOriginals = new Set<string>();
   @Get('sources/:sha256/:file')
   async original(@Param('sha256') sha256: string, @Param('file') file: string) {
-    if (!/^[a-f0-9]{64}$/.test(sha256) || !/^[a-zA-Z0-9_]+\.zip$/.test(file)) throw new NotFoundException();
+    if (!/^[a-f0-9]{64}$/.test(sha256) || !/^[a-zA-Z0-9_]+\.(zip|json)$/.test(file)) throw new NotFoundException();
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.original_sources')::text AS registry");
     if (!registry.rows[0]?.registry) throw new NotFoundException();
     const record = await this.database.query<{ size_bytes: string }>('SELECT size_bytes FROM original_sources WHERE sha256=$1 AND file=$2', [sha256, file]);
@@ -257,7 +329,7 @@ export class ElectionsController {
       if (hash.digest('hex') !== sha256) throw new ServiceUnavailableException('Integridade do original divergente.');
       this.verifiedOriginals.add(cacheKey);
     }
-    return new StreamableFile(createReadStream(path), { type: 'application/zip', disposition: `attachment; filename="${file}"`, length: info.size });
+    return new StreamableFile(createReadStream(path), { type: file.endsWith('.json') ? 'application/json' : 'application/zip', disposition: `attachment; filename="${file}"`, length: info.size });
   }
 
   /** Presidência: versão nacional, ou o piloto enquanto ela não existir. Cargos estaduais: uma publicação por UF. */

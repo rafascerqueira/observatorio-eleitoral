@@ -96,6 +96,8 @@ export const catalogSchema = z.object({
   datasets: z.array(datasetSchema),
   imports: z.array(z.object({ id: z.string(), scope: z.string(), published: z.boolean(), failureReason: z.string().nullable().default(null), coverage: z.array(z.object({ uf: z.enum(TERRITORIES), status: coverageItemSchema.shape.status, municipalities: nonnegative, sectionRows: nonnegative })) })),
   plannedOffices: z.array(z.object({ office: z.string(), label: z.string(), status: z.literal('not-imported') })),
+  contextDatasets: z.array(z.lazy(() => contextDatasetSchema)).default([]),
+  mapDatasets: z.array(z.lazy(() => mapDatasetSchema)).default([]),
 });
 const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
@@ -158,6 +160,68 @@ export const placesResponseSchema = z.object({
   total: nonnegative, page: z.number().int().positive(), pageSize: z.number().int().positive().max(100), dataset: datasetSchema,
   municipality: municipalitySchema.pick({ code: true, name: true, uf: true }).extend({ uf: z.enum(TERRITORIES) }).optional(),
 });
+/** Contexto municipal (IBGE, Censo 2022) e perfis do TSE. Contagem `null` = suprimida, inexistente ou não disponível na fonte — nunca zero presumido. */
+const sourceCount = nonnegative.nullable();
+export const CONTEXT_KINDS = ['universo', 'amostra', 'cadastro'] as const;
+export const contextDistributionSchema = z.object({
+  // `kind`: universo (todas as pessoas), amostra (estimativa com erro amostral) ou cadastro do TSE; `source` identifica a tabela.
+  kind: z.enum(CONTEXT_KINDS), source: z.string(), total: sourceCount,
+  categories: z.array(z.object({ key: z.string(), label: z.string(), value: sourceCount })),
+  // Pessoas no total da fonte sem discriminação nas categorias publicadas (ex.: cor ou raça na SIDRA 9605). Calculado, nunca redistribuído.
+  undistributed: nonnegative.optional(),
+  // Estimativas da amostra arredondadas célula a célula: soma das categorias − total, dentro do limite do arredondamento.
+  roundingDifference: z.number().int().optional(),
+});
+export const TURNOUT_DIMENSIONS = ['gender', 'age', 'education', 'maritalStatus'] as const;
+const turnoutCountsSchema = z.object({ eligible: nonnegative, turnout: nonnegative, abstentions: nonnegative });
+export const turnoutRoundSchema = turnoutCountsSchema.extend({
+  dimensions: z.array(z.object({ dimension: z.enum(TURNOUT_DIMENSIONS), categories: z.array(turnoutCountsSchema.extend({ key: z.string(), label: z.string() })) })),
+});
+export const municipalityContextSchema = z.object({
+  code: z.string(), name: z.string(), uf: z.enum(STATES), ibgeCode: z.string().regex(/^\d{7}$/), ibgeName: z.string(),
+  population: z.object({ total: sourceCount, age16plus: sourceCount, age16to17: sourceCount, age18to69: sourceCount, age70plus: sourceCount }),
+  populationByAge: contextDistributionSchema, race: contextDistributionSchema, literacy15: contextDistributionSchema,
+  education18: contextDistributionSchema, incomeClasses: contextDistributionSchema,
+  incomePerCapita: z.object({ mean: z.number().nonnegative().nullable(), median: z.number().nonnegative().nullable(), source: z.string() }),
+  // Cadastro do TSE: base própria, que não fecha com os resultados; `resultsEligible` traz os aptos dos resultados para a diferença declarada.
+  electorate: z.object({ eligible: nonnegative, gender: contextDistributionSchema, age: contextDistributionSchema, education: contextDistributionSchema, maritalStatus: contextDistributionSchema }),
+  resultsEligible: z.object({ '1': sourceCount, '2': sourceCount }),
+  // Comparecimento por perfil: `null` quando a fonte não traz a UF (DF em 2022).
+  turnout: z.object({ '1': turnoutRoundSchema.nullable(), '2': turnoutRoundSchema.nullable() }),
+});
+export type MunicipalityContext = z.infer<typeof municipalityContextSchema>;
+export const contextDatasetSchema = z.object({
+  id: z.string(), kind: z.literal('municipal-context'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(),
+  sources: z.array(sourceSchema), scope: z.string(), validation: z.literal('checked'),
+  coverage: z.object({ expected: nonnegative, published: nonnegative, withoutTurnout: z.array(z.enum(TERRITORIES)) }),
+  notes: z.array(z.string()),
+});
+export const mapDatasetSchema = z.object({
+  id: z.string(), kind: z.literal('maps'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),
+});
+/** Indicadores do mapa: cada um com fonte, tipo de dado, numerador e denominador explícitos. */
+export const MAP_INDICATORS = {
+  'income-upto-half-mw': { label: 'Moradores com rendimento domiciliar per capita de até ½ salário mínimo (inclui sem rendimento)', source: 'IBGE, Censo 2022 — SIDRA 10296', kind: 'amostra', family: 'ibge' },
+  'college-18': { label: 'Pessoas de 18 anos ou mais com superior completo', source: 'IBGE, Censo 2022 — SIDRA 10061', kind: 'amostra', family: 'ibge' },
+  'literacy-15': { label: 'Pessoas de 15 anos ou mais alfabetizadas', source: 'IBGE, Censo 2022 — SIDRA 9542', kind: 'universo', family: 'ibge' },
+  abstention: { label: 'Abstenção (abstenções ÷ eleitores aptos)', source: 'TSE, resultados da Presidência 2022 reconciliados', kind: 'resultados', family: 'tse' },
+} as const;
+export type MapIndicator = keyof typeof MAP_INDICATORS;
+export const MAP_INDICATOR_KEYS = Object.keys(MAP_INDICATORS) as [MapIndicator, ...MapIndicator[]];
+export const mapQuerySchema = z.object({ year: z.enum(['2022', '2026']).default('2022'), round: z.enum(['1', '2']).default('1'), uf: z.enum(STATES).optional(), indicator: z.enum(MAP_INDICATOR_KEYS) }).strict();
+export const mapValuesSchema = z.object({
+  status: z.enum(['published', 'awaiting-import']), indicator: z.enum(MAP_INDICATOR_KEYS), level: z.enum(['uf', 'municipality']), round: z.enum(['1', '2']),
+  // `id`: código IBGE (polígono); `code`: UF ou código TSE do município. Valor `null` quando numerador ou denominador faltam.
+  items: z.array(z.object({ id: z.string(), code: z.string(), uf: z.enum(STATES), name: z.string(), numerator: sourceCount, denominator: sourceCount, value: z.number().min(0).max(100).nullable() })),
+});
+export type MapValues = z.infer<typeof mapValuesSchema>;
+export const mapGeometrySchema = z.object({ status: z.enum(['published', 'awaiting-import']), level: z.enum(['uf', 'municipality']), uf: z.string(), batchId: z.string().nullable(), topology: z.unknown() });
+export const contextResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('awaiting-import'), dataset: z.null(), item: z.null() }),
+  z.object({ status: z.literal('published'), dataset: contextDatasetSchema, item: municipalityContextSchema }),
+]);
+export type ContextResponse = z.infer<typeof contextResponseSchema>;
+
 /** Sugestões de município enquanto se digita: só municípios publicados no recorte (cargo, UF). */
 export const suggestQuerySchema = municipalityQuerySchema.pick({ year: true, office: true, uf: true }).extend({ q: z.string().trim().min(2).max(60) }).strict();
 export type SuggestQuery = z.infer<typeof suggestQuerySchema>;

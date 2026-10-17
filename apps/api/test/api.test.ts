@@ -20,6 +20,15 @@ let governor = false;
 let governorRounds = ['1', '2'];
 let stateOffice = 'governor';
 let trigram = true;
+let contextPublished = false;
+// Contexto sintético mínimo (valores fictícios, só para o contrato HTTP).
+const distribution = (kind: string, total: number | null) => ({ kind, source: 'teste', total, categories: [{ key: 'a', label: 'A', value: total }] });
+const contextItem = { code: '71072', name: 'SÃO PAULO', uf: 'SP', ibgeCode: '3550308', ibgeName: 'São Paulo', population: { total: 10, age16plus: 8, age16to17: 1, age18to69: 6, age70plus: 1 },
+  populationByAge: distribution('universo', 8), race: distribution('universo', 10), literacy15: distribution('universo', 9), education18: distribution('amostra', 7), incomeClasses: distribution('amostra', null),
+  incomePerCapita: { mean: null, median: 1000, source: 'teste' },
+  electorate: { eligible: 7, gender: distribution('cadastro', 7), age: distribution('cadastro', 7), education: distribution('cadastro', 7), maritalStatus: distribution('cadastro', 7) },
+  resultsEligible: { '1': 8, '2': 8 }, turnout: { '1': null, '2': null } };
+const contextDataset = { id: 'd'.repeat(64), kind: 'municipal-context', year: 2022, importedAt: '2026-10-17T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', validation: 'checked', coverage: { expected: 1, published: 1, withoutTurnout: ['DF'] }, notes: [] };
 const queries: Array<{ sql: string; parameters: unknown[] }> = [];
 // Metadados e local exclusivamente sintéticos para verificar o contrato HTTP.
 const dataset = { id: 'a'.repeat(64), year: 2022, office: 'president', municipalityCode: '71072', municipalityName: 'São Paulo', uf: 'SP', importedAt: '2026-10-12T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', validation: 'reconciled' };
@@ -35,6 +44,8 @@ before(async () => {
       if (published) {
         if (sql.includes('to_regclass')) return { rows: [{ registry: 'import_batches' }] };
         if (sql.includes('pg_extension')) return { rows: [{ installed: trigram }] };
+        if (sql.includes("scope='2022/context/municipal'")) return { rows: contextPublished ? [{ metadata: contextDataset }] : [] };
+        if (sql.includes('FROM municipality_context')) return { rows: parameters[2] === '71072' ? [{ result: contextItem }] : [] };
         if (sql.includes('word_similarity')) return { rows: [{ code: '71072', name: 'SÃO PAULO', uf: 'SP', match: 'prefix' }] };
         if (sql.includes('scope=$1')) return { rows: governor && parameters[0] === `2022/${stateOffice}/SP` ? [{ metadata: { ...dataset, id: 'c'.repeat(64), office: stateOffice, municipalityCode: undefined, municipalityName: undefined, level: 'state', rounds: governorRounds, coverage: { expected: 1, reconciled: 1, blocked: 0, excluded: 0 } } }] : [] };
         if (sql.includes('FROM import_coverage WHERE batch_id=$1 AND office=$2')) return { rows: [{ reconciled: 1, other: 0 }] };
@@ -247,3 +258,17 @@ test('sugestões usam trigramas sobre o nome normalizado, com curingas escapados
     assert.equal((await fetch(`${base}/elections/municipalities/suggest?q=sao`)).status, 503, 'Sem índice de trigramas, a busca não cai para varredura');
   } finally { published = false; national = false; trigram = true; }
 });
+
+test('contexto municipal: exige UF, separa ausência de publicação de município inexistente e valida o contrato', async () => {
+  for (const query of ['', 'uf=ZZ', 'uf=SP&round=1', 'uf=SP&year=2024']) assert.equal((await fetch(`${base}/elections/municipalities/71072/context?${query}`)).status, 400, query);
+  assert.equal((await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).json()).status, 'awaiting-import');
+  published = true; contextPublished = true; queries.length = 0;
+  try {
+    const data = await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).json();
+    assert.equal(data.status, 'published'); assert.equal(data.item.ibgeCode, '3550308'); assert.equal(data.item.incomeClasses.total, null, 'Suprimido continua null');
+    assert.deepEqual(queries.find((query) => query.sql.includes('FROM municipality_context'))!.parameters, ['d'.repeat(64), 'SP', '71072']);
+    assert.equal((await fetch(`${base}/elections/municipalities/02550/context?uf=AM`)).status, 404);
+    assert.equal((await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP&year=2026`)).json()).status, 'awaiting-import');
+  } finally { published = false; contextPublished = false; }
+});
+

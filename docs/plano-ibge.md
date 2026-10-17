@@ -95,7 +95,16 @@ Antes da fase 2, auditar: supressões e sinais especiais dos agregados (`X`, `.`
 
 Bem abaixo dos ~20 GB que os deputados exigiriam.
 
-## Decisões para Rafael
+## Decisões de Rafael (17/10/2026)
+
+1. Começar pela etapa municipal (fases 1 e 2); setores depois.
+2. PostGIS para a associação local → setor (fase 3).
+3. Microdados de acesso controlado: não por ora.
+4. Perfil por seção guardado como marginais por local, na fase 3.
+5. Métrica E: resultados agrupados por **escolaridade e renda conforme a aproximação do local de votação** — escolaridade dos eleitores do local (cadastro do TSE por seção, somado por local) e renda do entorno (setor do IBGE associado ao local), com rótulo ecológico ("locais em que…") e cobertura informada. Depende da fase 3.
+6. Perfis do TSE (cadastro e comparecimento) como **base própria, declarada**: auditoria de 17/10/2026 mostrou que não fecham com os resultados por município (perfil do eleitorado: 5.569 de 5.751 municípios/localidades diferem; comparecimento: mediana de 15 eleitores, 0,2%, máximo 5,7%; taxa de abstenção: mediana 0,02 p.p., máximo 3,4 p.p.) e que o arquivo de comparecimento **não traz DF nem exterior** (153.553.888 aptos, mesmo total nos dois turnos, contra 156.454.011 nos resultados). Taxas calculadas só dentro do próprio arquivo; diferença em relação aos resultados exibida por município; DF e exterior "não disponível", nunca zero; faixa etária "Inválido" (1.976 aptos) mantida como categoria da fonte.
+
+## Decisões propostas (registro original)
 
 1. **Ordem:** começar pela fase 1 e 2 (município), deixando setores para depois. Recomendação: sim — entrega o cruzamento TSE–IBGE com o menor risco metodológico.
 2. **Ferramenta espacial (fase 3):** adotar PostGIS (trocar a imagem `postgres:18.6-alpine` por uma com PostGIS) ou fazer a associação ponto → setor fora do banco, no importador. Recomendação: PostGIS, que também servirá a mapas.
@@ -108,3 +117,23 @@ Bem abaixo dos ~20 GB que os deputados exigiriam.
 - TSE, dados abertos: [Eleitorado 2022](https://dadosabertos.tse.jus.br/dataset/eleitorado-2022), [Comparecimento e abstenção 2022](https://dadosabertos.tse.jus.br/dataset/comparecimento-e-abstencao-2022), [Códigos TSE–IBGE](https://dadosabertos.tse.jus.br/dataset/codigos-oficiais-de-uf-e-municipios-segundo-o-tse-e-o-ibge), [nota sobre o perfil do eleitorado](https://www.tse.jus.br/comunicacao/noticias/2022/Agosto/portal-de-dados-abertos-do-tse-disponibiliza-perfil-do-eleitorado-brasileiro-423754).
 - IBGE: [FTP do Censo 2022](https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/), [Agregados por setores — resultados do universo](https://biblioteca.ibge.gov.br/visualizacao/livros/liv102136.pdf), [API de agregados (SIDRA)](https://servicodados.ibge.gov.br/api/docs/agregados?versao=3), [API de localidades](https://servicodados.ibge.gov.br/api/docs/localidades), notas metodológicas 03/2026 (confidencialidade) e 05/2026 (microdados da amostra) no FTP.
 - Mapeamento de terceiros (não usado como fonte): [betafcc/Municipios-Brasileiros-TSE](https://github.com/betafcc/Municipios-Brasileiros-TSE).
+
+## Andamento — 17/10/2026
+
+### Fases 1 e 2 (município): publicadas
+
+- `npm run import:context` (`municipal-context-2022-v1`, recorte `2022/context/municipal`): correspondência oficial TSE–IBGE, 163 consultas SIDRA (6 tabelas × 27 UFs + totais das UFs) e os dois perfis do TSE, todos preservados com SHA-256 (`data/raw/ibge/2022/sidra`, `data/originals`). **5.570 municípios**; cadastro de **155.756.933** eleitores (= 156.454.011 − 697.078 do exterior); comparecimento por perfil sem DF, declarado. Tabela `municipality_context` (35 MB) e `municipality_indicators` (derivada, migration 008).
+- Regras de soma (decididas na importação, nunca ajuste): **exata** no universo e no TSE; **arredondamento** na amostra (diferença até metade do número de células, registrada em `roundingDifference` — observado: até 3 pessoas no rendimento, 2 na instrução); **parcial** em cor ou raça (SIDRA 9605: 1.277 municípios com total maior que a soma das cinco categorias, até 1.503 pessoas em Abreu e Lima/PE; a diferença aparece como não discriminada na fonte, `undistributed`). A origem dessa diferença não está nos metadados da tabela e não foi presumida.
+- Duas travas acionadas e resolvidas por auditoria: faixa etária "Inválida" (perfil, 1.990 eleitores) = "Inválido" (comparecimento, 1.976), mesma categoria da fonte; arredondamento da amostra (Bujari/AC: 12.919 × 12.917).
+- Conferências: população por idade soma o total em cada município; população por cor ou raça = população por idade; soma dos municípios = UF (SIDRA 9514, 27 UFs); identidade aptos = comparecimento + abstenção em todas as linhas do TSE; totais nacionais iguais aos divulgados (alfabetização 15+: 93,0%).
+- API `GET /elections/municipalities/:code/context?uf=` e painel "Território e eleitorado" na página do município (universo, amostra e cadastro sempre identificados; diferença cadastro × resultados exibida; DF "não disponível").
+
+### Mapas (protótipo)
+
+- `npm run import:maps` (`maps-ibge-2022-v2`, recorte `2022/maps/ibge`): malhas da API do IBGE (2022) — Brasil por UF e 27 UFs por município, qualidade mínima (a v1, intermediária, ficou não publicada por pesar ~3× sem ganho visível); 28 topologias, códigos conferidos um a um contra a correspondência oficial (nenhum faltando, sobrando ou repetido). Tabela `map_geometries` (2,4 MB).
+- API `GET /elections/map/geometry` e `GET /elections/map/values` (indicadores: até ½ salário mínimo per capita, superior completo 18+, alfabetização 15+ e abstenção da Presidência; UF = soma de numeradores e denominadores).
+- Página `/mapa`: dois coropléticos lado a lado (SVG no servidor com d3-geo 3.1.1 e topojson-client 3.1.0; projeção cônica de áreas iguais), quintis com limites na legenda, escalas de uma só cor validadas pelo validador de paleta (verde-petróleo e cobre: claridade monotônica, saltos ≥ 0,06, classe clara ≥ 2:1), "sem dado" em cinza próprio, Fernando de Noronha em quadro destacado, contornos compartilhados entre os dois mapas (`<use>`), clique na UF abre seus municípios e clique no município abre a página dele, tabela com numerador e denominador como acesso por teclado e leitor de tela (o SVG fica oculto para tecnologias assistivas). Página de MG por município: 2,3 MB (382 KB com gzip); Brasil por UF: 57 KB com gzip.
+- Verificação: `smoke:context` (20 requisições: valores de SP conferidos com a SIDRA, nomes divergentes ligados pelo código, DF sem comparecimento, alfabetização nacional, UF = soma dos municípios, abstenção do mapa = resultado publicado da UF, páginas), os 8 smokes anteriores, 58 testes, axe-core sem violações e sem rolagem horizontal a 375/320 px em 18 páginas. Não verificados: Chrome/Safari, leitor de tela real, modo escuro (o site não tem).
+
+Pendente: fase 3 (PostGIS, locais → setores) e a métrica E; tooltip próprio (hoje, rótulo nativo do SVG); mapa de candidaturas (mesma escala para todas).
+

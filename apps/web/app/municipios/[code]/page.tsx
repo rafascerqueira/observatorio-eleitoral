@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { placesQuerySchema, OFFICE_LABELS, SINGLE_ROUND_OFFICES } from '@observatorio/contracts';
-import { getCatalog, getPlaces } from '../../../lib/results';
+import { getCatalog, getContext, getPlaces } from '../../../lib/results';
+import { MunicipalityContextPanel } from '../../../components/municipality-context';
 import { availabilityFromCatalog, roundOptions } from '../../../lib/rounds';
 import { RoundField } from '../../../components/round-field';
 import { RoundNote } from '../../../components/round-note';
@@ -24,7 +25,9 @@ export default async function Municipality({ params, searchParams }: { params: P
   const parsed = placesQuerySchema.safeParse({ ...query, pageSize: query.pageSize ?? '10' });
   const filters = parsed.success ? parsed.data : placesQuerySchema.parse({ ...recoverQuery(query, 'places'), pageSize: recoverQuery(query, 'places').pageSize ?? '10' });
   const scopeError = officeScopeError(filters.office, filters.uf);
-  const [response, catalog] = await Promise.all([parsed.success && !scopeError ? getPlaces(code, filters) : null, getCatalog()]);
+  // Contexto (IBGE e perfis do TSE) só para municípios brasileiros com UF conhecida; o exterior não tem correspondência com o IBGE.
+  const [response, catalog, context] = await Promise.all([parsed.success && !scopeError ? getPlaces(code, filters) : null, getCatalog(),
+    filters.uf && filters.uf !== 'ZZ' ? getContext(code, filters.uf, filters.year) : null]);
   const availability = availabilityFromCatalog(catalog?.datasets ?? []);
   const rounds = roundOptions(availability, filters.office, filters.uf);
   const errors = [...(parsed.success ? [] : queryErrors(query, parsed.error.issues, 'places')), ...(scopeError ? [scopeError] : [])];
@@ -48,6 +51,7 @@ export default async function Municipality({ params, searchParams }: { params: P
   </nav>;
   return <>
     <section className="hero places-hero"><p className="eyebrow">{exterior ? 'DETALHE DO EXTERIOR · ZZ' : 'DETALHE MUNICIPAL'}</p><h1>{municipality ? `${municipality.name} / ${municipality.uf}` : !exterior && code === '71072' ? 'São Paulo / SP' : `${exterior ? 'Localidade' : 'Município'} TSE ${code}`}</h1><p className="hero-description">{officeLabel} · {filters.year} · {filters.round}º turno · Locais de votação.</p><Link href={`${exterior ? '/exterior' : '/'}?${new URLSearchParams({ year: filters.year, round: filters.round, ...(filters.office === 'president' ? {} : { office: filters.office }), ...(municipality ? exterior ? { search: municipality.name } : { uf: municipality.uf, search: municipality.name } : {}) })}`}>← Voltar à consulta {exterior ? 'do exterior' : 'municipal'}</Link></section>
+    {context?.kind === 'ready' && context.data.status === 'published' && <MunicipalityContextPanel item={context.data.item} round={filters.round} sourcesHref="/fontes#contexto" />}
     <section className="explorer place-search" aria-labelledby="localizar">
       <div className="section-heading"><div><p className="eyebrow">{exterior ? 'BUSCA NA LOCALIDADE DO EXTERIOR' : 'BUSCA NO MUNICÍPIO'}</p><h2 id="localizar">Localizar um local de votação</h2></div></div>
       <p id="search-help" className="query-note">Combine zona e seção para localizar sua unidade. Também é possível buscar pelo código do local, nome ou endereço, com ou sem acentos.</p>
