@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { municipalityQuerySchema, placesQuerySchema, STATES } from '@observatorio/contracts';
-import { ErrorSummary, QuerySelect, TurnField } from '../components/query-fields';
+import { ErrorSummary, OfficeField, QuerySelect, TurnField } from '../components/query-fields';
+import { availabilityFromCatalog, roundOptions } from '../lib/rounds';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from '../lib/query-ui';
 import { brazilHref, formFingerprint, overviewHref, queryHref } from '../lib/query-navigation';
 
@@ -104,4 +105,41 @@ test('quadro de votos não válidos identifica a fonte do nome e não exibe perc
   assert.match(html, /Nulo técnico/); assert.match(html, /nome no arquivo de seções/); assert.match(html, /Não informado na fonte/);
   assert.doesNotMatch(html, /Anulada sintética/, 'Linha sem votos no recorte não é listada');
   assert.doesNotMatch(html, /%/);
+});
+
+test('turnos oferecidos seguem as publicações: 2º turno só onde existiu, turno único no Senado', () => {
+  // Catálogo sintético: Presidência nacional com dois turnos; Governador com e sem 2º turno; Senador em turno único.
+  const availability = availabilityFromCatalog([
+    { office: 'president', level: 'national', rounds: ['1', '2'] },
+    { office: 'governor', level: 'state', uf: 'SP', rounds: ['1', '2'] },
+    { office: 'governor', level: 'state', uf: 'CE', rounds: ['1'] },
+    { office: 'senator', level: 'state', uf: 'RJ', rounds: ['1'] },
+    { office: 'president', level: 'municipality', uf: 'SP' },
+  ]);
+  assert.deepEqual(roundOptions(availability, 'president').rounds, ['1', '2']);
+  assert.deepEqual(roundOptions(availability, 'governor', 'SP'), { rounds: ['1', '2'], note: null, decided: null });
+  const ceara = roundOptions(availability, 'governor', 'CE');
+  assert.deepEqual(ceara.rounds, ['1']); assert.equal(ceara.decided, 'first-round'); assert.match(ceara.note!, /Ceará/);
+  for (const uf of ['RJ', 'SP', undefined]) assert.equal(roundOptions(availability, 'senator', uf).decided, 'single-round');
+  assert.deepEqual(roundOptions(availability, 'governor').rounds, ['1'], 'Cargo estadual sem UF: o 2º turno depende da UF');
+  assert.deepEqual(roundOptions(availability, 'governor', 'ZZ').rounds, ['1']);
+  // UF sem publicação: nada é presumido além da regra do cargo.
+  assert.deepEqual(roundOptions(availability, 'governor', 'BA'), { rounds: ['1', '2'], note: null, decided: null });
+  // Publicação antiga sem `rounds` não vira turno único.
+  assert.deepEqual(availabilityFromCatalog([{ office: 'president', level: 'national' }]).president?.BR, ['1', '2']);
+  assert.deepEqual(roundOptions({}, 'president').rounds, ['1', '2']);
+
+  const single = renderToStaticMarkup(createElement(TurnField, { value: '1', errors: [], rounds: ['1'], note: 'Turno único.' }));
+  assert.equal((single.match(/type="radio"/g) ?? []).length, 1);
+  assert.match(single, /aria-describedby="round-hint"/); assert.match(single, /id="round-hint"/);
+});
+
+test('cargo em opções visíveis: radios nativos, valor inválido preservado e dica associada', () => {
+  const choices = [{ value: 'president', label: 'Presidência' }, { value: 'governor', label: 'Governador' }, { value: 'senator', label: 'Senador' }];
+  const html = renderToStaticMarkup(createElement(OfficeField, { value: 'senator', errors: [], choices, hint: 'Cargo estadual.' }));
+  assert.equal((html.match(/type="radio"/g) ?? []).length, 3);
+  assert.match(html, /id="office-senator"[^>]*checked=""|checked=""[^>]*id="office-senator"/);
+  assert.match(html, /aria-describedby="office-hint"/); assert.match(html, /<legend>Cargo<\/legend>/);
+  const invalid = renderToStaticMarkup(createElement(OfficeField, { value: 'deputies', errors: [{ field: 'office', message: 'Escolha um cargo.' }], choices, hint: 'Cargo estadual.' }));
+  assert.match(invalid, /Cargo informado: deputies/); assert.match(invalid, /id="office-error"/); assert.match(invalid, /data-count="4"/);
 });

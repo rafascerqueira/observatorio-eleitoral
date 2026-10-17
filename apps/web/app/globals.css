@@ -68,8 +68,8 @@ tbody th { color: var(--ink); white-space: normal; text-align: left; }
 .municipality-summary { border-bottom: 1px solid var(--border); }
 .dataset-note { padding: 0 28px 16px; margin: 12px 0 0; font-size: 12px; color: var(--muted); }
 .pagination { padding: 14px 28px; justify-content: space-between; }
-.place-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; padding-block: 24px; }
-.place-card { background: white; border: 1px solid var(--border); padding: 20px; border-radius: 10px; }
+.place-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding-block: 24px; }
+.place-card { min-width: 0; background: white; border: 1px solid var(--border); padding: 20px; border-radius: 10px; }
 .place-card p { font-size: 13px; color: var(--muted); }
 .place-card table th, .place-card table td { padding: 8px; font-size: 12px; }
 .places-hero { padding-bottom: 28px; }
@@ -144,7 +144,7 @@ h3 { font-size: 16px; line-height: 1.4; margin: 0 0 8px; }
   .totals-grid { grid-template-columns: 1fr 1fr; padding-inline: 18px; gap: 16px; }
   .totals-grid dd { font-size: 16px; }
   .dataset-note { padding-inline: 18px; }
-  .place-grid { grid-template-columns: 1fr; }
+  .place-grid { grid-template-columns: minmax(0, 1fr); }
   .place-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-inline: 18px; }
   .place-text-search, .place-search-actions { grid-column: 1 / -1; }
   .filter-error { margin-inline: 18px; }

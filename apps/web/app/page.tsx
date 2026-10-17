@@ -1,12 +1,15 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { municipalityQuerySchema, percent, STATES, OFFICES, OFFICE_LABELS, SINGLE_ROUND_OFFICES, isStateOffice, type MunicipalityResult, type Office } from '@observatorio/contracts';
-import { getMunicipalities, getNational, getState } from '../lib/results';
+import { getCatalog, getMunicipalities, getNational, getState } from '../lib/results';
 import { QueryForm } from '../components/query-form';
-import { ErrorSummary, FieldError, QuerySelect, TurnField } from '../components/query-fields';
+import { ErrorSummary, FieldError, OfficeField, QuerySelect } from '../components/query-fields';
+import { RoundField, UfField } from '../components/round-field';
+import { availabilityFromCatalog, roundOptions } from '../lib/rounds';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from '../lib/query-ui';
 import { overviewHref } from '../lib/query-navigation';
 import { NonValidVotesTable } from '../components/non-valid-votes';
+import { RoundNote, roundBadge } from '../components/round-note';
 
 export const dynamic = 'force-dynamic';
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -36,10 +39,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   ufChoices.push({ value: 'ZZ', label: 'Exterior — ZZ' });
   const national = !stateOffice && !filters.uf && !filters.search;
   const stateView = filters.uf && !filters.search ? filters.uf : null;
-  const [state, stateResult] = valid ? await Promise.all([
-    national ? getNational({ year: filters.year, round: filters.round, office: 'president' }) : getMunicipalities(filters),
-    stateView ? getState({ year: filters.year, round: filters.round, office: filters.office, uf: stateView }) : null,
-  ]) : [null, null];
+  const [state, stateResult, catalog] = await Promise.all([
+    valid ? national ? getNational({ year: filters.year, round: filters.round, office: 'president' }) : getMunicipalities(filters) : null,
+    valid && stateView ? getState({ year: filters.year, round: filters.round, office: filters.office, uf: stateView }) : null,
+    getCatalog(),
+  ]);
+  // Turnos realizados por cargo e UF vêm das publicações; sem catálogo, nada é presumido além da regra do cargo.
+  const availability = availabilityFromCatalog(catalog?.datasets ?? []);
+  const rounds = roundOptions(availability, filters.office, filters.uf);
   const stateData = stateResult?.kind === 'ready' && stateResult.data.status === 'published' ? stateResult.data : null;
   const data = state?.kind === 'ready' ? state.data : null;
   const municipalData = data?.status === 'published' && 'items' in data ? data : null;
@@ -81,24 +88,28 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
       <section className="explorer" aria-labelledby="explorar">
         <div className="section-heading"><div><p className="eyebrow">CONSULTA ELEITORAL</p><h2 id="explorar">{national ? 'Resultado presidencial — Brasil' : stateView ? `${officeLabel} — ${UF_NAMES[stateView]}` : 'Resultados por município'}</h2></div><Link className="text-link" href="/metodologia">Como ler os dados <span aria-hidden="true">↗</span></Link></div>
         <p className="query-context"><span className="badge">Cargo: {officeLabel}</span> {stateOffice ? 'Cargo estadual: candidaturas e resultados são próprios de cada UF. Não há consolidado Brasil nem votação no exterior para este cargo.' : 'Consolidado Brasil, por UF e por município.'} Deputados estão fora do escopo atual do observatório.</p>
-        <ErrorSummary errors={errors} targets={{ year: 'year', round: 'round-1', uf: 'uf', search: 'search', office: 'office' }} />
-        <QueryForm key={JSON.stringify(raw)} action="/" className="municipality-filters" label="Filtros da consulta" hintId="municipality-help" submitLabel="Consultar"
+        {valid && <RoundNote decided={rounds.decided} office={officeLabel} place={filters.uf ? `em ${UF_NAMES[filters.uf]}` : ''} />}
+        <ErrorSummary errors={errors} targets={{ year: 'year', round: 'round-1', uf: 'uf', search: 'search', office: 'office-president' }} />
+        <QueryForm key={JSON.stringify(raw)} action="/" className="municipality-filters home-filters" label="Filtros da consulta" submitLabel="Consultar"
           secondary={!national && !stateOffice && <Link className="secondary-action" href={overviewHref(filters.year, filters.round, 'president')}>Voltar ao Brasil</Link>} hasErrors={errors.length > 0}>
-          <div className="field"><label htmlFor="office">Cargo</label><QuerySelect id="office" name="office" value={rawValue(raw, 'office', filters.office)} errors={errors}
-            choices={OFFICES.map((office) => ({ value: office, label: isStateOffice(office) ? `${OFFICE_LABELS[office]} — exige UF` : OFFICE_LABELS[office] }))} /></div>
-          <div className="field"><label htmlFor="year">Eleição</label><QuerySelect id="year" name="year" value={rawValue(raw, 'year', filters.year)} errors={errors}
-            choices={[{ value: '2022', label: '2022' }, { value: '2026', label: '2026 — ainda não publicado' }]} /></div>
-          <TurnField value={rawValue(raw, 'round', filters.round)} errors={errors} />
-          <div className="field"><label htmlFor="uf">Unidade da Federação</label><QuerySelect id="uf" name="uf" value={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors}
-            choices={[{ value: '', label: 'Todo o Brasil — somente Presidência' }, ...ufChoices]} /></div>
-          <div className="field search-field"><label htmlFor="search">Município <span className="optional-label">(opcional)</span></label><input type="search" id="search" name="search" placeholder="Buscar por nome" maxLength={100} defaultValue={rawValue(raw, 'search', filters.search ?? '')}
-            aria-invalid={invalid('search') || undefined} aria-describedby={invalid('search') ? 'search-error municipality-help' : 'municipality-help'} /><FieldError field="search" errors={errors} /></div>
+          <div className="query-group group-office"><OfficeField value={rawValue(raw, 'office', filters.office)} errors={errors} hint="Governador e Senador são cargos estaduais: escolha a UF."
+            choices={OFFICES.map((office) => ({ value: office, label: OFFICE_LABELS[office] }))} /></div>
+          <div className="query-group group-election" role="group" aria-labelledby="group-election-title"><p className="group-title" id="group-election-title">Eleição</p>
+            <div className="field"><label htmlFor="year">Ano</label><QuerySelect id="year" name="year" value={rawValue(raw, 'year', filters.year)} errors={errors}
+              choices={[{ value: '2022', label: '2022' }, { value: '2026', label: '2026 — ainda não publicado' }]} disabledValues={rawValue(raw, 'year', filters.year) === '2026' ? [] : ['2026']} /></div>
+            <RoundField availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
+          </div>
+          <div className="query-group group-territory" role="group" aria-labelledby="group-territory-title"><p className="group-title" id="group-territory-title">Território</p>
+            <UfField office={rawValue(raw, 'office', filters.office)} value={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors} choices={[{ value: '', label: 'Todo o Brasil' }, ...ufChoices]} />
+            <div className="field search-field"><label htmlFor="search">Município <span className="optional-label">(opcional)</span></label><input type="search" id="search" name="search" placeholder="Buscar por nome" maxLength={100} defaultValue={rawValue(raw, 'search', filters.search ?? '')}
+              aria-invalid={invalid('search') || undefined} aria-describedby={invalid('search') ? 'search-error search-hint' : 'search-hint'} />
+              <p className="field-hint" id="search-hint">Com ou sem acentos. Sem município, a UF mostra o resultado estadual e a lista de municípios.</p><FieldError field="search" errors={errors} /></div>
+          </div>
         </QueryForm>
-        <p className="query-note" id="municipality-help">Na Presidência, sem UF e sem busca, a consulta mostra o consolidado do Brasil. Selecione uma UF para ver o resultado da UF e de seus municípios, ou busque um município, com ou sem acentos. Governador e Senador exigem uma UF.</p>
         <div className="table-toolbar"><span>{valid ? 'Consulta aplicada: ' : 'Filtros não aplicados · '}{officeLabel} · {filters.year} · {filters.round}º turno{filters.uf ? ` · ${filters.uf}` : national ? ' · Todo o Brasil' : ' · Busca em todas as UFs'}</span><span>{published ? 'Recorte reconciliado · TSE' : roundNotHeld ? 'Turno não realizado' : 'Recorte sem publicação disponível'}</span></div>
         {nationalData && <p className="notice scope-notice">{nationalData.includesExterior ? <>O quadro Brasil inclui os 5.570 municípios das 27 UFs e {number(nationalData.summary.exteriorCities)} localidades eleitorais do exterior (ZZ). <Link href={`/exterior?round=${filters.round}`}>Consultar somente o exterior</Link>. </> : <>O quadro Brasil reúne os municípios das 27 UFs. Não inclui os votos no exterior (ZZ), ainda separados na transparência; portanto, não representa o total oficial com exterior. </>}<Link href="/fontes">Ver cobertura e fontes</Link>.</p>}
         {stateView && valid && !roundNotHeld && (stateData ? <section className="municipality-summary state-summary" aria-labelledby="resultado-uf">
-          <div className="section-heading"><h3 id="resultado-uf">Todo o estado: {UF_NAMES[stateView]} / {stateView}</h3></div>
+          <div className="section-heading"><h3 id="resultado-uf">Todo o estado: {UF_NAMES[stateView]} / {stateView}</h3>{rounds.decided && roundBadge(rounds.decided)}</div>
           {totalsGrid(stateData.summary.totals)}
           <p className="query-note">Soma dos {number(stateData.summary.municipalities)} municípios reconciliados da UF · {number(stateData.summary.sections)} seções principais · {number(stateData.summary.pollingPlaces)} locais identificados por município, zona e número. Percentuais recalculados sobre os totais da UF, não por média municipal.{stateOffice ? ' Resultado não comparável com o de outras UFs: as candidaturas diferem.' : ''}</p>
           <div className="table-scroll" role="region" aria-label={`Tabela do resultado em ${UF_NAMES[stateView]}`} tabIndex={0}>
@@ -128,7 +139,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
             <tbody>{items.length > 0 ? items.flatMap((item) => item.candidates.map((candidate) => <tr key={`${item.uf ?? 'BR'}/${item.code}/${candidate.number}`}>{!national && <td>{item.name} / {item.uf}</td>}<th scope="row">{candidate.name} <span className="candidate-number">{candidate.number}</span></th><td>{candidate.party}</td><td>{number(candidate.votes)}</td><td>{rate(candidate.percentValid)}</td></tr>)) : <tr><td colSpan={national ? 4 : 5}>
               <div className="empty-state" role="status">
                 <span className="empty-symbol" aria-hidden="true">≡</span>
-                {!valid ? <><h3>Confira os filtros da consulta</h3><p>{scopeError ? scopeError.message : 'Há um parâmetro inválido no endereço.'} Escolha os filtros acima e consulte novamente.</p></> : state?.kind === 'unavailable' ? <><h3>Não foi possível consultar os dados</h3><p>O serviço está indisponível no momento. Tente consultar novamente em instantes.</p></> : roundNotHeld ? <><h3>Não houve {filters.round}º turno para {officeLabel}{filters.uf ? ` em ${UF_NAMES[filters.uf]}` : ''} em {filters.year}</h3><p>{singleRound ? `${officeLabel} é eleito por maioria simples, em turno único; a apuração do TSE registra somente o 1º turno.` : 'Segundo a apuração do TSE publicada para este cargo e UF, a eleição foi decidida no 1º turno.'} Isso não é ausência de dados.</p><Link className="text-link" href={firstRoundHref}>Ver o 1º turno</Link></> : published ? <><h3>Nenhum município nesta página da consulta</h3><p>Confira o nome pesquisado e a página. A cobertura está discriminada na transparência.</p><Link className="text-link" href={overviewHref('2022', filters.round, filters.office, filters.uf)}>Voltar à primeira página</Link></> : <><h3>Nenhuma base publicada para este recorte</h3><p>Os resultados aparecerão aqui após a importação e a conferência dos dados oficiais do TSE.</p><Link href="/fontes" className="text-link">Conheça a cobertura <span aria-hidden="true">↗</span></Link></>}
+                {!valid ? <><h3>Consulta não aplicada</h3><p>Corrija o filtro indicado acima e consulte novamente.</p></> : state?.kind === 'unavailable' ? <><h3>Não foi possível consultar os dados</h3><p>O serviço está indisponível no momento. Tente consultar novamente em instantes.</p></> : roundNotHeld ? <><h3>Não houve {filters.round}º turno para {officeLabel}{filters.uf ? ` em ${UF_NAMES[filters.uf]}` : ''} em {filters.year}</h3><p>{singleRound ? `${officeLabel} é eleito por maioria simples, em turno único; a apuração do TSE registra somente o 1º turno.` : 'Segundo a apuração do TSE publicada para este cargo e UF, a eleição foi decidida no 1º turno.'} Isso não é ausência de dados.</p><Link className="text-link" href={firstRoundHref}>Ver o 1º turno</Link></> : published ? <><h3>Nenhum município nesta página da consulta</h3><p>Confira o nome pesquisado e a página. A cobertura está discriminada na transparência.</p><Link className="text-link" href={overviewHref('2022', filters.round, filters.office, filters.uf)}>Voltar à primeira página</Link></> : <><h3>Nenhuma base publicada para este recorte</h3><p>Os resultados aparecerão aqui após a importação e a conferência dos dados oficiais do TSE.</p><Link href="/fontes" className="text-link">Conheça a cobertura <span aria-hidden="true">↗</span></Link></>}
               </div>
             </td></tr>}</tbody>
           </table>

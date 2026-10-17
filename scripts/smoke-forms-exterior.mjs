@@ -12,8 +12,14 @@ async function request(base, path, status = 200) {
 const home = await (await request(web, '/')).text();
 const form = home.match(/<form[\s\S]*?<\/form>/)?.[0]; assert.ok(form);
 assert.match(form, /action="\/"/); assert.match(form, /method="get"/);
-assert.match(form, /type="radio"/); // Com mais de um cargo publicado, o cargo é um seletor; Presidência continua o padrão.
-assert.match(form, /<select id="office" name="office"><option value="president" selected="">/);
+assert.match(form, /type="radio"/);
+// Cargo em opções visíveis (radios nativos); Presidência continua o padrão.
+const radio = (html, id) => html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0] ?? '';
+assert.match(radio(form, 'office-president'), /type="radio"/); assert.match(radio(form, 'office-president'), /checked=""/);
+for (const office of ['governor', 'senator']) assert.match(radio(form, `office-${office}`), new RegExp(`name="office"[^>]*value="${office}"`));
+// Turno único do Senado: o 2º turno não é oferecido nem no HTML do servidor.
+const senate = (await (await request(web, '/?office=senator&uf=RJ')).text()).match(/<form[\s\S]*?<\/form>/)?.[0] ?? '';
+assert.doesNotMatch(senate, /name="round"[^>]*value="2"/); assert.match(senate, /turno único/);
 for (const label of ['São Paulo — SP', 'Exterior — ZZ', '2026 — ainda não publicado']) assert.ok(home.includes(label));
 const corrected = await (await request(web, '/?year=2026&round=2&uf=RJ&search=Rio&page=0')).text();
 assert.match(corrected, /id="query-errors"/); assert.match(corrected, /href="#submit-query"/);

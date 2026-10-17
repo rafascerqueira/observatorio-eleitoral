@@ -1,10 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { placesQuerySchema, OFFICE_LABELS, SINGLE_ROUND_OFFICES } from '@observatorio/contracts';
-import { getPlaces } from '../../../lib/results';
+import { getCatalog, getPlaces } from '../../../lib/results';
+import { availabilityFromCatalog, roundOptions } from '../../../lib/rounds';
+import { RoundField } from '../../../components/round-field';
+import { RoundNote } from '../../../components/round-note';
 import { clearPlacesHref, placesHref } from '../../../lib/place-navigation';
 import { QueryForm } from '../../../components/query-form';
-import { ErrorSummary, FieldError, QuerySelect, TurnField } from '../../../components/query-fields';
+import { ErrorSummary, FieldError, QuerySelect } from '../../../components/query-fields';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from '../../../lib/query-ui';
 import { overviewHref } from '../../../lib/query-navigation';
 import { NonValidVotesTable } from '../../../components/non-valid-votes';
@@ -20,7 +23,9 @@ export default async function Municipality({ params, searchParams }: { params: P
   const parsed = placesQuerySchema.safeParse({ ...query, pageSize: query.pageSize ?? '10' });
   const filters = parsed.success ? parsed.data : placesQuerySchema.parse({ ...recoverQuery(query, 'places'), pageSize: recoverQuery(query, 'places').pageSize ?? '10' });
   const scopeError = officeScopeError(filters.office, filters.uf);
-  const response = parsed.success && !scopeError ? await getPlaces(code, filters) : null;
+  const [response, catalog] = await Promise.all([parsed.success && !scopeError ? getPlaces(code, filters) : null, getCatalog()]);
+  const availability = availabilityFromCatalog(catalog?.datasets ?? []);
+  const rounds = roundOptions(availability, filters.office, filters.uf);
   const errors = [...(parsed.success ? [] : queryErrors(query, parsed.error.issues, 'places')), ...(scopeError ? [scopeError] : [])];
   const officeLabel = OFFICE_LABELS[filters.office];
   const invalidFields = new Set(errors.map((error) => error.field));
@@ -59,7 +64,7 @@ export default async function Municipality({ params, searchParams }: { params: P
         <details className="advanced-filters" open={Boolean(filters.local || filters.year !== '2022' || filters.pageSize !== 10 || errors.some((error) => ['year', 'round', 'local', 'pageSize'].includes(error.field)))}>
           <summary>Ajustar eleição e opções avançadas</summary><div className="places-advanced">
             <div className="field"><label htmlFor="places-year">Eleição</label><QuerySelect id="places-year" name="year" value={rawValue(query, 'year', filters.year)} errors={errors} choices={[{ value: '2022', label: '2022' }, { value: '2026', label: '2026 — ainda não publicado' }]} /></div>
-            <TurnField prefix="places-" value={rawValue(query, 'round', filters.round)} errors={errors} />
+            <RoundField prefix="places-" availability={availability} office={filters.office} uf={filters.uf ?? ''} value={rawValue(query, 'round', filters.round)} errors={errors} />
             <div className="field"><label htmlFor="places-local">Código do local <span className="optional-label">(opcional)</span></label><input id="places-local" name="local" inputMode="numeric" pattern="[0-9]+" maxLength={5} placeholder="Ex.: 1015" defaultValue={value('local')} aria-invalid={invalidFields.has('local') || undefined} aria-describedby={describedBy('local')} /><FieldError field="local" errors={errors} prefix="places-" /></div>
             <div className="field"><label htmlFor="places-pageSize">Locais por página</label><QuerySelect id="places-pageSize" name="pageSize" value={rawValue(query, 'pageSize', filters.pageSize)} errors={errors} choices={[...new Set([10, 25, 50, filters.pageSize])].sort((a, b) => a - b).map((size) => ({ value: String(size), label: String(size) }))} /></div>
           </div>
@@ -68,7 +73,9 @@ export default async function Municipality({ params, searchParams }: { params: P
       <p id="section-help" className="query-note">Números de seção podem se repetir em zonas diferentes. Zeros iniciais são aceitos. Uma nova busca sempre começa na primeira página.</p>
     </section>
     <p className="query-context applied-context">{parsed.success && !scopeError ? 'Consulta aplicada' : 'Filtros não aplicados'}: {officeLabel} · {filters.year} · {filters.round}º turno{filters.zone ? ` · Zona ${filters.zone}` : ''}{filters.section ? ` · Seção ${filters.section}` : ''}. <Link className="secondary-action" href={overviewHref(filters.year, filters.round, filters.office, filters.uf)}>{filters.office === 'president' ? 'Voltar ao Brasil' : `Voltar a ${filters.uf && filters.uf !== 'ZZ' ? UF_NAMES[filters.uf] : 'consulta'}`}</Link></p>
-    <nav className="pagination round-navigation" aria-label="Selecionar turno">{(['1', '2'] as const).map((round) => <Link key={round} href={placesHref(code, filters, { round, page: 1 })} aria-current={filters.round === round ? 'page' : undefined}>{round}º turno de {filters.year}</Link>)}</nav>
+    {/* Só há navegação entre turnos quando o recorte teve dois; a explicação do turno único aparece já no 1º turno. */}
+    {rounds.rounds.length > 1 ? <nav className="pagination round-navigation" aria-label="Selecionar turno">{rounds.rounds.map((round) => <Link key={round} href={placesHref(code, filters, { round, page: 1 })} aria-current={filters.round === round ? 'page' : undefined}>{round}º turno de {filters.year}</Link>)}</nav>
+      : <RoundNote decided={rounds.decided} office={officeLabel} place={filters.uf && filters.uf !== 'ZZ' ? `em ${UF_NAMES[filters.uf]}` : 'nesta UF'}>{filters.round !== '1' && <> <Link href={placesHref(code, filters, { round: '1', page: 1 })}>Ver o 1º turno</Link>.</>}</RoundNote>}
     <details className="notice place-context"><summary>Como interpretar os locais e seus dados</summary><p>Local de votação é onde o eleitor vota, não onde mora. O código do local só é único junto com a zona eleitoral. Prédios compartilhados entre zonas não foram unificados.</p><p>Aptos, comparecimento e abstenção por local não estão disponíveis neste recorte. Não há associação socioeconômica validada.</p></details>
     <section id="resultados" className="places-results" aria-labelledby="resultados-titulo" tabIndex={-1}>
       <h2 id="resultados-titulo">Locais encontrados</h2>

@@ -256,3 +256,4 @@ Também nesta data: `AGENTS.md` passou a ser o único arquivo de orientações (
 3. IBGE: escolher as variáveis e a escala municipal e validar a correspondência de códigos TSE–IBGE. É a próxima prioridade.
 4. Página de UF longa; verificações de acessibilidade no repositório; revisão em navegador das páginas do Senado.
 5. Rota de relatório em modo dev (`tsx watch`).
+6. Formulários e exibição: plano em `docs/plano-ux-formularios.md`. Decisões de Rafael registradas (componente próprio de sugestões, cargo em opções visíveis, manter "Consultar", ordem 1→2→3→5+6→4). Fases 1–3 implementadas em 17/10/2026; pendentes 5 e 6 (feedback e transições) e 4 (busca com `pg_trgm`/`unaccent`, depois enriquecida com IBGE).

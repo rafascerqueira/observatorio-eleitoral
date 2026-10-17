@@ -5,27 +5,44 @@ export function FieldError({ field, errors, prefix = '' }: { field: string; erro
   return error ? <p className="field-error" id={`${prefix}${field}-error`}>{error.message}</p> : null;
 }
 
-export function QuerySelect({ id, name, value, choices, errors, hintId }: {
-  id: string; name: string; value: string; choices: Array<{ value: string; label: string }>; errors: QueryError[]; hintId?: string;
+export function QuerySelect({ id, name, value, choices, errors, hintId, disabledValues = [] }: {
+  id: string; name: string; value: string; choices: Array<{ value: string; label: string }>; errors: QueryError[]; hintId?: string; disabledValues?: readonly string[];
 }) {
   const invalid = errors.some((error) => error.field === name);
   const prefix = id.slice(0, id.length - name.length);
   return <><select id={id} name={name} defaultValue={value} aria-invalid={invalid || undefined}
     aria-describedby={[hintId, invalid ? `${id}-error` : undefined].filter(Boolean).join(' ') || undefined}>
     {!choices.some((choice) => choice.value === value) && <option value={value}>Valor informado: {value}</option>}
-    {choices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+    {choices.map((choice) => <option key={choice.value} value={choice.value} disabled={disabledValues.includes(choice.value) || undefined}>{choice.label}</option>)}
   </select><FieldError field={name} errors={errors} prefix={prefix} /></>;
 }
 
-export function TurnField({ value, errors, prefix = '' }: { value: string; errors: QueryError[]; prefix?: string }) {
-  const invalid = errors.some((error) => error.field === 'round');
-  return <fieldset className="field turn-field" id={`${prefix}round`} aria-invalid={invalid || undefined}
-    aria-describedby={invalid ? `${prefix}round-error` : undefined}>
-    <legend>Turno</legend><div className="turn-options">{['1', '2'].map((round) => <label className="turn-choice" key={round}>
-      <input id={`${prefix}round-${round}`} type="radio" name="round" value={round} defaultChecked={value === round} required aria-invalid={invalid || undefined} aria-describedby={invalid ? `${prefix}round-error` : undefined} /><span>{round}º turno</span>
-    </label>)}{!['1', '2'].includes(value) && <label className="turn-choice invalid-choice"><input type="radio" name="round" value={value} defaultChecked /><span>Turno informado: {value}</span></label>}</div>
-    <FieldError field="round" errors={errors} prefix={prefix} />
+/** Grupo de opções visíveis (radios nativos com aparência segmentada); aplica somente ao enviar o formulário. */
+function ChoiceGroup({ name, legend, value, choices, errors, prefix = '', hint, hintId, invalidLabel, className = '' }: {
+  name: string; legend: string; value: string; choices: Array<{ value: string; label: string }>; errors: QueryError[]; prefix?: string;
+  hint?: string | null; hintId?: string; invalidLabel: string; className?: string;
+}) {
+  const invalid = errors.some((error) => error.field === name);
+  const known = choices.some((choice) => choice.value === value);
+  const describedBy = [hint ? hintId : undefined, invalid ? `${prefix}${name}-error` : undefined].filter(Boolean).join(' ') || undefined;
+  return <fieldset className={`field choice-field ${className}`} id={`${prefix}${name}`} aria-invalid={invalid || undefined} aria-describedby={describedBy}>
+    <legend>{legend}</legend>
+    <div className="segmented" data-count={choices.length + (known ? 0 : 1)}>{choices.map((choice) => <label className="segmented-choice" key={choice.value}>
+      <input id={`${prefix}${name}-${choice.value}`} type="radio" name={name} value={choice.value} defaultChecked={value === choice.value} required aria-invalid={invalid || undefined} aria-describedby={describedBy} /><span>{choice.label}</span>
+    </label>)}{!known && <label className="segmented-choice invalid-choice"><input type="radio" name={name} value={value} defaultChecked /><span>{`${invalidLabel}: ${value}`}</span></label>}</div>
+    {hint && <p className="field-hint" id={hintId}>{hint}</p>}
+    <FieldError field={name} errors={errors} prefix={prefix} />
   </fieldset>;
+}
+
+export function OfficeField({ value, errors, choices, hint }: { value: string; errors: QueryError[]; choices: Array<{ value: string; label: string }>; hint: string }) {
+  return <ChoiceGroup name="office" legend="Cargo" value={value} choices={choices} errors={errors} hint={hint} hintId="office-hint" invalidLabel="Cargo informado" className="office-field" />;
+}
+
+/** Turnos oferecidos conforme os dados; valor fora de 1/2 é preservado como inválido, nunca trocado em silêncio. */
+export function TurnField({ value, errors, prefix = '', rounds = ['1', '2'], note }: { value: string; errors: QueryError[]; prefix?: string; rounds?: readonly string[]; note?: string | null }) {
+  return <ChoiceGroup name="round" legend="Turno" value={value} errors={errors} prefix={prefix} hint={note} hintId={`${prefix}round-hint`} invalidLabel="Turno informado" className="turn-field"
+    choices={rounds.map((round) => ({ value: round, label: `${round}º turno` }))} />;
 }
 
 export function ErrorSummary({ errors, targets }: { errors: QueryError[]; targets: Record<string, string> }) {
