@@ -10,6 +10,8 @@ import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from 
 import { overviewHref } from '../lib/query-navigation';
 import { NonValidVotesTable } from '../components/non-valid-votes';
 import { RoundNote, roundBadge } from '../components/round-note';
+import { ResultsTransition } from '../components/results-transition';
+import { AppliedFilters } from '../components/applied-filters';
 
 export const dynamic = 'force-dynamic';
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -70,6 +72,17 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
     ...(totals.annulledSubJudice ? [['Anulados sub judice', `${number(totals.annulledSubJudice)} (${rate(percent(totals.annulledSubJudice, totals.totalVotes))})`]] : []),
   ] as Array<[string, string, (string | null)?]>).map(([label, value, detail]) => <div key={label}><dt>{label}</dt><dd>{value}{detail && <span className="totals-detail">{detail}</span>}</dd></div>)}</dl>;
   const placesLink = (code: string, uf: string) => `/municipios/${code}?${new URLSearchParams({ year: filters.year, round: filters.round, uf, ...(filters.office === 'president' ? {} : { office: filters.office }) })}`;
+  // Remover um filtro volta à primeira página, preservando os demais.
+  const withoutHref = (field: 'uf' | 'search') => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) if (key !== field && key !== 'page' && value !== undefined && value !== '') params.set(key, String(value));
+    return `/?${params}`;
+  };
+  const applied = [
+    { label: 'Cargo', value: officeLabel }, { label: 'Eleição', value: filters.year }, { label: 'Turno', value: `${filters.round}º` },
+    { label: 'Território', value: filters.uf ? UF_NAMES[filters.uf] : national ? 'Todo o Brasil' : 'Todas as UFs', ...(filters.uf && !stateOffice ? { removeHref: withoutHref('uf') } : {}) },
+    ...(filters.search ? [{ label: 'Município', value: `“${filters.search}”`, removeHref: withoutHref('search') }] : []),
+  ];
   function pageHref(page: number) {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries({ ...filters, page })) if (value !== undefined && value !== '') params.set(key, String(value));
@@ -90,7 +103,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
         <p className="query-context"><span className="badge">Cargo: {officeLabel}</span> {stateOffice ? 'Cargo estadual: candidaturas e resultados são próprios de cada UF. Não há consolidado Brasil nem votação no exterior para este cargo.' : 'Consolidado Brasil, por UF e por município.'} Deputados estão fora do escopo atual do observatório.</p>
         {valid && <RoundNote decided={rounds.decided} office={officeLabel} place={filters.uf ? `em ${UF_NAMES[filters.uf]}` : ''} />}
         <ErrorSummary errors={errors} targets={{ year: 'year', round: 'round-1', uf: 'uf', search: 'search', office: 'office-president' }} />
-        <QueryForm key={JSON.stringify(raw)} action="/" className="municipality-filters home-filters" label="Filtros da consulta" submitLabel="Consultar"
+        <QueryForm key={JSON.stringify(raw)} action="/" className="municipality-filters home-filters" label="Filtros da consulta" submitLabel="Consultar" resultsId="resultados-consulta"
           secondary={!national && !stateOffice && <Link className="secondary-action" href={overviewHref(filters.year, filters.round, 'president')}>Voltar ao Brasil</Link>} hasErrors={errors.length > 0}>
           <div className="query-group group-office"><OfficeField value={rawValue(raw, 'office', filters.office)} errors={errors} hint="Governador e Senador são cargos estaduais: escolha a UF."
             choices={OFFICES.map((office) => ({ value: office, label: OFFICE_LABELS[office] }))} /></div>
@@ -106,7 +119,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
               <p className="field-hint" id="search-hint">Com ou sem acentos. Sem município, a UF mostra o resultado estadual e a lista de municípios.</p><FieldError field="search" errors={errors} /></div>
           </div>
         </QueryForm>
-        <div className="table-toolbar"><span>{valid ? 'Consulta aplicada: ' : 'Filtros não aplicados · '}{officeLabel} · {filters.year} · {filters.round}º turno{filters.uf ? ` · ${filters.uf}` : national ? ' · Todo o Brasil' : ' · Busca em todas as UFs'}</span><span>{published ? 'Recorte reconciliado · TSE' : roundNotHeld ? 'Turno não realizado' : 'Recorte sem publicação disponível'}</span></div>
+        <ResultsTransition id="resultados-consulta" transitionKey={JSON.stringify(filters)}>
+        <div className="table-toolbar">{valid ? <div className="applied-row"><span>Consulta aplicada</span><AppliedFilters items={applied} /></div> : <span>Filtros não aplicados · {officeLabel} · {filters.year} · {filters.round}º turno</span>}<span>{published ? 'Recorte reconciliado · TSE' : roundNotHeld ? 'Turno não realizado' : 'Recorte sem publicação disponível'}</span></div>
         {nationalData && <p className="notice scope-notice">{nationalData.includesExterior ? <>O quadro Brasil inclui os 5.570 municípios das 27 UFs e {number(nationalData.summary.exteriorCities)} localidades eleitorais do exterior (ZZ). <Link href={`/exterior?round=${filters.round}`}>Consultar somente o exterior</Link>. </> : <>O quadro Brasil reúne os municípios das 27 UFs. Não inclui os votos no exterior (ZZ), ainda separados na transparência; portanto, não representa o total oficial com exterior. </>}<Link href="/fontes">Ver cobertura e fontes</Link>.</p>}
         {stateView && valid && !roundNotHeld && (stateData ? <section className="municipality-summary state-summary" aria-labelledby="resultado-uf">
           <div className="section-heading"><h3 id="resultado-uf">Todo o estado: {UF_NAMES[stateView]} / {stateView}</h3>{rounds.decided && roundBadge(rounds.decided)}</div>
@@ -147,6 +161,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
         <div className="table-footer"><span role="status" aria-live="polite" aria-atomic="true">{nationalData ? `Consolidado de ${number(nationalData.summary.municipalities)} municípios · sem paginação` : municipalData ? `${municipalData.pagination.total} município(s) encontrado(s) · página ${filters.page}` : roundNotHeld ? 'Turno não realizado para este cargo na UF' : 'Consulta sem resultados publicados'}</span><span>% da candidatura = votos ÷ votos válidos × 100. Totais de participação aparecem uma única vez.</span></div>
         {municipalData && (filters.page > 1 || filters.page * filters.pageSize < municipalData.pagination.total) && <nav className="pagination" aria-label="Paginação de municípios">{filters.page > 1 && <Link href={pageHref(filters.page - 1)}>Página anterior</Link>}{filters.page * filters.pageSize < municipalData.pagination.total && <Link href={pageHref(filters.page + 1)}>Próxima página</Link>}</nav>}
         {published && <p className="dataset-note">Fonte: TSE · {data.dataset.level === 'state' ? `Versão ${officeLabel} ${data.dataset.uf}` : 'Versão doméstica'} {data.dataset.id.slice(0, 12)}{nationalData?.exteriorDataset ? ` · Versão exterior ${nationalData.exteriorDataset.id.slice(0, 12)}` : ''} · Votos por seção reconciliados por zona com os arquivos de apuração e votação nominal, de gerações distintas. <Link href="/fontes">Arquivos, datas e checksums</Link>.</p>}
+        </ResultsTransition>
       </section>
 
       <section className="principles" aria-label="Princípios de leitura">

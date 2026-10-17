@@ -5,6 +5,7 @@ import { getCatalog, getPlaces } from '../../../lib/results';
 import { availabilityFromCatalog, roundOptions } from '../../../lib/rounds';
 import { RoundField } from '../../../components/round-field';
 import { RoundNote } from '../../../components/round-note';
+import { ResultsTransition } from '../../../components/results-transition';
 import { clearPlacesHref, placesHref } from '../../../lib/place-navigation';
 import { QueryForm } from '../../../components/query-form';
 import { ErrorSummary, FieldError, QuerySelect } from '../../../components/query-fields';
@@ -30,7 +31,7 @@ export default async function Municipality({ params, searchParams }: { params: P
   const officeLabel = OFFICE_LABELS[filters.office];
   const invalidFields = new Set(errors.map((error) => error.field));
   const value = (field: 'zone' | 'section' | 'local' | 'search') => rawValue(query, field, filters[field] ?? '');
-  const describedBy = (field: string, hint?: string) => [hint, invalidFields.has(field) ? `places-${field}-error` : undefined].filter(Boolean).join(' ') || undefined;
+  const describedBy = (field: string, hint?: string) => [hint, ['zone', 'section', 'local'].includes(field) ? `places-${field}-format` : undefined, invalidFields.has(field) ? `places-${field}-error` : undefined].filter(Boolean).join(' ') || undefined;
   const number = (count: number) => count.toLocaleString('pt-BR');
   const data = response?.kind === 'ready' ? response.data : null;
   const municipality = data?.municipality;
@@ -51,21 +52,21 @@ export default async function Municipality({ params, searchParams }: { params: P
       <div className="section-heading"><div><p className="eyebrow">{exterior ? 'BUSCA NA LOCALIDADE DO EXTERIOR' : 'BUSCA NO MUNICÍPIO'}</p><h2 id="localizar">Localizar um local de votação</h2></div></div>
       <p id="search-help" className="query-note">Combine zona e seção para localizar sua unidade. Também é possível buscar pelo código do local, nome ou endereço, com ou sem acentos.</p>
       <ErrorSummary errors={errors} targets={{ year: 'places-year', round: 'places-round-1', zone: 'places-zone', section: 'places-section', local: 'places-local', search: 'places-search', pageSize: 'places-pageSize' }} />
-      <QueryForm key={JSON.stringify(query)} action={`/${exterior ? 'exterior' : 'municipios'}/${code}#resultados`} className="places-query" label="Busca de locais de votação" hintId="search-help" submitLabel="Buscar locais"
+      <QueryForm key={JSON.stringify(query)} action={`/${exterior ? 'exterior' : 'municipios'}/${code}#resultados`} className="places-query" label="Busca de locais de votação" hintId="search-help" submitLabel="Buscar locais" resultsId="resultados-locais"
         secondary={<Link className="secondary-action" href={clearHref}>Limpar filtros</Link>} hasErrors={errors.length > 0}>
         <input type="hidden" name="page" value="1" />
         <input type="hidden" name="office" value={filters.office} />
         {filters.uf && <input type="hidden" name="uf" value={filters.uf} />}
         <div className="places-primary">
-          <div className="field"><label htmlFor="places-zone">Zona eleitoral <span className="optional-label">(opcional)</span></label><input id="places-zone" name="zone" inputMode="numeric" pattern="[0-9]+" maxLength={4} placeholder="Ex.: 0001" defaultValue={value('zone')} aria-invalid={invalidFields.has('zone') || undefined} aria-describedby={describedBy('zone', 'section-help')} /><FieldError field="zone" errors={errors} prefix="places-" /></div>
-          <div className="field"><label htmlFor="places-section">Seção eleitoral <span className="optional-label">(opcional)</span></label><input id="places-section" name="section" inputMode="numeric" pattern="[0-9]+" maxLength={5} placeholder="Ex.: 0001" defaultValue={value('section')} aria-invalid={invalidFields.has('section') || undefined} aria-describedby={describedBy('section', 'section-help')} /><FieldError field="section" errors={errors} prefix="places-" /></div>
+          <div className="field"><label htmlFor="places-zone">Zona eleitoral <span className="optional-label">(opcional)</span></label><input id="places-zone" name="zone" inputMode="numeric" pattern="[0-9]+" maxLength={4} placeholder="Ex.: 0001" defaultValue={value('zone')} aria-invalid={invalidFields.has('zone') || undefined} aria-describedby={describedBy('zone', 'section-help')} /><p className="field-hint invalid-hint" id="places-zone-format">Use apenas números.</p><FieldError field="zone" errors={errors} prefix="places-" /></div>
+          <div className="field"><label htmlFor="places-section">Seção eleitoral <span className="optional-label">(opcional)</span></label><input id="places-section" name="section" inputMode="numeric" pattern="[0-9]+" maxLength={5} placeholder="Ex.: 0001" defaultValue={value('section')} aria-invalid={invalidFields.has('section') || undefined} aria-describedby={describedBy('section', 'section-help')} /><p className="field-hint invalid-hint" id="places-section-format">Use apenas números.</p><FieldError field="section" errors={errors} prefix="places-" /></div>
           <div className="field"><label htmlFor="places-search">Nome do local ou endereço <span className="optional-label">(opcional)</span></label><input id="places-search" type="search" name="search" maxLength={100} placeholder="Digite parte do nome, rua ou avenida" defaultValue={value('search')} aria-invalid={invalidFields.has('search') || undefined} aria-describedby={describedBy('search')} /><FieldError field="search" errors={errors} prefix="places-" /></div>
         </div>
         <details className="advanced-filters" open={Boolean(filters.local || filters.year !== '2022' || filters.pageSize !== 10 || errors.some((error) => ['year', 'round', 'local', 'pageSize'].includes(error.field)))}>
           <summary>Ajustar eleição e opções avançadas</summary><div className="places-advanced">
             <div className="field"><label htmlFor="places-year">Eleição</label><QuerySelect id="places-year" name="year" value={rawValue(query, 'year', filters.year)} errors={errors} choices={[{ value: '2022', label: '2022' }, { value: '2026', label: '2026 — ainda não publicado' }]} /></div>
             <RoundField prefix="places-" availability={availability} office={filters.office} uf={filters.uf ?? ''} value={rawValue(query, 'round', filters.round)} errors={errors} />
-            <div className="field"><label htmlFor="places-local">Código do local <span className="optional-label">(opcional)</span></label><input id="places-local" name="local" inputMode="numeric" pattern="[0-9]+" maxLength={5} placeholder="Ex.: 1015" defaultValue={value('local')} aria-invalid={invalidFields.has('local') || undefined} aria-describedby={describedBy('local')} /><FieldError field="local" errors={errors} prefix="places-" /></div>
+            <div className="field"><label htmlFor="places-local">Código do local <span className="optional-label">(opcional)</span></label><input id="places-local" name="local" inputMode="numeric" pattern="[0-9]+" maxLength={5} placeholder="Ex.: 1015" defaultValue={value('local')} aria-invalid={invalidFields.has('local') || undefined} aria-describedby={describedBy('local')} /><p className="field-hint invalid-hint" id="places-local-format">Use apenas números.</p><FieldError field="local" errors={errors} prefix="places-" /></div>
             <div className="field"><label htmlFor="places-pageSize">Locais por página</label><QuerySelect id="places-pageSize" name="pageSize" value={rawValue(query, 'pageSize', filters.pageSize)} errors={errors} choices={[...new Set([10, 25, 50, filters.pageSize])].sort((a, b) => a - b).map((size) => ({ value: String(size), label: String(size) }))} /></div>
           </div>
         </details>
@@ -74,12 +75,13 @@ export default async function Municipality({ params, searchParams }: { params: P
     </section>
     <p className="query-context applied-context">{parsed.success && !scopeError ? 'Consulta aplicada' : 'Filtros não aplicados'}: {officeLabel} · {filters.year} · {filters.round}º turno{filters.zone ? ` · Zona ${filters.zone}` : ''}{filters.section ? ` · Seção ${filters.section}` : ''}. <Link className="secondary-action" href={overviewHref(filters.year, filters.round, filters.office, filters.uf)}>{filters.office === 'president' ? 'Voltar ao Brasil' : `Voltar a ${filters.uf && filters.uf !== 'ZZ' ? UF_NAMES[filters.uf] : 'consulta'}`}</Link></p>
     {/* Só há navegação entre turnos quando o recorte teve dois; a explicação do turno único aparece já no 1º turno. */}
-    {rounds.rounds.length > 1 ? <nav className="pagination round-navigation" aria-label="Selecionar turno">{rounds.rounds.map((round) => <Link key={round} href={placesHref(code, filters, { round, page: 1 })} aria-current={filters.round === round ? 'page' : undefined}>{round}º turno de {filters.year}</Link>)}</nav>
+    {rounds.rounds.length > 1 ? <nav className="pagination round-navigation" aria-label="Selecionar turno">{rounds.rounds.map((round) => <Link key={round} href={placesHref(code, filters, { round, page: 1 })} transitionTypes={round === filters.round ? undefined : [round > filters.round ? 'round-next' : 'round-prev']} aria-current={filters.round === round ? 'page' : undefined}>{round}º turno de {filters.year}</Link>)}</nav>
       : <RoundNote decided={rounds.decided} office={officeLabel} place={filters.uf && filters.uf !== 'ZZ' ? `em ${UF_NAMES[filters.uf]}` : 'nesta UF'}>{filters.round !== '1' && <> <Link href={placesHref(code, filters, { round: '1', page: 1 })}>Ver o 1º turno</Link>.</>}</RoundNote>}
     <details className="notice place-context"><summary>Como interpretar os locais e seus dados</summary><p>Local de votação é onde o eleitor vota, não onde mora. O código do local só é único junto com a zona eleitoral. Prédios compartilhados entre zonas não foram unificados.</p><p>Aptos, comparecimento e abstenção por local não estão disponíveis neste recorte. Não há associação socioeconômica validada.</p></details>
     <section id="resultados" className="places-results" aria-labelledby="resultados-titulo" tabIndex={-1}>
       <h2 id="resultados-titulo">Locais encontrados</h2>
       <p className="query-note places-scope">{filters.section ? <>A seção {filters.section}{filters.zone ? ` da zona ${filters.zone}` : ''} é usada para localizar o local. </> : null}Os resultados exibidos são do <strong>local inteiro</strong>. Percentuais de candidaturas usam os votos válidos do local.</p>
+      <ResultsTransition id="resultados-locais" transitionKey={JSON.stringify(filters)}>
       {!parsed.success || scopeError ? <p>Revise os filtros acima e busque novamente.</p> : response?.kind !== 'ready' ? <div className="place-status" role="status"><h3>{response?.kind === 'round-not-held' ? `Não houve ${filters.round}º turno para ${officeLabel} nesta UF em ${filters.year}` : response?.kind === 'missing' ? 'Recorte sem publicação disponível' : 'Não foi possível consultar os locais'}</h3><p>{response?.kind === 'round-not-held' ? `${SINGLE_ROUND_OFFICES.includes(filters.office) ? `${officeLabel} é eleito por maioria simples, em turno único.` : 'Segundo a apuração do TSE, a eleição foi decidida no 1º turno.'} Escolha o 1º turno acima.` : 'Confira o ano e turno ou tente novamente em instantes.'}</p></div> : <>
       <p className="places-count" role="status">{number(response.data.total)} {response.data.total === 1 ? 'local encontrado' : 'locais encontrados'}{filtered ? ' com os filtros aplicados' : ''}{response.data.items.length > 0 ? ` · exibindo ${number(firstItem)}–${number(lastItem)}` : ''}.</p>
       {pagination('acima')}
@@ -95,6 +97,7 @@ export default async function Municipality({ params, searchParams }: { params: P
       </article>)}</div>}
       {pagination('abaixo')}
     </>}
+      </ResultsTransition>
     </section>
   </>;
 }
