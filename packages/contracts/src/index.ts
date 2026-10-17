@@ -238,12 +238,26 @@ export const PLACE_GROUP_INDICATORS = {
   'income-median': { label: 'Rendimento mediano do responsável pelo domicílio no setor censitário do local', source: 'IBGE, Censo 2022 — agregados por setor (rendimento do responsável); local → setor pelo ponto do TSE', kind: 'universo', unit: 'reais' },
 } as const;
 export type PlaceGroupIndicator = keyof typeof PLACE_GROUP_INDICATORS;
+/** Salário mínimo vigente na data de referência do Censo 2022 (31/07/2022): R$ 1.212 (Lei 14.358/2022). */
+export const MINIMUM_WAGE_2022 = 1212;
+/**
+ * Faixas fixas da renda (place-groups v2), iguais em todos os recortes, em múltiplos do salário mínimo de 2022:
+ * limite superior incluído, inferior excluído. Muitos setores têm mediana exatamente em 1 SM; faixas fixas evitam
+ * dividir valores iguais entre grupos, o que os quintis faziam.
+ */
+export const INCOME_BANDS = [
+  { index: 1, lower: null, upper: 1 }, { index: 2, lower: 1, upper: 1.5 }, { index: 3, lower: 1.5, upper: 2 }, { index: 4, lower: 2, upper: 3 }, { index: 5, lower: 3, upper: null },
+] as const;
+/** Como os grupos foram formados: quintis ponderados por eleitores aptos (sem dividir valores iguais) ou faixas fixas. Ausente (v1): quintis. */
+export const PLACE_GROUP_METHODS = { college: 'quintiles', 'income-median': 'bands' } as const;
 export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).extend({ indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]) }).strict();
 export const placeGroupsSchema = z.object({
   status: z.enum(['published', 'awaiting-import', 'round-not-held']), indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]),
   office: z.enum(OFFICES), round: z.enum(['1', '2']), uf: z.enum(STATES).nullable(),
-  groups: z.array(z.object({ index: z.number().int().min(1).max(5), from: z.number(), to: z.number(), places: nonnegative, eligible: nonnegative,
-    valid: nonnegative, blank: nonnegative, null: nonnegative, totalVotes: nonnegative, candidates: z.array(candidateSchema) })),
+  method: z.enum(['quintiles', 'bands']).optional(),
+  // `from`/`to`: menor e maior valor observado no grupo. `lower`/`upper` (só faixas): limites da faixa em reais, null quando aberta.
+  groups: z.array(z.object({ index: z.number().int().min(1).max(5), from: z.number(), to: z.number(), lower: z.number().nullable().optional(), upper: z.number().nullable().optional(),
+    places: nonnegative, eligible: nonnegative, valid: nonnegative, blank: nonnegative, null: nonnegative, totalVotes: nonnegative, candidates: z.array(candidateSchema) })),
   // Votos de locais sem o indicador ficam fora dos grupos e são informados aqui (nunca redistribuídos).
   coverage: z.object({ places: nonnegative, placesInGroups: nonnegative, totalVotes: nonnegative, votesInGroups: nonnegative }),
 });

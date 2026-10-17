@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { OFFICES, OFFICE_LABELS, PLACE_GROUP_INDICATORS, STATES, placeGroupsQuerySchema, type PlaceGroupIndicator, type PlaceGroups } from '@observatorio/contracts';
+import { INCOME_BANDS, MINIMUM_WAGE_2022, OFFICES, OFFICE_LABELS, PLACE_GROUP_INDICATORS, STATES, placeGroupsQuerySchema, type PlaceGroupIndicator, type PlaceGroups } from '@observatorio/contracts';
 import { getCatalog, getPlaceGroups } from '../../lib/results';
 import { QueryForm } from '../../components/query-form';
 import { ErrorSummary, QuerySelect } from '../../components/query-fields';
@@ -11,23 +11,39 @@ import { availabilityFromCatalog } from '../../lib/rounds';
 
 export const metadata: Metadata = { title: 'Perfil dos locais' };
 export const dynamic = 'force-dynamic';
-const MINIMUM_WAGE = 1212;
 const pct = (value: number | null) => value === null ? 'Indisponível' : `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 const number = (value: number) => value.toLocaleString('pt-BR');
-const range = (indicator: PlaceGroupIndicator, from: number, to: number) => indicator === 'college'
-  ? `${pct(from)} a ${pct(to)}`
-  : `${from.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })} a ${to.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })} (${(from / MINIMUM_WAGE).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} a ${(to / MINIMUM_WAGE).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} SM)`;
+const reais = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const wages = (value: number) => value.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+type Group = PlaceGroups['groups'][number];
+/** Nome curto do grupo: a faixa de salário mínimo (faixas fixas) ou a posição do quinto (quintis; versões sem `method`). */
+const groupName = (data: PlaceGroups, index: number) => {
+  if (data.method !== 'bands') return `${index}º quinto`;
+  const band = INCOME_BANDS.find((item) => item.index === index)!;
+  return band.lower === null ? `Até ${wages(band.upper!)} SM` : band.upper === null ? `Mais de ${wages(band.lower)} SM` : `Mais de ${wages(band.lower)} a ${wages(band.upper)} SM`;
+};
+/** Definição por extenso: o critério que põe um local no grupo, sem rótulos de classe. */
+const definition = (data: PlaceGroups, index: number, group: Group | undefined) => {
+  if (data.method === 'bands') {
+    const band = INCOME_BANDS.find((item) => item.index === index)!;
+    const lower = band.lower === null ? null : band.lower * MINIMUM_WAGE_2022, upper = band.upper === null ? null : band.upper * MINIMUM_WAGE_2022;
+    return `Locais em setores com renda mediana do responsável ${lower === null ? `de até ${reais(upper!)}` : upper === null ? `acima de ${reais(lower)}` : `acima de ${reais(lower)} até ${reais(upper)}`}`;
+  }
+  return group ? `${index}º quinto dos eleitores aptos, em locais com ${pct(group.from)} a ${pct(group.to)} de eleitores com superior completo` : '';
+};
+const observed = (indicator: PlaceGroupIndicator, group: Group) => indicator === 'college' ? `${pct(group.from)} a ${pct(group.to)}`
+  : `${reais(group.from)} a ${reais(group.to)} (${wages(group.from / MINIMUM_WAGE_2022)} a ${wages(group.to / MINIMUM_WAGE_2022)} SM)`;
 
 /** Pontos por candidatura, um por grupo, na mesma escala para todas (HTML: texto legível em qualquer largura). A matriz abaixo é o acesso por teclado e leitor de tela. */
 function DotStrip({ data, order }: { data: PlaceGroups; order: Array<{ candidate: string; info: { name: string } }> }) {
   const max = Math.max(10, Math.ceil(Math.max(...data.groups.flatMap((group) => group.candidates.map((item) => item.percentValid ?? 0))) / 10) * 10);
   const position = (value: number) => `${value / max * 100}%`;
   return <div className="dot-strip" aria-hidden="true">
-    <ul className="dot-legend">{data.groups.map((group) => <li key={group.index}><span className="swatch" style={{ background: RAMPS.teal[group.index - 1] }} />Grupo {group.index}</li>)}</ul>
+    <ul className="dot-legend">{data.groups.map((group) => <li key={group.index}><span className="swatch" style={{ background: RAMPS.teal[group.index - 1] }} />{groupName(data, group.index)}</li>)}</ul>
     {order.map(({ candidate, info }) => <div className="dot-row" key={candidate}>
       <span className="dot-name">{info.name}</span>
       <span className="dot-track">{data.groups.map((group) => { const value = group.candidates.find((item) => item.number === candidate)?.percentValid ?? null; return value === null ? null
-        : <span key={group.index} className="dot" style={{ left: position(value), background: RAMPS.teal[group.index - 1] }} title={`Grupo ${group.index}: ${pct(value)}`} />; })}</span>
+        : <span key={group.index} className="dot" style={{ left: position(value), background: RAMPS.teal[group.index - 1] }} title={`${groupName(data, group.index)}: ${pct(value)}`} />; })}</span>
     </div>)}
     <div className="dot-row dot-axis-row"><span className="dot-name" /><span className="dot-axis">{[0, max / 2, max].map((tick) => <span key={tick} style={{ left: position(tick) }}>{tick.toLocaleString('pt-BR')}%</span>)}</span></div>
   </div>;
@@ -66,20 +82,28 @@ export default async function Profiles({ searchParams }: { searchParams: Promise
         {!parsed.success || scopeError ? <p className="notice scope-notice">Corrija os filtros acima para ver os grupos.</p>
           : data?.status === 'round-not-held' ? <p className="notice scope-notice">Não houve {filters.round}º turno para {OFFICE_LABELS[filters.office]}{filters.uf ? ` em ${UF_NAMES[filters.uf]}` : ''}.</p>
           : !published ? <p className="notice scope-notice" role="status">Grupos indisponíveis: o perfil dos locais, a associação aos setores ou os resultados ainda não foram publicados, ou o serviço não respondeu.</p> : <>
-          <p className="query-note context-intro">Cada grupo reúne cerca de um quinto dos eleitores aptos dos locais com o indicador. {number(published.coverage.placesInGroups)} de {number(published.coverage.places)} locais com votos entraram nos grupos, com {pct(published.coverage.votesInGroups / published.coverage.totalVotes * 100)} dos votos do recorte; os demais ficaram de fora por não terem o indicador{filters.indicator === 'income-median' ? ' (sem coordenada confiável, fora de setor do próprio município ou com ponto compartilhado por locais diferentes)' : ''}. Fonte do indicador: {meta.source}.</p>
+          <p className="query-note context-intro">{published.method === 'bands'
+            ? `Faixas fixas de renda, iguais em todos os recortes, em salários mínimos de 2022 (${reais(MINIMUM_WAGE_2022)} na data de referência do Censo, 31/07/2022): o tamanho de cada grupo varia com o território.`
+            : 'Cada grupo reúne cerca de um quinto dos eleitores aptos dos locais com o indicador; locais com o mesmo valor ficam no mesmo grupo. Os limites são do recorte escolhido e mudam com ele.'} {number(published.coverage.placesInGroups)} de {number(published.coverage.places)} locais com votos entraram nos grupos, com {pct(published.coverage.votesInGroups / published.coverage.totalVotes * 100)} dos votos do recorte; os demais ficaram de fora por não terem o indicador{filters.indicator === 'income-median' ? ' (sem coordenada confiável, fora de setor do próprio município ou com ponto compartilhado por locais diferentes)' : ''}. Fonte do indicador: {meta.source}.</p>
           <div className="table-scroll context-table" role="region" aria-label="Grupos de locais" tabIndex={0}><table>
             <caption><span className="context-caption">Grupos de locais</span> <span className={`badge kind-badge kind-${meta.kind}`}>{meta.kind === 'cadastro' ? 'Cadastro do TSE' : 'Universo do Censo'}</span> <span className="source-note">{meta.label}</span></caption>
-            <thead><tr><th scope="col">Grupo</th><th scope="col">Faixa do indicador</th><th scope="col">Locais</th><th scope="col">Eleitores aptos (cadastro)</th><th scope="col">Votos válidos</th></tr></thead>
-            <tbody>{published.groups.map((group) => <tr key={group.index}><th scope="row"><span className="swatch" style={{ background: RAMPS.teal[group.index - 1] }} aria-hidden="true" /> {group.index}</th><td>{range(filters.indicator, group.from, group.to)}</td><td>{number(group.places)}</td><td>{number(group.eligible)}</td><td>{number(group.valid)}</td></tr>)}</tbody>
+            <thead><tr><th scope="col">Grupo</th><th scope="col">Definição</th><th scope="col">Valores observados</th><th scope="col">Locais</th><th scope="col">Eleitores aptos (cadastro)</th><th scope="col">Votos válidos</th></tr></thead>
+            <tbody>{(published.method === 'bands' ? INCOME_BANDS.map((band) => band.index) : published.groups.map((group) => group.index)).map((index) => {
+              const group = published.groups.find((item) => item.index === index);
+              const eligible = published.groups.reduce((sum, item) => sum + item.eligible, 0);
+              return <tr key={index}><th scope="row"><span className="swatch" style={{ background: RAMPS.teal[index - 1] }} aria-hidden="true" /> {groupName(published, index)}</th><td>{definition(published, index, group)}</td>
+                {group ? <><td>{observed(filters.indicator, group)}</td><td>{number(group.places)}</td><td>{number(group.eligible)} <span className="source-note">· {pct(group.eligible / eligible * 100)}</span></td><td>{number(group.valid)}</td></>
+                  : <td colSpan={4}>Nenhum local nesta faixa</td>}</tr>;
+            })}</tbody>
           </table></div>
-          <figure className="dot-figure"><figcaption><span className="choropleth-title">% dos votos válidos de cada candidatura, por grupo</span><span className="source-note">Mesma escala para todas as candidaturas; grupo 1 (mais claro) a 5 (mais escuro). Valores na tabela abaixo.</span></figcaption><DotStrip data={published} order={order} /></figure>
+          <figure className="dot-figure"><figcaption><span className="choropleth-title">% dos votos válidos de cada candidatura, por grupo</span><span className="source-note">Mesma escala para todas as candidaturas; do grupo de {published.method === 'bands' ? 'menor renda' : 'menor percentual'} (mais claro) ao de maior (mais escuro). Valores na tabela abaixo.</span></figcaption><DotStrip data={published} order={order} /></figure>
           <div className="table-scroll context-table" role="region" aria-label="Votos por candidatura em cada grupo" tabIndex={0}><table>
             <caption><span className="context-caption">{OFFICE_LABELS[filters.office]} — {filters.round}º turno: % dos votos válidos do grupo</span> <span className="source-note">TSE, resultados reconciliados por local</span></caption>
-            <thead><tr><th scope="col">Candidatura</th>{published.groups.map((group) => <th scope="col" key={group.index}>Grupo {group.index}</th>)}</tr></thead>
+            <thead><tr><th scope="col">Candidatura</th>{published.groups.map((group) => <th scope="col" key={group.index}>{groupName(published, group.index)}</th>)}</tr></thead>
             <tbody>{order.map(({ candidate, info }) => <tr key={candidate}><th scope="row">{info.name} <span className="candidate-number">{candidate}</span> <span className="source-note">{info.party}</span></th>
               {published.groups.map((group) => { const item = group.candidates.find((entry) => entry.number === candidate); return <td key={group.index}>{pct(item?.percentValid ?? null)}{item && <span className="source-note"> · {number(item.votes)}</span>}</td>; })}</tr>)}</tbody>
           </table></div>
-          <div className="notice scope-notice map-caveats"><p><strong>Como ler.</strong> Diferenças entre grupos descrevem locais de votação com características diferentes, não o voto de pessoas com essas características: um local com mais eleitores de nível superior não diz como votaram esses eleitores. O endereço do local não é a residência dos eleitores. {filters.indicator === 'college' ? 'A escolaridade é a declarada no alistamento e pode estar desatualizada.' : 'A renda é a do responsável pelos domicílios do setor que contém o local, no Censo 2022 — contexto do entorno, não dos eleitores.'} Nenhuma relação de causa é sugerida.</p></div>
+          <div className="notice scope-notice map-caveats"><p><strong>Como ler.</strong> Diferenças entre grupos descrevem locais de votação com características diferentes, não o voto de pessoas com essas características: um local com mais eleitores de nível superior não diz como votaram esses eleitores. O endereço do local não é a residência dos eleitores. {filters.indicator === 'college' ? 'A escolaridade é a declarada no alistamento e pode estar desatualizada.' : 'A renda é a mediana do rendimento nominal mensal do responsável pelos domicílios do setor que contém o local, no Censo 2022 — contexto do entorno, não dos eleitores. Faixas com poucos locais reúnem poucos eleitores e variam mais; veja as colunas de locais e eleitores.'} Nenhuma relação de causa é sugerida.</p></div>
         </>}
       </div>
     </section>

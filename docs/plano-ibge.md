@@ -149,3 +149,12 @@ Pendente (mapas): tooltip próprio (hoje, rótulo nativo do SVG); mapa de candid
 
 Pendente: sensibilidade do método de associação (raio em torno do ponto), revisão com leitor de tela real, Chrome/Safari.
 
+### Métrica E v2: faixas fixas de renda — 17/10/2026
+
+- **Defeito da v1:** muitos setores têm mediana do rendimento do responsável exatamente em 1 SM (R$ 1.212): 20,3% dos eleitores em locais associados no Brasil, 55,9% em AL, 54,2% na PB, 53,2% no PI. Os quintis desempatavam pela chave do local (UF, município, zona, código) e separavam valores iguais em grupos diferentes — no MA, os grupos 3 e 4 eram inteiros de setores com R$ 1.212 e só o código do município os distinguia. A v1 fica guardada, não publicada.
+- **`place-groups-2022-v2`** (decisão de Rafael): renda em **faixas fixas**, iguais em todos os recortes, em salários mínimos de 2022 (R$ 1.212, vigente em 31/07/2022, data de referência do Censo): até 1 SM; acima de 1 até 1,5; acima de 1,5 até 2; acima de 2 até 3; acima de 3 SM (`INCOME_BANDS` nos contratos; limite superior incluído). Escolaridade segue em quintis ponderados por eleitores aptos, mas o grupo vem da posição do bloco de locais com o mesmo valor, então empates nunca se separam. Resposta com `method` (`quintiles`/`bands`) e, nas faixas, `lower`/`upper` em reais; ausentes na v1.
+- **Efeito:** os tamanhos das faixas variam com o território (Presidência, 1º turno: até 1 SM reúne 30,1% dos eleitores dos grupos no Brasil, 82,0% no MA, 71,6% em AL e 3,5% em SP). Escolaridade: cinco grupos com 19,9–20,1% em todos os recortes conferidos. 244 recortes em 63 s.
+- **Página `/perfis`:** cada grupo com nome (faixa de SM ou quinto), definição por extenso, valores observados e parcela dos eleitores; faixa vazia aparece como "Nenhum local nesta faixa"; aviso de que faixas com poucos locais variam mais.
+- **Verificação:** testes unitários, os 10 smokes (`smoke:context` confere método, ordem estrita entre grupos sem empates divididos, ~1/5 na escolaridade e valores dentro dos limites de cada faixa); axe-core sem violações e sem rolagem horizontal em 23 páginas.
+- Não conferido: o dicionário de variáveis do IBGE para V06001/V06004/V06006 não foi preservado; falta confirmar se a mediana considera só responsáveis com rendimento.
+

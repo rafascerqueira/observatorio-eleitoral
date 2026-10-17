@@ -90,17 +90,20 @@ if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
   for (const indicator of ['college', 'income-median']) {
     const groups = await json(`/elections/places/groups?indicator=${indicator}&round=2`);
     assert.equal(groups.status, 'published'); assert.equal(groups.groups.length, 5);
+    assert.equal(groups.method, indicator === 'college' ? 'quintiles' : 'bands');
     for (const group of groups.groups) {
       assert.equal(sum(group.candidates, 'votes'), group.valid, `${indicator} grupo ${group.index}: candidaturas = válidos`);
       assert.ok(group.from <= group.to);
     }
-    for (let index = 1; index < 5; index++) assert.ok(groups.groups[index].from >= groups.groups[index - 1].to, 'Grupos ordenados pelo indicador');
+    // Valores iguais nunca ficam em grupos diferentes (v2).
+    for (let index = 1; index < 5; index++) assert.ok(groups.groups[index].from > groups.groups[index - 1].to, 'Grupos ordenados, sem empates divididos');
     assert.equal(sum(groups.groups, 'totalVotes'), groups.coverage.votesInGroups); assert.ok(groups.coverage.votesInGroups <= groups.coverage.totalVotes);
     const shares = groups.groups.map((group) => group.eligible / sum(groups.groups, 'eligible'));
-    assert.ok(shares.every((share) => share > 0.15 && share < 0.25), `${indicator}: grupos com ~1/5 do eleitorado`);
+    if (indicator === 'college') assert.ok(shares.every((share) => share > 0.15 && share < 0.25), `${indicator}: grupos com ~1/5 do eleitorado`);
+    else for (const group of groups.groups) assert.ok((group.lower === null || group.from > group.lower) && (group.upper === null || group.to <= group.upper), `Faixa ${group.index}: valores dentro dos limites`);
   }
   const page = await html('/perfis?indicator=income-median&round=2');
-  for (const text of ['Resultados por perfil dos locais', 'Grupos de locais', 'descrevem locais, não pessoas', 'Grupo 5']) assert.ok(page.includes(text), text);
+  for (const text of ['Resultados por perfil dos locais', 'Grupos de locais', 'descrevem locais, não pessoas', 'Mais de 3 SM', '3.636']) assert.ok(page.includes(text), text);
   await request(api, '/elections/places/groups?indicator=college&office=governor', 400);
 }
 console.log(`Smoke do contexto municipal aprovado: ${requests} requisições.`);
