@@ -23,6 +23,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <nav aria-label="Navegação principal">
               <Link href="/">Explorar</Link>
               <Link href="/mapa">Mapa</Link>
+              <Link href="/perfis">Perfis</Link>
               <Link href="/fontes">Fontes</Link>
               <Link href="/metodologia">Metodologia</Link>
             </nav>

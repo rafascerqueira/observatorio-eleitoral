@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, placeGroupsQuerySchema, placeGroupsSchema, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { nationalSummary } from './national-summary';
 
@@ -133,6 +133,30 @@ export class ElectionsController {
           AND (search_name LIKE '%' || $3 || '%' OR $2 <% search_name)
       ) s ORDER BY array_position(ARRAY['prefix','word','contains','similar'], match), score DESC, search_name, uf LIMIT 8`, [dataset.id, term, pattern, office, uf ?? null]);
     return suggestResponseSchema.parse({ status: 'published', items: rows.rows });
+  }
+
+  /**
+   * Métrica E: locais agrupados em quintis ponderados pelos eleitores aptos (cada grupo reúne ~1/5 do eleitorado dos locais
+   * com dado), segundo o perfil dos eleitores do local (TSE) ou o entorno (IBGE); votos e válidos somados por grupo.
+   * Descreve grupos de locais, não eleitores: nenhum voto é atribuído a uma pessoa ou grupo social.
+   */
+  @Get('places/groups')
+  async placeGroups(@Query() query: Record<string, unknown>) {
+    const parsed = placeGroupsQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'Filtros dos grupos de locais inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    const { year, round, office, uf, indicator } = parsed.data;
+    if (isStateOffice(office) && !uf) throw new BadRequestException({ message: `${OFFICE_LABELS[office]} é cargo estadual: informe a UF.`, fields: ['uf'] });
+    await this.database.check();
+    const base = { indicator, office, round, uf: uf ?? null, groups: [], coverage: { places: 0, placesInGroups: 0, totalVotes: 0, votesInGroups: 0 } };
+    const dataset = await this.publishedDataset(year, office, uf);
+    if (!dataset || !['national', 'state'].includes(dataset.level)) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
+    if (!roundHeld(dataset, round)) return placeGroupsSchema.parse({ ...base, status: 'round-not-held' });
+    // Grupos pré-calculados na importação (`import:place-groups`), ligados à publicação de resultados em uso.
+    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.place_groups')::text AS registry");
+    const row = registry.rows[0]?.registry ? await this.database.query<{ result: unknown }>(`SELECT g.result FROM place_groups g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope='2022/places/groups'
+      WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.indicator=$5`, [dataset.id, office, uf ?? 'BR', Number(round), indicator]) : { rows: [] };
+    if (!row.rows[0]) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
+    try { return placeGroupsSchema.parse(row.rows[0].result); } catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes.'); }
   }
 
   /** Malha do IBGE: Brasil por UF ou uma UF por município (publicação `2022/maps/ibge`). */
@@ -269,8 +293,11 @@ export class ElectionsController {
     const coverageRegistry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_coverage')::text AS registry");
     const coverage = coverageRegistry.rows[0]?.registry ? await this.database.query<{ batch_id: string; uf: string; status: string; municipalities: number; sectionRows: number }>('SELECT batch_id,uf,status,count(*)::integer AS municipalities,sum(section_rows)::integer AS "sectionRows" FROM import_coverage GROUP BY batch_id,uf,status ORDER BY uf,status') : { rows: [] };
     // Contexto municipal (IBGE + perfis do TSE) tem formato próprio, separado das publicações de cargo.
-    const isContext = (scope: string) => scope.startsWith('2022/context/'); const isMap = (scope: string) => scope.startsWith('2022/maps/');
-    return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published && !isContext(batch.scope) && !isMap(batch.scope)).map((batch) => batch.metadata),
+    const isContext = (scope: string) => scope.startsWith('2022/context/'); const isMap = (scope: string) => scope.startsWith('2022/maps/'); const isTracts = (scope: string) => scope.startsWith('2022/places/');
+    return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published && !isContext(batch.scope) && !isMap(batch.scope) && !isTracts(batch.scope)).map((batch) => batch.metadata),
+      tractsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/tracts').map((batch) => batch.metadata),
+      placeProfilesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/profiles').map((batch) => batch.metadata),
+      placeGroupsImport: batches.rows.find((batch) => batch.published && batch.scope === '2022/places/groups')?.metadata ?? null,
       contextDatasets: batches.rows.filter((batch) => batch.published && isContext(batch.scope)).map((batch) => batch.metadata),
       mapDatasets: batches.rows.filter((batch) => batch.published && isMap(batch.scope)).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
       // Cargo estadual: só as UFs sem publicação continuam pendentes.

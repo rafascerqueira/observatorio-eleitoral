@@ -272,3 +272,10 @@ test('contexto municipal: exige UF, separa ausência de publicação de municíp
   } finally { published = false; contextPublished = false; }
 });
 
+
+test('grupos de locais (métrica E): indicador obrigatório, cargo estadual exige UF e sem publicação nada é calculado', async () => {
+  for (const query of ['', 'indicator=renda', 'indicator=college&page=2']) assert.equal((await fetch(`${base}/elections/places/groups?${query}`)).status, 400, query);
+  assert.deepEqual((await (await fetch(`${base}/elections/places/groups?indicator=college&office=senator`)).json()).fields, ['uf']);
+  const empty = await (await fetch(`${base}/elections/places/groups?indicator=income-median`)).json();
+  assert.equal(empty.status, 'awaiting-import'); assert.deepEqual(empty.groups, []); assert.equal(empty.coverage.votesInGroups, 0);
+});

@@ -98,6 +98,9 @@ export const catalogSchema = z.object({
   plannedOffices: z.array(z.object({ office: z.string(), label: z.string(), status: z.literal('not-imported') })),
   contextDatasets: z.array(z.lazy(() => contextDatasetSchema)).default([]),
   mapDatasets: z.array(z.lazy(() => mapDatasetSchema)).default([]),
+  tractsDatasets: z.array(z.lazy(() => tractsDatasetSchema)).default([]),
+  placeProfilesDatasets: z.array(z.lazy(() => placeProfilesDatasetSchema)).default([]),
+  placeGroupsImport: z.object({ id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string() }).nullable().default(null),
 });
 const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
@@ -216,6 +219,35 @@ export const mapValuesSchema = z.object({
 });
 export type MapValues = z.infer<typeof mapValuesSchema>;
 export const mapGeometrySchema = z.object({ status: z.enum(['published', 'awaiting-import']), level: z.enum(['uf', 'municipality']), uf: z.string(), batchId: z.string().nullable(), topology: z.unknown() });
+export const TRACT_STATUSES = ['associated', 'no-coordinate', 'conflicting-coordinates', 'relocated', 'outside-tracts', 'other-municipality', 'ambiguous'] as const;
+const statusCountSchema = z.object({ places: nonnegative, electors: nonnegative });
+export const tractsDatasetSchema = z.object({
+  id: z.string(), kind: z.literal('polling-place-tracts'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
+  scope: z.string(), method: z.string(), notes: z.array(z.string()),
+  coverage: z.array(z.object({ uf: z.enum(STATES), places: nonnegative, electors: nonnegative, sharedCoordinate: nonnegative, byStatus: z.record(z.enum(TRACT_STATUSES), statusCountSchema) })),
+});
+export const placeProfilesDatasetSchema = z.object({
+  id: z.string(), kind: z.literal('place-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),
+  // Ordem das categorias de cada dimensão nos vetores de contagem guardados por local.
+  order: z.record(z.enum(TURNOUT_DIMENSIONS), z.array(z.string())),
+  totals: z.object({ places: nonnegative, eligible: nonnegative, contextEligible: nonnegative, resultPlaces: nonnegative, resultPlacesWithoutProfile: nonnegative }), notes: z.array(z.string()),
+});
+/** Métrica E: locais agrupados pelo perfil do eleitorado (TSE) ou pelo entorno (IBGE); resultados somados por grupo. */
+export const PLACE_GROUP_INDICATORS = {
+  college: { label: 'Eleitores aptos do local com superior completo (escolaridade declarada no alistamento)', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  'income-median': { label: 'Rendimento mediano do responsável pelo domicílio no setor censitário do local', source: 'IBGE, Censo 2022 — agregados por setor (rendimento do responsável); local → setor pelo ponto do TSE', kind: 'universo', unit: 'reais' },
+} as const;
+export type PlaceGroupIndicator = keyof typeof PLACE_GROUP_INDICATORS;
+export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).extend({ indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]) }).strict();
+export const placeGroupsSchema = z.object({
+  status: z.enum(['published', 'awaiting-import', 'round-not-held']), indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]),
+  office: z.enum(OFFICES), round: z.enum(['1', '2']), uf: z.enum(STATES).nullable(),
+  groups: z.array(z.object({ index: z.number().int().min(1).max(5), from: z.number(), to: z.number(), places: nonnegative, eligible: nonnegative,
+    valid: nonnegative, blank: nonnegative, null: nonnegative, totalVotes: nonnegative, candidates: z.array(candidateSchema) })),
+  // Votos de locais sem o indicador ficam fora dos grupos e são informados aqui (nunca redistribuídos).
+  coverage: z.object({ places: nonnegative, placesInGroups: nonnegative, totalVotes: nonnegative, votesInGroups: nonnegative }),
+});
+export type PlaceGroups = z.infer<typeof placeGroupsSchema>;
 export const contextResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('awaiting-import'), dataset: z.null(), item: z.null() }),
   z.object({ status: z.literal('published'), dataset: contextDatasetSchema, item: municipalityContextSchema }),

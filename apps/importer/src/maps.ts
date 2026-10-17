@@ -49,13 +49,13 @@ async function run() {
     if ([...expected.values()].reduce((sum, set) => sum + set.size, 0) !== 5570) throw new Error('Correspondência não cobre os 5.570 municípios publicados.');
     const sources: PreservedSource[] = []; const topologies: Array<{ level: 'uf' | 'municipality'; uf: string; topology: Topology }> = [];
     const ufs = await preservedDownload('malha_br_uf', `${API}/paises/BR?formato=application/json&intrarregiao=UF&qualidade=minima&periodo=2022`, 'malhas', 'Brasil por UF, qualidade mínima, 2022');
-    const ufTopology = JSON.parse(ufs.bytes.toString('utf8')) as Topology;
+    const ufTopology = JSON.parse((await ufs.read()).toString('utf8')) as Topology;
     const ufList = codes(ufTopology, 'Brasil por UF');
     if (ufList.sort().join() !== [...ufCodes.values()].sort().join()) throw new Error('Malha de UFs não corresponde às 27 UFs.');
     sources.push({ ...ufs.source, rowsRead: ufList.length, rowsSelected: ufList.length }); topologies.push({ level: 'uf', uf: 'BR', topology: ufTopology });
     for (const uf of STATES) {
       const result = await preservedDownload(`malha_${uf.toLowerCase()}_municipios_minima`, `${API}/estados/${ufCodes.get(uf)}?formato=application/json&intrarregiao=municipio&qualidade=minima&periodo=2022`, 'malhas', `${uf} por município, qualidade mínima, 2022`);
-      const topology = JSON.parse(result.bytes.toString('utf8')) as Topology;
+      const topology = JSON.parse((await result.read()).toString('utf8')) as Topology;
       const list = codes(topology, `${uf} por município`);
       const missing = [...expected.get(uf)!].filter((code) => !list.includes(code)); const extra = list.filter((code) => !expected.get(uf)!.has(code));
       if (missing.length || extra.length) throw new Error(`Malha de ${uf}: faltam ${missing.join(', ') || 'nenhum'}; sobram ${extra.join(', ') || 'nenhum'}. Importação bloqueada.`);

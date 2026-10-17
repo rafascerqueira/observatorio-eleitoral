@@ -76,4 +76,31 @@ const mapPage = await html('/mapa');
 assert.equal((mapPage.match(/<figure class="choropleth"/g) ?? []).length, 2);
 for (const text of ['Moradores com rendimento domiciliar per capita de até ½ salário mínimo', 'Abstenção na Presidência — 1º turno', 'Quintis', 'não demonstram relação de causa', 'Tabela dos mapas']) assert.ok(mapPage.includes(text), text);
 assert.ok((await html('/mapa?uf=PE')).includes('Fernando de Noronha'));
+// Fase 3: locais → setores (v2) e grupos de locais (métrica E).
+if (catalog.tractsDatasets?.length) {
+  const [tracts] = catalog.tractsDatasets;
+  assert.equal(tracts.importerVersion, 'polling-place-tracts-2022-v2');
+  assert.equal(sum(tracts.coverage, 'electors'), 155756933, 'Locais somam o cadastro doméstico');
+  const associated = tracts.coverage.reduce((total, item) => total + item.byStatus.associated.electors, 0);
+  assert.ok(associated / 155756933 > 0.9, 'Mais de 90% dos eleitores em locais associados');
+  assert.ok(tracts.coverage.find((item) => item.uf === 'AP').byStatus.associated.electors / tracts.coverage.find((item) => item.uf === 'AP').electors > 0.8, 'AP: coordenadas sem zero inicial aceitas');
+  assert.ok((await html('/fontes')).includes('Locais de votação e setores censitários'));
+}
+if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
+  for (const indicator of ['college', 'income-median']) {
+    const groups = await json(`/elections/places/groups?indicator=${indicator}&round=2`);
+    assert.equal(groups.status, 'published'); assert.equal(groups.groups.length, 5);
+    for (const group of groups.groups) {
+      assert.equal(sum(group.candidates, 'votes'), group.valid, `${indicator} grupo ${group.index}: candidaturas = válidos`);
+      assert.ok(group.from <= group.to);
+    }
+    for (let index = 1; index < 5; index++) assert.ok(groups.groups[index].from >= groups.groups[index - 1].to, 'Grupos ordenados pelo indicador');
+    assert.equal(sum(groups.groups, 'totalVotes'), groups.coverage.votesInGroups); assert.ok(groups.coverage.votesInGroups <= groups.coverage.totalVotes);
+    const shares = groups.groups.map((group) => group.eligible / sum(groups.groups, 'eligible'));
+    assert.ok(shares.every((share) => share > 0.15 && share < 0.25), `${indicator}: grupos com ~1/5 do eleitorado`);
+  }
+  const page = await html('/perfis?indicator=income-median&round=2');
+  for (const text of ['Resultados por perfil dos locais', 'Grupos de locais', 'descrevem locais, não pessoas', 'Grupo 5']) assert.ok(page.includes(text), text);
+  await request(api, '/elections/places/groups?indicator=college&office=governor', 400);
+}
 console.log(`Smoke do contexto municipal aprovado: ${requests} requisições.`);

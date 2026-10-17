@@ -16,9 +16,9 @@ Governador, nas **27 UFs**: resultado da UF somado dos municípios reconciliados
 
 Senador, nas **27 UFs**: mesma apresentação do Governador (UF, municípios e locais, com as categorias não válidas identificadas), em turno único — a consulta do 2º turno informa que o cargo não tem 2º turno. Em 2022 cada UF elegeu uma vaga, com um voto por eleitor.
 
-**Território e eleitorado** (Censo 2022 e perfis do TSE): na página de cada município, população, cor ou raça, alfabetização, instrução e rendimento per capita em salários mínimos (IBGE), cadastro do eleitorado e comparecimento por perfil (TSE, base própria declarada). **Mapa** (`/mapa`): indicador do Censo e abstenção lado a lado, por UF ou por município.
+**Território e eleitorado** (Censo 2022 e perfis do TSE): na página de cada município, população, cor ou raça, alfabetização, instrução e rendimento per capita em salários mínimos (IBGE), cadastro do eleitorado e comparecimento por perfil (TSE, base própria declarada). **Mapa** (`/mapa`): indicador do Censo e abstenção lado a lado, por UF ou por município. **Perfis** (`/perfis`): locais de votação agrupados pela escolaridade declarada dos seus eleitores (TSE) ou pela renda do setor censitário onde ficam (IBGE), com os votos somados por grupo — grupos de locais, não de pessoas.
 
-A suplementar de governador de RR (2026), 2026, setores censitários e o entorno dos locais de votação ainda não foram importados. Deputados estão fora do escopo atual. Não há inferências sobre renda, motivação individual ou migração de votos.
+A suplementar de governador de RR (2026) e 2026 ainda não foram importados. Deputados estão fora do escopo atual. Não há inferências sobre renda, motivação individual ou migração de votos.
 
 ## Iniciar localmente
 
@@ -60,6 +60,9 @@ npm run import:state -- --office governor --uf SP    # Governador, uma UF por ve
 npm run import:state -- --office senator --uf SP     # Senador, uma UF por vez
 npm run import:context                               # Censo 2022 (SIDRA) + perfis do TSE, por município
 npm run import:maps                                  # malhas do IBGE para os mapas
+npm run import:sectors                               # locais de votação → setores censitários (PostGIS)
+npm run import:place-profiles                        # perfil do eleitorado por local (TSE, por seção)
+npm run import:place-groups                          # métrica E pré-calculada (depois das anteriores)
 ```
 
 `import:state` usa as entradas da UF nos mesmos ZIPs de apuração e votação nominal e baixa o ZIP de seções da UF (2,86 GiB nas 27 UFs; SP: 859 MiB, com todos os cargos estaduais; só o cargo pedido é selecionado). A verificação da persistência roda dentro do importador, antes da publicação. Para todas as UFs: `for uf in AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO; do npm run import:state -- --office governor --uf $uf; done` (cerca de 75 min na primeira execução; troque `governor` por `senator` para o Senado).
@@ -157,7 +160,7 @@ docker compose exec -T db psql -v ON_ERROR_STOP=1 -U observatorio -d observatori
 
 - Deputados (federais, estaduais e distritais) ficam fora do escopo por enquanto (decisão de 17/10/2026): cerca de 50 milhões de registros de seção em 2022, ~20 GB no PostgreSQL; o armazenamento fica reservado aos dados do IBGE e ao cruzamento IBGE–TSE. Os originais já baixados preservam esses cargos.
 - Senador 2026 (duas vagas, dois votos por eleitor): regra de denominador própria. Suplementar de governador de RR (2026), em etapa própria.
-- IBGE: fase 3 (PostGIS; locais de votação → setores censitários, com cobertura de coordenadas por UF) e resultados por escolaridade e renda do entorno do local (`docs/plano-ibge.md`).
+- IBGE: sensibilidade do método local → setor (raio em torno do ponto) e mapas de candidaturas (`docs/plano-ibge.md`).
 - Interface: autocomplete; teste com leitor de tela real e em Chrome/Safari/dispositivos móveis (revisão automatizada em Firefox feita: [acessibilidade](docs/acessibilidade.md)); página de UF longa (25 municípios com quadros por página).
 - Resultados de 2026 não foram importados.
 - Licença, nome definitivo e hospedagem não foram decididos. Não foi copiado código do repositório de referência.

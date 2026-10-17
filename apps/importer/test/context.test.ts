@@ -6,7 +6,7 @@ import { sidraValue } from '../src/sidra';
 
 test('valores da SIDRA seguem as convenções do IBGE: "-" é zero; X, .. e ... nunca viram zero', () => {
   assert.equal(sidraValue('1234'), 1234); assert.equal(sidraValue('2713.36'), 2713.36); assert.equal(sidraValue('-'), 0);
-  for (const value of ['X', '..', '...']) assert.equal(sidraValue(value), null, value);
+  for (const value of ['X', '.', '..', '...']) assert.equal(sidraValue(value), null, value);
   for (const value of ['1,5', 'abc', '', '-1']) assert.throws(() => sidraValue(value), value);
   assert.throws(() => sidraValue(undefined));
 });

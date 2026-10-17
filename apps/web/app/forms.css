@@ -151,6 +151,19 @@
 .choropleth-note { margin: 6px 0 0; font-size: 12px; }
 .map-caveats { font-size: 13px; }
 .map-table { margin-top: 8px; }
+/* Métrica E: pontos por candidatura e grupo, escala comum. */
+.dot-figure { margin: 8px 28px 18px; }
+.dot-figure figcaption { display: grid; gap: 2px; margin-bottom: 8px; }
+.dot-strip { display: grid; gap: 10px; max-width: 760px; }
+.dot-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 4px; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.dot-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.dot-row { display: grid; grid-template-columns: minmax(96px, 200px) minmax(0, 1fr); align-items: center; gap: 12px; }
+.dot-name { font-size: 13px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.dot-track { position: relative; height: 18px; margin-inline: 8px; border-radius: 2px; background: linear-gradient(var(--border), var(--border)) center / 100% 2px no-repeat; }
+.dot { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); transform: translate(-50%, -50%); }
+.dot-axis { position: relative; height: 16px; margin-inline: 8px; border-top: 1px solid var(--border); }
+.dot-axis span { position: absolute; top: 2px; transform: translateX(-50%); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 480px) { .dot-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } .dot-axis-row .dot-name { display: none; } }
 /* Filtros aplicados: chips; remover é um link GET. */
 .applied-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
 .applied-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -203,6 +216,7 @@
   .round-note { margin-inline: 18px; }
   .context-section { margin-inline: 18px; }
   .choropleth-pair { grid-template-columns: minmax(0, 1fr); padding-inline: 18px; }
+  .dot-figure { margin-inline: 18px; }
   .section-heading .badge-round { margin-left: 0; }
   .query-context, .query-errors { margin-inline: 18px; }
   .installation-note, .exterior-cities { margin-inline: 18px; }
@@ -222,6 +236,7 @@
   ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) { animation: none !important; }
 }
 @media (forced-colors: active) {
+  .dot, .dot-legend .swatch { forced-color-adjust: none; }
   .choropleth-area { forced-color-adjust: none; }
   .swatch { forced-color-adjust: none; }
   .segmented::before { display: none; }
