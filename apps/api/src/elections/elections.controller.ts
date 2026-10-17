@@ -3,9 +3,11 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, placeGroupsQuerySchema, placeGroupsSchema, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { nationalSummary } from './national-summary';
+
+const INCOME_BANDS_SCOPE = '2022/context/income-bands';
 
 @Controller('elections')
 export class ElectionsController {
@@ -156,7 +158,25 @@ export class ElectionsController {
     const row = registry.rows[0]?.registry ? await this.database.query<{ result: unknown }>(`SELECT g.result FROM place_groups g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope='2022/places/groups'
       WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.indicator=$5`, [dataset.id, office, uf ?? 'BR', Number(round), indicator]) : { rows: [] };
     if (!row.rows[0]) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
-    try { return placeGroupsSchema.parse(row.rows[0].result); } catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes.'); }
+    // Faixas fixas de renda: moradores do território nas mesmas faixas, de todos os setores (publicação própria, opcional).
+    const population = (row.rows[0].result as { method?: string }).method === 'bands' ? await this.incomeBands({ uf: uf ?? null }) : undefined;
+    try { return placeGroupsSchema.parse({ ...(row.rows[0].result as object), ...(population === undefined ? {} : { population }) }); } catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes.'); }
+  }
+
+  /** Moradores por faixa fixa de renda do setor: soma dos municípios do território (Brasil, UF) ou um município IBGE; `null` sem publicação. */
+  private async incomeBands(filter: { uf: string | null } | { ibgeCode: string }) {
+    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.municipality_income_bands')::text AS registry");
+    if (!registry.rows[0]?.registry) return null;
+    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_income_bands m JOIN import_batches b ON b.id=m.batch_id AND b.published AND b.scope=$1
+      WHERE ${'ibgeCode' in filter ? 'm.ibge_code=$2' : '($2::text IS NULL OR m.uf=$2)'}`, [INCOME_BANDS_SCOPE, 'ibgeCode' in filter ? filter.ibgeCode : filter.uf]);
+    if (!rows.rows.length) return null;
+    const total = { total: 0, bands: INCOME_BANDS.map((band) => ({ index: band.index, residents: 0, tracts: 0 })), noData: { residents: 0, tracts: 0 }, undisclosed: { tracts: 0 } };
+    for (const row of rows.rows) {
+      const item = incomeBandPopulationSchema.parse(row.result);
+      total.total += item.total; total.noData.residents += item.noData.residents; total.noData.tracts += item.noData.tracts; total.undisclosed.tracts += item.undisclosed.tracts;
+      for (const band of item.bands) { total.bands[band.index - 1]!.residents += band.residents; total.bands[band.index - 1]!.tracts += band.tracts; }
+    }
+    return total;
   }
 
   /** Malha do IBGE: Brasil por UF ou uma UF por município (publicação `2022/maps/ibge`). */
@@ -223,7 +243,8 @@ export class ElectionsController {
     const dataset = contextDatasetSchema.parse(batch.rows[0].metadata);
     const item = await this.database.query<{ result: unknown }>('SELECT result FROM municipality_context WHERE batch_id=$1 AND uf=$2 AND code=$3', [dataset.id, parsed.data.uf, code.padStart(5, '0')]);
     if (!item.rows[0]) throw new NotFoundException('Município sem contexto publicado.');
-    try { return contextResponseSchema.parse({ status: 'published', dataset, item: item.rows[0].result }); }
+    const incomeBands = await this.incomeBands({ ibgeCode: (item.rows[0].result as { ibgeCode: string }).ibgeCode });
+    try { return contextResponseSchema.parse({ status: 'published', dataset, item: item.rows[0].result, incomeBands }); }
     catch { throw new ServiceUnavailableException('Contexto municipal inconsistente.'); }
   }
 
@@ -298,7 +319,8 @@ export class ElectionsController {
       tractsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/tracts').map((batch) => batch.metadata),
       placeProfilesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/profiles').map((batch) => batch.metadata),
       placeGroupsImport: batches.rows.find((batch) => batch.published && batch.scope === '2022/places/groups')?.metadata ?? null,
-      contextDatasets: batches.rows.filter((batch) => batch.published && isContext(batch.scope)).map((batch) => batch.metadata),
+      contextDatasets: batches.rows.filter((batch) => batch.published && isContext(batch.scope) && batch.scope !== INCOME_BANDS_SCOPE).map((batch) => batch.metadata),
+      incomeBandsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === INCOME_BANDS_SCOPE).map((batch) => batch.metadata),
       mapDatasets: batches.rows.filter((batch) => batch.published && isMap(batch.scope)).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
       // Cargo estadual: só as UFs sem publicação continuam pendentes.
       ...STATE_OFFICES.flatMap((office) => {
@@ -341,7 +363,7 @@ export class ElectionsController {
   private verifiedOriginals = new Set<string>();
   @Get('sources/:sha256/:file')
   async original(@Param('sha256') sha256: string, @Param('file') file: string) {
-    if (!/^[a-f0-9]{64}$/.test(sha256) || !/^[a-zA-Z0-9_]+\.(zip|json)$/.test(file)) throw new NotFoundException();
+    if (!/^[a-f0-9]{64}$/.test(sha256) || !/^[a-zA-Z0-9_]+\.(zip|json|xlsx)$/.test(file)) throw new NotFoundException();
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.original_sources')::text AS registry");
     if (!registry.rows[0]?.registry) throw new NotFoundException();
     const record = await this.database.query<{ size_bytes: string }>('SELECT size_bytes FROM original_sources WHERE sha256=$1 AND file=$2', [sha256, file]);
@@ -356,7 +378,7 @@ export class ElectionsController {
       if (hash.digest('hex') !== sha256) throw new ServiceUnavailableException('Integridade do original divergente.');
       this.verifiedOriginals.add(cacheKey);
     }
-    return new StreamableFile(createReadStream(path), { type: file.endsWith('.json') ? 'application/json' : 'application/zip', disposition: `attachment; filename="${file}"`, length: info.size });
+    return new StreamableFile(createReadStream(path), { type: file.endsWith('.json') ? 'application/json' : file.endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/zip', disposition: `attachment; filename="${file}"`, length: info.size });
   }
 
   /** Presidência: versão nacional, ou o piloto enquanto ela não existir. Cargos estaduais: uma publicação por UF. */

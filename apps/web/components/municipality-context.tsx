@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { percent, type MunicipalityContext } from '@observatorio/contracts';
+import { percent, type IncomeBandPopulation, type MunicipalityContext } from '@observatorio/contracts';
+import { bandName, bandRange, residentsShare } from '../lib/income-bands';
 
 type Distribution = MunicipalityContext['race'];
 const MINIMUM_WAGE = 1212;
@@ -25,10 +26,29 @@ function DistributionTable({ title, data, unit }: { title: string; data: Distrib
   </div>;
 }
 
+/**
+ * Moradores pelas faixas fixas de renda do setor (as mesmas de "Perfis"): cada setor entra inteiro na faixa da sua mediana.
+ * Medida diferente das classes per capita acima, que classificam pessoas pelo rendimento do próprio domicílio (amostra).
+ */
+function IncomeBandsTable({ data }: { data: IncomeBandPopulation }) {
+  const base = data.total - data.noData.residents;
+  return <>
+    <p className="query-note">Outra medida, a mesma das faixas de “Perfis”: moradores em domicílios particulares permanentes ocupados conforme a renda mediana do responsável (com rendimento) no setor censitário onde moram. Cada setor entra inteiro na faixa da sua mediana; não é a renda de cada morador.{data.noData.tracts > 0 ? ` ${number(data.noData.residents)} moradores de ${number(data.noData.tracts)} setor(es) sem mediana (não se aplica) ficaram fora dos percentuais.` : ''}{data.undisclosed.tracts > 0 ? ` ${number(data.undisclosed.tracts)} setor(es) com dados omitidos pelo IBGE: moradores não divulgados nem estimados.` : ''}</p>
+    <div className="table-scroll context-table" role="region" aria-label="Moradores por faixa de renda do setor" tabIndex={0}>
+      <table>
+        <caption><span className="context-caption">Moradores por faixa de renda mediana do setor</span> <Kind kind="universo" /> <span className="source-note">IBGE, Censo 2022 — agregados por setor (rendimento do responsável)</span></caption>
+        <thead><tr><th scope="col">Faixa</th><th scope="col">Renda mediana do responsável no setor</th><th scope="col">Setores</th><th scope="col">Moradores</th><th scope="col">% dos moradores</th></tr></thead>
+        <tbody>{data.bands.map((band) => <tr key={band.index}><th scope="row">{bandName(band.index)}</th><td>{bandRange(band.index)}</td><td>{number(band.tracts)}</td><td>{number(band.residents)}</td><td>{rate(residentsShare(data, band.index))}</td></tr>)}
+          <tr className="total-row"><th scope="row">Total</th><td>Setores com mediana</td><td>{number(data.bands.reduce((sum, band) => sum + band.tracts, 0))}</td><td>{number(base)}</td><td>{base === 0 ? 'Indisponível' : '100,0%'}</td></tr></tbody>
+      </table>
+    </div>
+  </>;
+}
+
 const DIMENSION_LABEL = { age: 'Idade', education: 'Escolaridade declarada', gender: 'Gênero', maritalStatus: 'Estado civil' } as const;
 
 /** Contexto do município: o que descreve o território (IBGE) separado do que descreve o eleitorado (TSE). Nada é atribuído a eleitores individualmente. */
-export function MunicipalityContextPanel({ item, round, sourcesHref }: { item: MunicipalityContext; round: '1' | '2'; sourcesHref: string }) {
+export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands }: { item: MunicipalityContext; round: '1' | '2'; sourcesHref: string; incomeBands?: IncomeBandPopulation | null }) {
   const turnout = item.turnout[round];
   const resultsEligible = item.resultsEligible[round];
   const difference = resultsEligible === null ? null : item.electorate.eligible - resultsEligible;
@@ -78,6 +98,7 @@ export function MunicipalityContextPanel({ item, round, sourcesHref }: { item: M
     <details className="context-section"><summary>Rendimento domiciliar per capita (IBGE)</summary>
       <p className="query-note">Moradores de domicílios particulares permanentes por classes de rendimento domiciliar per capita, em salários mínimos de R$ 1.212,00 (vigente em julho de 2022). Média {money(item.incomePerCapita.mean)} · mediana {money(item.incomePerCapita.median)}. É o rendimento de quem mora no município, não dos eleitores.</p>
       <DistributionTable title="Classes de rendimento domiciliar per capita" data={item.incomeClasses} unit="Moradores" />
+      {incomeBands && <IncomeBandsTable data={incomeBands} />}
     </details>
 
     <details className="context-section"><summary>Cor ou raça e alfabetização (IBGE)</summary>

@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 export async function GET(_request: Request, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
-  const source = path.length === 3 && path[0] === 'sources' && /^[a-f0-9]{64}$/.test(path[1]!) && /^[a-zA-Z0-9_]+\.(zip|json)$/.test(path[2]!);
+  const source = path.length === 3 && path[0] === 'sources' && /^[a-f0-9]{64}$/.test(path[1]!) && /^[a-zA-Z0-9_]+\.(zip|json|xlsx)$/.test(path[2]!);
   const report = path.length === 3 && path[0] === 'imports' && /^[a-f0-9]{64}$/.test(path[1]!) && path[2] === 'report';
   if (!source && !report) return new Response('Arquivo não encontrado.', { status: 404 });
   try {

@@ -101,6 +101,7 @@ export const catalogSchema = z.object({
   tractsDatasets: z.array(z.lazy(() => tractsDatasetSchema)).default([]),
   placeProfilesDatasets: z.array(z.lazy(() => placeProfilesDatasetSchema)).default([]),
   placeGroupsImport: z.object({ id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string() }).nullable().default(null),
+  incomeBandsDatasets: z.array(z.lazy(() => incomeBandsDatasetSchema)).default([]),
 });
 const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
@@ -248,6 +249,29 @@ export const MINIMUM_WAGE_2022 = 1212;
 export const INCOME_BANDS = [
   { index: 1, lower: null, upper: 1 }, { index: 2, lower: 1, upper: 1.5 }, { index: 3, lower: 1.5, upper: 2 }, { index: 4, lower: 2, upper: 3 }, { index: 5, lower: 3, upper: null },
 ] as const;
+/** Faixa fixa (1–5) de uma mediana em reais; limite superior incluído (mesma regra do SQL de `place-groups`). */
+export function incomeBandOf(median: number): number {
+  return INCOME_BANDS.find((band) => band.upper !== null && median <= band.upper * MINIMUM_WAGE_2022)?.index ?? INCOME_BANDS.length;
+}
+/**
+ * Moradores em domicílios particulares permanentes ocupados (V06002, universo do Censo 2022) somados pelos setores de cada
+ * faixa fixa de renda (`INCOME_BANDS`, mediana V06006 do responsável com rendimento no setor). Descreve setores, não pessoas:
+ * um morador de setor "até 1 SM" pode ter qualquer renda. `total` = soma das faixas + `noData` = V06002 do município no arquivo
+ * municipal do IBGE (conferido). `noData`: setores sem mediana por não se aplicar ("."); `undisclosed`: setores com dados omitidos
+ * pelo IBGE ("X"), cujos moradores não são divulgados nem entram no total.
+ */
+export const incomeBandPopulationSchema = z.object({
+  total: nonnegative,
+  bands: z.array(z.object({ index: z.number().int().min(1).max(5), residents: nonnegative, tracts: nonnegative })).length(5),
+  noData: z.object({ residents: nonnegative, tracts: nonnegative }),
+  undisclosed: z.object({ tracts: nonnegative }),
+});
+export type IncomeBandPopulation = z.infer<typeof incomeBandPopulationSchema>;
+export const incomeBandsDatasetSchema = z.object({
+  id: z.string(), kind: z.literal('income-bands'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
+  scope: z.string(), notes: z.array(z.string()), totals: z.object({ municipalities: nonnegative, tracts: nonnegative }).and(incomeBandPopulationSchema),
+});
+export type IncomeBandsDataset = z.infer<typeof incomeBandsDatasetSchema>;
 /** Como os grupos foram formados: quintis ponderados por eleitores aptos (sem dividir valores iguais) ou faixas fixas. Ausente (v1): quintis. */
 export const PLACE_GROUP_METHODS = { college: 'quintiles', 'income-median': 'bands' } as const;
 export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).extend({ indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]) }).strict();
@@ -260,11 +284,13 @@ export const placeGroupsSchema = z.object({
     places: nonnegative, eligible: nonnegative, valid: nonnegative, blank: nonnegative, null: nonnegative, totalVotes: nonnegative, candidates: z.array(candidateSchema) })),
   // Votos de locais sem o indicador ficam fora dos grupos e são informados aqui (nunca redistribuídos).
   coverage: z.object({ places: nonnegative, placesInGroups: nonnegative, totalVotes: nonnegative, votesInGroups: nonnegative }),
+  // Só faixas de renda: moradores do território (Brasil ou UF) nos setores de cada faixa, de todos os setores, com ou sem local de votação.
+  population: incomeBandPopulationSchema.nullable().optional(),
 });
 export type PlaceGroups = z.infer<typeof placeGroupsSchema>;
 export const contextResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('awaiting-import'), dataset: z.null(), item: z.null() }),
-  z.object({ status: z.literal('published'), dataset: contextDatasetSchema, item: municipalityContextSchema }),
+  z.object({ status: z.literal('published'), dataset: contextDatasetSchema, item: municipalityContextSchema, incomeBands: incomeBandPopulationSchema.nullable().optional() }),
 ]);
 export type ContextResponse = z.infer<typeof contextResponseSchema>;
 

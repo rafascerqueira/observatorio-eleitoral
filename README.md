@@ -63,6 +63,7 @@ npm run import:maps                                  # malhas do IBGE para os ma
 npm run import:sectors                               # locais de votação → setores censitários (PostGIS)
 npm run import:place-profiles                        # perfil do eleitorado por local (TSE, por seção)
 npm run import:place-groups                          # métrica E pré-calculada (depois das anteriores)
+npm run import:income-bands                          # moradores por faixa de renda do setor (depois do contexto)
 ```
 
 `import:state` usa as entradas da UF nos mesmos ZIPs de apuração e votação nominal e baixa o ZIP de seções da UF (2,86 GiB nas 27 UFs; SP: 859 MiB, com todos os cargos estaduais; só o cargo pedido é selecionado). A verificação da persistência roda dentro do importador, antes da publicação. Para todas as UFs: `for uf in AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO; do npm run import:state -- --office governor --uf $uf; done` (cerca de 75 min na primeira execução; troque `governor` por `senator` para o Senado).

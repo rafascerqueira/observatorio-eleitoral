@@ -22,6 +22,7 @@
     "import:sectors": "npm run build -w @observatorio/contracts && npm run sectors -w @observatorio/importer",
     "import:place-profiles": "npm run build -w @observatorio/contracts && npm run place-profiles -w @observatorio/importer",
     "import:place-groups": "npm run build -w @observatorio/contracts && npm run place-groups -w @observatorio/importer",
+    "import:income-bands": "npm run build -w @observatorio/contracts && npm run income-bands -w @observatorio/importer",
     "smoke:national": "node scripts/smoke-national.mjs",
     "smoke:summary": "node scripts/smoke-summary.mjs",
     "smoke:exterior": "node scripts/smoke-forms-exterior.mjs",

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES } from '../src';
+import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022 } from '../src';
 
 test('aplica defaults e limita a paginação sem coerção de entradas vazias', () => {
   const defaults = municipalityQuerySchema.parse({});
@@ -50,4 +50,9 @@ test('senador é cargo estadual de turno único', () => {
   for (const schema of [nationalQuerySchema, exteriorQuerySchema]) assert.equal(schema.safeParse({ office: 'senator' }).success, false);
   assert.equal(stateQuerySchema.safeParse({ office: 'senator', uf: 'ZZ' }).success, false);
   assert.deepEqual(SINGLE_ROUND_OFFICES, ['senator']);
+});
+
+test('faixas fixas de renda: limite superior incluído, em salários mínimos de 2022', () => {
+  assert.deepEqual([100, 1212, 1212.5, 1818, 1818.5, 2424, 2425, 3636, 3640, 22600].map(incomeBandOf), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  assert.equal(INCOME_BANDS.length, 5); assert.equal(MINIMUM_WAGE_2022, 1212);
 });

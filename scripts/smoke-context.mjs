@@ -102,6 +102,20 @@ if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
     if (indicator === 'college') assert.ok(shares.every((share) => share > 0.15 && share < 0.25), `${indicator}: grupos com ~1/5 do eleitorado`);
     else for (const group of groups.groups) assert.ok((group.lower === null || group.from > group.lower) && (group.upper === null || group.to <= group.upper), `Faixa ${group.index}: valores dentro dos limites`);
   }
+  // Moradores por faixa (todos os setores): faixas + sem mediana = total; UFs somam o Brasil; página do município mostra a tabela.
+  if (catalog.incomeBandsDatasets?.length) {
+    const br = (await json('/elections/places/groups?indicator=income-median&round=1')).population;
+    assert.ok(br, 'Moradores por faixa na resposta de renda');
+    assert.equal(sum(br.bands, 'residents') + br.noData.residents, br.total, 'Faixas + sem mediana = total');
+    assert.equal(br.total, catalog.incomeBandsDatasets[0].totals.total, 'Brasil = total publicado');
+    const ma = (await json('/elections/places/groups?indicator=income-median&round=1&uf=MA')).population;
+    assert.ok(ma.total > 0 && ma.total < br.total);
+    assert.equal((await json('/elections/places/groups?indicator=college&round=1')).population ?? null, null, 'Escolaridade sem moradores por faixa');
+    const context = await json('/elections/municipalities/71072/context?year=2022&uf=SP');
+    assert.equal(sum(context.incomeBands.bands, 'residents') + context.incomeBands.noData.residents, context.incomeBands.total);
+    assert.ok((await html('/municipios/71072?uf=SP&round=1')).includes('Moradores por faixa de renda mediana do setor'));
+    assert.ok((await html('/perfis?indicator=income-median&uf=MA')).includes('Moradores do território em setores da faixa'));
+  }
   const page = await html('/perfis?indicator=income-median&round=2');
   for (const text of ['Resultados por perfil dos locais', 'Grupos de locais', 'descrevem locais, não pessoas', 'Mais de 3 SM', '3.636']) assert.ok(page.includes(text), text);
   await request(api, '/elections/places/groups?indicator=college&office=governor', 400);
