@@ -12,6 +12,7 @@ import { NonValidVotesTable } from '../components/non-valid-votes';
 import { RoundNote, roundBadge } from '../components/round-note';
 import { ResultsTransition } from '../components/results-transition';
 import { AppliedFilters } from '../components/applied-filters';
+import { MunicipalitySearch } from '../components/municipality-search';
 
 export const dynamic = 'force-dynamic';
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -114,9 +115,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
           </div>
           <div className="query-group group-territory" role="group" aria-labelledby="group-territory-title"><p className="group-title" id="group-territory-title">Território</p>
             <UfField office={rawValue(raw, 'office', filters.office)} value={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors} choices={[{ value: '', label: 'Todo o Brasil' }, ...ufChoices]} />
-            <div className="field search-field"><label htmlFor="search">Município <span className="optional-label">(opcional)</span></label><input type="search" id="search" name="search" placeholder="Buscar por nome" maxLength={100} defaultValue={rawValue(raw, 'search', filters.search ?? '')}
-              aria-invalid={invalid('search') || undefined} aria-describedby={invalid('search') ? 'search-error search-hint' : 'search-hint'} />
-              <p className="field-hint" id="search-hint">Com ou sem acentos. Sem município, a UF mostra o resultado estadual e a lista de municípios.</p><FieldError field="search" errors={errors} /></div>
+            <div className="field search-field"><label htmlFor="search">Município <span className="optional-label">(opcional)</span></label><MunicipalitySearch defaultValue={rawValue(raw, 'search', filters.search ?? '')} invalid={invalid('search')} describedBy={invalid('search') ? 'search-error search-hint' : 'search-hint'} />
+              <p className="field-hint" id="search-hint">Sugestões a partir de 2 letras, com ou sem acentos e tolerando erros de digitação. Sem município, a UF mostra o resultado estadual e a lista de municípios.</p><FieldError field="search" errors={errors} /></div>
           </div>
         </QueryForm>
         <ResultsTransition id="resultados-consulta" transitionKey={JSON.stringify(filters)}>

@@ -7,7 +7,7 @@ Dashboard público, gratuito e sem fins lucrativos para explorar eleições e co
 Eleições de 2022, com turnos sempre separados. Presidência:
 
 - **Todo o Brasil**: consolidado presidencial por turno, somando os 5.570 municípios das 27 UFs e as 181 localidades eleitorais do exterior. O exterior só entra com publicação completa e os mesmos originais/checksums da publicação doméstica; as duas versões ficam identificadas.
-- **Municípios**: listagem paginada por UF ou nome, com participação e votos de todas as candidaturas.
+- **Municípios**: listagem paginada por UF ou nome, com participação e votos de todas as candidaturas; sugestões enquanto se digita, tolerantes a acentos e erros de digitação (índice de trigramas, `pg_trgm`).
 - **Locais de votação**: busca por zona, seção, código, nome ou endereço; cada local mostra suas seções.
 - **Exterior (`ZZ`)**: consulta própria por localidade eleitoral.
 - **Transparência** (`/fontes`): versões publicadas, cobertura por UF, relatórios de auditoria e download dos originais preservados com SHA-256.
@@ -75,7 +75,7 @@ O relatório de cada versão fica em `data/audit/<dataset-id>.json` (cobertura p
 
 - [Importação nacional](docs/importacao-nacional-2022.md): versão `president-2022-national-v2`, normalização dos códigos TSE com cinco dígitos, tentativa v1 rejeitada, seções não instaladas e métricas.
 - [Exterior](docs/exterior-2022.md): versão `president-2022-exterior-v1`, zona única do exterior e os eleitores de seções não instaladas (657 no consolidado Brasil, por turno).
-- [Governador 2022](docs/governador-2022.md): versão `governor-2022-state-v2` publicada nas 27 UFs (os locais não trazem o quadro de não válidos; a v3, que corrige isso, está pronta e aguarda reimportação), eleições 546/547, votos anulados e nulos técnicos, exclusão declarada da suplementar de RR e conferência contra os originais.
+- [Governador 2022](docs/governador-2022.md): versão `governor-2022-state-v3` nas 27 UFs (a v2 omitia os não válidos nos locais), eleições 546/547, votos anulados e nulos técnicos, exclusão declarada da suplementar de RR e conferência contra os originais.
 - [Senador 2022](docs/senador-2022.md): versão `senator-2022-state-v1` nas 27 UFs, eleição 546 em turno único, categorias não válidas por UF e conferência contra os originais.
 
 Seções não instaladas não são somadas à abstenção: aptos = comparecimento + abstenção + eleitores dessas seções. Nomes/endereços divergentes de um mesmo local ficam indisponíveis, com variantes preservadas e aviso no painel. Aptos e abstenção por local permanecem indisponíveis.

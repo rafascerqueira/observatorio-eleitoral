@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { nationalSummary } from './national-summary';
 
@@ -96,15 +96,43 @@ export class ElectionsController {
     const dataset = await this.publishedDataset(filters.year, filters.office, filters.uf);
     if (!dataset || filters.year !== String(dataset.year) || (dataset.uf && filters.uf && filters.uf !== dataset.uf)) return empty;
     if (!roundHeld(dataset, filters.round)) return municipalitiesSchema.parse({ ...empty, status: 'round-not-held', dataset });
-    const search = (filters.search ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    // Trecho do nome com curingas escapados: o índice de trigramas atende o LIKE (strpos não usa índice).
+    const search = (filters.search ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[\\%_]/g, '\\$&');
     // Identificadores de ordenação vêm somente deste mapa fixo; filtros são parâmetros SQL.
     const column = filters.sort === 'uf' ? 'uf' : 'search_name';
     const direction = filters.direction === 'desc' ? 'DESC' : 'ASC';
     const parameters = [dataset.id, filters.year, filters.round, filters.office, search, filters.uf ?? null];
-    const where = 'batch_id=$1 AND year=$2::integer AND round=$3::integer AND office=$4 AND strpos(search_name,$5)>0 AND ($6::text IS NULL OR uf=$6)';
+    const where = "batch_id=$1 AND year=$2::integer AND round=$3::integer AND office=$4 AND search_name LIKE '%' || $5 || '%' AND ($6::text IS NULL OR uf=$6)";
     const total = await this.database.query<{ total: number }>(`SELECT count(*)::integer AS total FROM municipality_results WHERE ${where}`, parameters);
     const items = await this.database.query<{ result: unknown }>(`SELECT result FROM municipality_results WHERE ${where} ORDER BY ${column} ${direction}, uf ASC, code ASC LIMIT $7 OFFSET $8`, [...parameters, pageSize, (page - 1) * pageSize]);
     return municipalitiesSchema.parse({ status: 'published', items: items.rows.map((row) => row.result), pagination: { page, pageSize, total: total.rows[0]?.total ?? 0 }, filters, dataset });
+  }
+
+  /** Sugestões enquanto se digita: índice de trigramas (pg_trgm) sobre o nome normalizado, nunca varredura por `strpos`/`LIKE` sem índice. */
+  @Get('municipalities/suggest')
+  async suggest(@Query() query: Record<string, unknown>) {
+    const parsed = suggestQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'Consulta de sugestões inválida.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    const { year, office, uf, q } = parsed.data;
+    if (isStateOffice(office) && !uf) throw new BadRequestException({ message: `${OFFICE_LABELS[office]} é cargo estadual: informe a UF.`, fields: ['uf'] });
+    await this.database.check();
+    const dataset = await this.publishedDataset(year, office, uf);
+    if (!dataset || year !== String(dataset.year)) return suggestResponseSchema.parse({ status: 'awaiting-import', items: [] });
+    const extension = await this.database.query<{ installed: boolean }>("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_trgm') AS installed");
+    if (!extension.rows[0]?.installed) throw new ServiceUnavailableException('Busca por similaridade indisponível: índice de trigramas não instalado.');
+    // Mesma normalização do importador (`search_name`): minúsculas, sem acentos.
+    const term = q.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ');
+    const pattern = term.replace(/[\\%_]/g, '\\$&');
+    const rows = await this.database.query<{ code: string; name: string; uf: string; match: string }>(`
+      SELECT code, name, uf, match FROM (
+        SELECT result->>'code' AS code, result->>'name' AS name, uf, search_name, word_similarity($2, search_name) AS score,
+          CASE WHEN starts_with(search_name, $2) THEN 'prefix' WHEN search_name LIKE '% ' || $3 || '%' THEN 'word'
+            WHEN search_name LIKE '%' || $3 || '%' THEN 'contains' ELSE 'similar' END AS match
+        FROM municipality_results
+        WHERE batch_id=$1 AND round=1 AND office=$4 AND uf<>'ZZ' AND ($5::text IS NULL OR uf=$5)
+          AND (search_name LIKE '%' || $3 || '%' OR $2 <% search_name)
+      ) s ORDER BY array_position(ARRAY['prefix','word','contains','similar'], match), score DESC, search_name, uf LIMIT 8`, [dataset.id, term, pattern, office, uf ?? null]);
+    return suggestResponseSchema.parse({ status: 'published', items: rows.rows });
   }
 
   @Get('municipalities/:code/places')

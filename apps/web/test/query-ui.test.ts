@@ -143,3 +143,13 @@ test('cargo em opções visíveis: radios nativos, valor inválido preservado e 
   const invalid = renderToStaticMarkup(createElement(OfficeField, { value: 'deputies', errors: [{ field: 'office', message: 'Escolha um cargo.' }], choices, hint: 'Cargo estadual.' }));
   assert.match(invalid, /Cargo informado: deputies/); assert.match(invalid, /id="office-error"/); assert.match(invalid, /data-count="4"/);
 });
+
+test('destaque das sugestões ignora acentos na comparação, mas preserva o nome original', async () => {
+  const { highlightParts, normalizeSearch } = await import('../lib/suggest');
+  assert.equal(normalizeSearch('  São   JOÃO '), ' sao joao ');
+  assert.deepEqual(highlightParts('SÃO JOÃO DEL REI', 'joao'), [{ text: 'SÃO ', match: false }, { text: 'JOÃO', match: true }, { text: ' DEL REI', match: false }]);
+  assert.deepEqual(highlightParts('JABOATÃO DOS GUARARAPES', 'jabo'), [{ text: 'JABO', match: true }, { text: 'ATÃO DOS GUARARAPES', match: false }]);
+  // Grafia parecida (sem trecho exato): nada é marcado.
+  assert.deepEqual(highlightParts('JABOATÃO DOS GUARARAPES', 'jaboatau'), [{ text: 'JABOATÃO DOS GUARARAPES', match: false }]);
+  assert.deepEqual(highlightParts("SANTA BÁRBARA D'OESTE", "d'oeste"), [{ text: 'SANTA BÁRBARA ', match: false }, { text: "D'OESTE", match: true }]);
+});

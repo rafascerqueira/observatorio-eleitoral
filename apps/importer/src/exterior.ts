@@ -88,6 +88,7 @@ async function run() {
     await client.query(await readFile(resolve(__dirname, 'schema.sql'), 'utf8'));
     await client.query(await readFile(resolve(__dirname, 'migrations/003-national.sql'), 'utf8'));
     await client.query(await readFile(resolve(__dirname, 'migrations/004-national-section-lookup.sql'), 'utf8'));
+    await client.query(await readFile(resolve(__dirname, 'migrations/005-search-trigram.sql'), 'utf8'));
     const existing = await client.query<{ published: boolean; metadata: unknown }>('SELECT published,metadata FROM import_batches WHERE id=$1', [id]);
     if (!existing.rows[0]?.published) {
       await client.query('BEGIN');

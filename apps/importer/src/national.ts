@@ -104,6 +104,7 @@ async function run() {
     await client.query(await readFile(resolve(__dirname, 'schema.sql'), 'utf8'));
     await client.query(await readFile(resolve(__dirname, 'migrations/003-national.sql'), 'utf8'));
     await client.query(await readFile(resolve(__dirname, 'migrations/004-national-section-lookup.sql'), 'utf8'));
+    await client.query(await readFile(resolve(__dirname, 'migrations/005-search-trigram.sql'), 'utf8'));
     for (const file of files) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [file.sha256, file.file, file.sizeBytes]);
     const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
     if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}; originais e checksums conferidos. Nenhuma duplicação.`); return; }

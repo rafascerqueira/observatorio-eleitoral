@@ -12,6 +12,7 @@ As rotas são públicas e de leitura. A consulta prioriza a versão nacional pub
 | `GET /elections/exterior` | Consolidado de ZZ e localidades paginadas; `published` ou `awaiting-import`; filtros não reduzem o consolidado de todo o exterior. |
 | `GET /elections/exterior/cities/:code/places` | Locais de uma localidade de ZZ; `uf` omitida ou `ZZ`. Outra UF retorna `400`; localidade/ano não publicado retorna `404`. |
 | `GET /elections/municipalities/:code/places` | Locais paginados por zona e código; `404` para município/ano/UF não publicado. Inclui identidade `municipality` na resposta. |
+| `GET /elections/municipalities/suggest` | Até 8 municípios publicados no recorte (`q` com 2–60 caracteres, `year`, `office`, `uf`), para sugestões enquanto se digita. Trigramas (`pg_trgm`) sobre o nome normalizado: início do nome, início de palavra, trecho e grafia parecida (`match`). Cargo estadual exige `uf`; sem o índice de trigramas, `503` (nunca varredura). |
 | `GET /elections/catalog` | Publicações, importações em andamento, cobertura por UF/situação e cargos ainda não importados. |
 | `GET /elections/imports/:id/coverage` | Cobertura por município: `page`, `pageSize`; status, motivo, registros e conflitos. |
 | `GET /elections/imports/:id/report` | Relatório JSON concluído; `404` enquanto não existir ou versão desconhecida. |

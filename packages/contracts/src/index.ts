@@ -158,6 +158,16 @@ export const placesResponseSchema = z.object({
   total: nonnegative, page: z.number().int().positive(), pageSize: z.number().int().positive().max(100), dataset: datasetSchema,
   municipality: municipalitySchema.pick({ code: true, name: true, uf: true }).extend({ uf: z.enum(TERRITORIES) }).optional(),
 });
+/** Sugestões de município enquanto se digita: só municípios publicados no recorte (cargo, UF). */
+export const suggestQuerySchema = municipalityQuerySchema.pick({ year: true, office: true, uf: true }).extend({ q: z.string().trim().min(2).max(60) }).strict();
+export type SuggestQuery = z.infer<typeof suggestQuerySchema>;
+export const SUGGESTION_MATCHES = ['prefix', 'word', 'contains', 'similar'] as const;
+export const suggestResponseSchema = z.object({
+  // `match`: início do nome, início de uma palavra, trecho do nome ou grafia parecida (similaridade de trigramas).
+  items: z.array(z.object({ code: z.string(), name: z.string(), uf: z.enum(STATES), match: z.enum(SUGGESTION_MATCHES) })).max(8),
+  status: z.enum(['published', 'awaiting-import']),
+});
+export type SuggestResponse = z.infer<typeof suggestResponseSchema>;
 /** Turno realizado segundo a publicação. Sem `rounds` (versões antigas), não se presume turno único. */
 export function roundHeld(dataset: { rounds?: Array<'1' | '2'> | undefined }, round: string) {
   return !dataset.rounds || (dataset.rounds as string[]).includes(round);

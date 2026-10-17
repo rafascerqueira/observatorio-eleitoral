@@ -21,6 +21,18 @@ for (const office of ['governor', 'senator']) assert.match(radio(form, `office-$
 const senate = (await (await request(web, '/?office=senator&uf=RJ')).text()).match(/<form[\s\S]*?<\/form>/)?.[0] ?? '';
 assert.doesNotMatch(senate, /name="round"[^>]*value="2"/); assert.match(senate, /turno único/);
 for (const label of ['São Paulo — SP', 'Exterior — ZZ', '2026 — ainda não publicado']) assert.ok(home.includes(label));
+// Sugestões de município: trigramas (erro de digitação, palavra do meio), recorte por UF e proxy da web.
+const typo = await (await request(api, '/elections/municipalities/suggest?q=jaboatau')).json();
+assert.equal(typo.items[0]?.name, 'JABOATÃO DOS GUARARAPES'); assert.equal(typo.items[0]?.uf, 'PE');
+const middle = await (await request(api, '/elections/municipalities/suggest?q=guararapes')).json();
+assert.ok(middle.items.some((item) => item.name === 'JABOATÃO DOS GUARARAPES' && item.match === 'word'));
+const homonyms = await (await request(api, '/elections/municipalities/suggest?q=campo%20grande')).json();
+assert.ok(['AL', 'MS', 'RN'].every((uf) => homonyms.items.some((item) => item.name === 'CAMPO GRANDE' && item.uf === uf)), 'Homônimos com UF');
+const senateRj = await (await request(api, '/elections/municipalities/suggest?q=rio&office=senator&uf=RJ')).json();
+assert.ok(senateRj.items.length > 0 && senateRj.items.every((item) => item.uf === 'RJ'));
+await request(api, '/elections/municipalities/suggest?q=r', 400); await request(api, '/elections/municipalities/suggest?q=rio&office=senator', 400);
+assert.equal((await (await request(web, '/sugestoes?q=niteroi')).json()).items[0]?.name, 'NITERÓI');
+assert.match(home, /aria-describedby="search-hint"/);
 const corrected = await (await request(web, '/?year=2026&round=2&uf=RJ&search=Rio&page=0')).text();
 assert.match(corrected, /id="query-errors"/); assert.match(corrected, /href="#submit-query"/);
 assert.match(corrected, /value="2026" selected=""/); assert.match(corrected, /value="RJ" selected=""/);

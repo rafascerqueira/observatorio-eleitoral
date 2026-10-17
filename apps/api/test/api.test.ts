@@ -19,6 +19,7 @@ let exteriorIncomplete = false;
 let governor = false;
 let governorRounds = ['1', '2'];
 let stateOffice = 'governor';
+let trigram = true;
 const queries: Array<{ sql: string; parameters: unknown[] }> = [];
 // Metadados e local exclusivamente sintéticos para verificar o contrato HTTP.
 const dataset = { id: 'a'.repeat(64), year: 2022, office: 'president', municipalityCode: '71072', municipalityName: 'São Paulo', uf: 'SP', importedAt: '2026-10-12T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', validation: 'reconciled' };
@@ -33,6 +34,8 @@ before(async () => {
       queries.push({ sql, parameters });
       if (published) {
         if (sql.includes('to_regclass')) return { rows: [{ registry: 'import_batches' }] };
+        if (sql.includes('pg_extension')) return { rows: [{ installed: trigram }] };
+        if (sql.includes('word_similarity')) return { rows: [{ code: '71072', name: 'SÃO PAULO', uf: 'SP', match: 'prefix' }] };
         if (sql.includes('scope=$1')) return { rows: governor && parameters[0] === `2022/${stateOffice}/SP` ? [{ metadata: { ...dataset, id: 'c'.repeat(64), office: stateOffice, municipalityCode: undefined, municipalityName: undefined, level: 'state', rounds: governorRounds, coverage: { expected: 1, reconciled: 1, blocked: 0, excluded: 0 } } }] : [] };
         if (sql.includes('FROM import_coverage WHERE batch_id=$1 AND office=$2')) return { rows: [{ reconciled: 1, other: 0 }] };
         if (sql.includes('AND uf=$5 ORDER BY code')) return { rows: [{ result: { code: '71072', name: 'São Paulo', uf: 'SP', electionCode: parameters[2] === '1' ? '546' : '547', round: parameters[2], totals: { eligible: 10, turnout: 8, abstentions: 2, nonInstalledEligible: 0, valid: 6, blank: 1, null: 1, totalVotes: 8 }, candidates: [{ number: '10', name: 'Candidatura de teste', party: 'Teste', votes: 6, percentValid: 100 }], zones: 1, sections: 2, pollingPlaces: 1, nonInstalledSections: 0 } }] };
@@ -225,4 +228,22 @@ test('senador é cargo estadual de turno único, com publicação própria e sep
     assert.equal((await (await fetch(`${base}/elections/state?office=senator&uf=SP&round=2`)).json()).status, 'round-not-held');
     assert.equal((await (await fetch(`${base}/elections/state?office=governor&uf=SP`)).json()).status, 'awaiting-import', 'Governador não herda a publicação do Senado');
   } finally { published = false; governor = false; stateOffice = 'governor'; governorRounds = ['1', '2']; }
+});
+
+test('sugestões usam trigramas sobre o nome normalizado, com curingas escapados e recorte publicado', async () => {
+  for (const query of ['q=s', 'q=', `q=${'a'.repeat(61)}`, 'q=sao&page=2', 'q=sao&office=deputies']) assert.equal((await fetch(`${base}/elections/municipalities/suggest?${query}`)).status, 400, query);
+  assert.deepEqual((await (await fetch(`${base}/elections/municipalities/suggest?q=rio&office=senator`)).json()).fields, ['uf']);
+  assert.equal((await (await fetch(`${base}/elections/municipalities/suggest?q=sao`)).json()).status, 'awaiting-import');
+  published = true; national = true; queries.length = 0;
+  try {
+    const response = await fetch(`${base}/elections/municipalities/suggest?q=${encodeURIComponent('  São_Pau%lo ')}`);
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.status, 'published'); assert.deepEqual(data.items[0], { code: '71072', name: 'SÃO PAULO', uf: 'SP', match: 'prefix' });
+    const select = queries.find((query) => query.sql.includes('word_similarity'))!;
+    assert.match(select.sql, /<%/); assert.doesNotMatch(select.sql, /strpos/); assert.match(select.sql, /LIMIT 8/);
+    assert.deepEqual(select.parameters, [dataset.id, 'sao_pau%lo', 'sao\\_pau\\%lo', 'president', null]);
+    trigram = false;
+    assert.equal((await fetch(`${base}/elections/municipalities/suggest?q=sao`)).status, 503, 'Sem índice de trigramas, a busca não cai para varredura');
+  } finally { published = false; national = false; trigram = true; }
 });

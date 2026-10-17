@@ -76,6 +76,7 @@ async function run() {
     await client.query("SELECT pg_advisory_xact_lock(hashtext('observatorio:sao-paulo-2022'))");
     await client.query(await readFile(resolve(__dirname, 'schema.sql'), 'utf8'));
     await client.query(await readFile(resolve(__dirname, 'migrations/003-national.sql'), 'utf8'));
+    await client.query(await readFile(resolve(__dirname, 'migrations/005-search-trigram.sql'), 'utf8'));
     for (const source of files) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes]);
     const existing = await client.query('SELECT metadata FROM import_batches WHERE id=$1 AND published', [id]);
     if (existing.rowCount) {
