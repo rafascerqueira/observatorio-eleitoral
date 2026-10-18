@@ -286,8 +286,22 @@ export const incomeBandsDatasetSchema = z.object({
   scope: z.string(), notes: z.array(z.string()), totals: z.object({ municipalities: nonnegative, tracts: nonnegative }).and(incomeBandPopulationSchema),
 });
 export type IncomeBandsDataset = z.infer<typeof incomeBandsDatasetSchema>;
-/** Como os grupos foram formados: quintis ponderados por eleitores aptos (sem dividir valores iguais) ou faixas fixas. Ausente (v1): quintis. */
-export const PLACE_GROUP_METHODS = { college: 'quintiles', 'education-low': 'quintiles', women: 'quintiles', 'age-16-24': 'quintiles', 'age-60-plus': 'quintiles', 'income-median': 'bands' } as const;
+/** Como os grupos foram formados: quintis ponderados por eleitores aptos (v2–v3) ou faixas fixas (v4: todos). Ausente (v1): quintis. */
+export const PLACE_GROUP_METHODS = { college: 'bands', 'education-low': 'bands', women: 'bands', 'age-16-24': 'bands', 'age-60-plus': 'bands', 'income-median': 'bands' } as const;
+/**
+ * Limites superiores (incluídos) das faixas fixas de cada indicador, na unidade dele (% dos eleitores aptos do local ou reais);
+ * a última faixa é aberta. Iguais em todos os recortes (decisão de Rafael, 17/10/2026: números redondos perto da distribuição
+ * nacional). Renda: `INCOME_BANDS` em salários mínimos de 2022.
+ */
+export const PLACE_GROUP_CUTS: Record<PlaceGroupIndicator, readonly number[]> = {
+  college: [5, 10, 20, 30], 'education-low': [20, 30, 40, 50], women: [50, 52, 54, 56], 'age-16-24': [10, 12.5, 15, 20], 'age-60-plus': [15, 20, 25, 30],
+  'income-median': INCOME_BANDS.flatMap((band) => band.upper === null ? [] : [band.upper * MINIMUM_WAGE_2022]),
+};
+/** Limites da faixa `index` (1–5) de um indicador: inferior excluído, superior incluído; null quando aberto. */
+export function placeGroupLimits(indicator: PlaceGroupIndicator, index: number) {
+  const cuts = PLACE_GROUP_CUTS[indicator];
+  return { lower: index === 1 ? null : cuts[index - 2]!, upper: index > cuts.length ? null : cuts[index - 1]! };
+}
 export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).extend({ indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]) }).strict();
 export const placeGroupsSchema = z.object({
   status: z.enum(['published', 'awaiting-import', 'round-not-held']), indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]),

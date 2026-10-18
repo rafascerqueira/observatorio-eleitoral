@@ -160,7 +160,7 @@ export class ElectionsController {
       WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.indicator=$5`, [dataset.id, office, uf ?? 'BR', Number(round), indicator]) : { rows: [] };
     if (!row.rows[0]) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
     // Faixas fixas de renda: moradores do território nas mesmas faixas, de todos os setores (publicação própria, opcional).
-    const population = (row.rows[0].result as { method?: string }).method === 'bands' ? await this.incomeBands({ uf: uf ?? null }) : undefined;
+    const population = indicator === 'income-median' && (row.rows[0].result as { method?: string }).method === 'bands' ? await this.incomeBands({ uf: uf ?? null }) : undefined;
     try { return placeGroupsSchema.parse({ ...(row.rows[0].result as object), ...(population === undefined ? {} : { population }) }); } catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes.'); }
   }
 

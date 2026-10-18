@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool, type PoolClient } from 'pg';
-import { INCOME_BANDS, MINIMUM_WAGE_2022, percent, placeGroupsSchema, placeProfilesDatasetSchema, PLACE_GROUP_INDICATORS, PLACE_GROUP_METHODS, PLACE_GROUP_NUMERATORS, STATES, type PlaceGroupIndicator, type PlaceGroups } from '@observatorio/contracts';
+import { percent, PLACE_GROUP_CUTS, placeGroupLimits, placeGroupsSchema, placeProfilesDatasetSchema, PLACE_GROUP_INDICATORS, PLACE_GROUP_METHODS, PLACE_GROUP_NUMERATORS, STATES, type PlaceGroupIndicator, type PlaceGroups } from '@observatorio/contracts';
 import { ROOT } from './sources';
 
 /**
@@ -16,8 +16,10 @@ import { ROOT } from './sources';
  * pela chave do local e, onde muitos setores têm mediana de 1 SM, separava valores iguais em grupos diferentes.
  * v3: novos indicadores do perfil por local (até fundamental incompleto, eleitoras, 16 a 24 anos, 60 anos ou mais), em
  * quintis como a escolaridade; regras de v2 mantidas.
+ * v4 (decisão de Rafael): todos os indicadores em faixas fixas (`PLACE_GROUP_CUTS`), iguais em todos os recortes — quintis
+ * davam sempre ~1/5 dos eleitores por grupo e limites que mudavam a cada recorte, sem definição estável.
  */
-const VERSION = 'place-groups-2022-v3';
+const VERSION = 'place-groups-2022-v4';
 const SCOPE = '2022/places/groups';
 type Input = { id: string; scope: string; metadata: { rounds?: Array<'1' | '2'>; level?: string; office?: string; uf?: string } };
 
@@ -29,11 +31,10 @@ async function compute(client: PoolClient, input: { results: string; profiles: s
        JOIN polling_place_profiles pp ON pp.batch_id=$5 AND pp.uf=t.uf AND pp.municipality_code=t.municipality_code AND pp.zone=t.zone AND pp.place_code=t.place_code
        WHERE t.batch_id=$6 AND t.status='associated' AND t.shared_coordinate=0 AND c.responsible_income_median IS NOT NULL AND pp.eligible > 0`;
   const method = PLACE_GROUP_METHODS[input.indicator];
-  // Quintis: o grupo vem da fração de eleitores aptos antes do bloco de locais com o mesmo valor (a janela ordenada inclui os
-  // empates), então valores iguais nunca se separam. Faixas: limite superior incluído.
-  const groupSql = method === 'quintiles'
-    ? 'least(4, floor((sum(weight) OVER (ORDER BY value) - sum(weight) OVER (PARTITION BY value))::numeric / sum(weight) OVER () * 5))::integer + 1'
-    : `CASE ${INCOME_BANDS.filter((band) => band.upper !== null).map((band) => `WHEN value <= ${band.upper! * MINIMUM_WAGE_2022} THEN ${band.index}`).join(' ')} ELSE ${INCOME_BANDS.length} END`;
+  if (method !== 'bands') throw new Error(`${input.indicator}: método ${method} fora da v4.`);
+  // Faixas fixas: limite superior incluído; valores iguais ficam sempre na mesma faixa.
+  const cuts = PLACE_GROUP_CUTS[input.indicator];
+  const groupSql = `CASE ${cuts.map((cut, index) => `WHEN value <= ${cut} THEN ${index + 1}`).join(' ')} ELSE ${cuts.length + 1} END`;
   const params = [input.results, Number(input.round), input.office, input.uf, input.profiles, ...(input.indicator === 'income-median' ? [input.tracts] : [])];
   const rows = await client.query<{ kind: string; g: number; from: string | null; to: string | null; places: number | null; eligible: string | null; valid: string | null; blank: string | null; nulls: string | null; total: string | null; number: string | null; name: string | null; party: string | null; votes: string | null }>(`
     WITH ind AS (${indicatorSql}),
@@ -52,8 +53,7 @@ async function compute(client: PoolClient, input: { results: string; profiles: s
     const candidates = rows.rows.filter((entry) => entry.kind === 'candidate' && entry.g === row.g).map((entry) => ({ number: entry.number!, name: entry.name!, party: entry.party!, votes: Number(entry.votes), percentValid: percent(Number(entry.votes), valid) }))
       .sort((a, b) => b.votes - a.votes || a.number.localeCompare(b.number));
     if (candidates.reduce((sum, item) => sum + item.votes, 0) !== valid) throw new Error(`Grupo ${row.g} (${input.office}/${input.uf ?? 'BR'}/${input.round}/${input.indicator}): candidaturas não somam os válidos.`);
-    const band = method === 'bands' ? INCOME_BANDS.find((item) => item.index === row.g)! : null;
-    const limits = band ? { lower: band.lower === null ? null : band.lower * MINIMUM_WAGE_2022, upper: band.upper === null ? null : band.upper * MINIMUM_WAGE_2022 } : {};
+    const limits = placeGroupLimits(input.indicator, row.g);
     return { index: row.g, from: Number(row.from), to: Number(row.to), ...limits, places: row.places!, eligible: Number(row.eligible), valid, blank: Number(row.blank), null: Number(row.nulls), totalVotes: Number(row.total), candidates };
   });
   return placeGroupsSchema.parse({ status: 'published', indicator: input.indicator, method, office: input.office, round: input.round, uf: input.uf,
@@ -97,7 +97,7 @@ async function run() {
         if (++done % 50 === 0) console.log(`${done} recortes calculados.`);
       }
       const dataset = { kind: 'place-groups', id, importerVersion: VERSION, importedAt: new Date().toISOString(), inputs: published.map((row) => ({ id: row.id, scope: row.scope })), recortes: done,
-        scope: 'Métrica E: locais agrupados pelo perfil declarado dos seus eleitores (TSE: superior completo, até fundamental incompleto, eleitoras, 16 a 24 anos e 60 anos ou mais; quintis ponderados por eleitores aptos, sem separar valores iguais) ou pelo rendimento mediano do responsável no setor do local (IBGE; faixas fixas de salário mínimo de 2022: até 1, mais de 1 a 1,5, mais de 1,5 a 2, mais de 2 a 3 e mais de 3 SM), com votos somados por grupo.' };
+        scope: 'Métrica E: locais agrupados pelo perfil declarado dos seus eleitores (TSE: superior completo, até fundamental incompleto, eleitoras, 16 a 24 anos e 60 anos ou mais) ou pelo rendimento mediano do responsável no setor do local (IBGE; salários mínimos de 2022), sempre em cinco faixas fixas iguais em todos os recortes, com votos somados por grupo.' };
       await client.query('UPDATE import_batches SET metadata=$2 WHERE id=$1', [id, dataset]);
       await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
       await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);

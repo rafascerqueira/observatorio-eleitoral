@@ -89,18 +89,19 @@ if (catalog.tractsDatasets?.length) {
 if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
   for (const indicator of ['college', 'education-low', 'women', 'age-16-24', 'age-60-plus', 'income-median']) {
     const groups = await json(`/elections/places/groups?indicator=${indicator}&round=2`);
-    assert.equal(groups.status, 'published'); assert.equal(groups.groups.length, 5);
-    assert.equal(groups.method, indicator === 'income-median' ? 'bands' : 'quintiles');
+    assert.equal(groups.status, 'published'); assert.ok(groups.groups.length >= 3, `${indicator}: faixas com locais`);
+    assert.equal(groups.method, 'bands');
     for (const group of groups.groups) {
       assert.equal(sum(group.candidates, 'votes'), group.valid, `${indicator} grupo ${group.index}: candidaturas = válidos`);
       assert.ok(group.from <= group.to);
     }
     // Valores iguais nunca ficam em grupos diferentes (v2).
-    for (let index = 1; index < 5; index++) assert.ok(groups.groups[index].from > groups.groups[index - 1].to, 'Grupos ordenados, sem empates divididos');
+    for (let index = 1; index < groups.groups.length; index++) assert.ok(groups.groups[index].index > groups.groups[index - 1].index && groups.groups[index].from > groups.groups[index - 1].to, 'Grupos ordenados, sem empates divididos');
+    // Faixas fixas: os mesmos limites no Brasil e numa UF (v4).
+    const ma = await json(`/elections/places/groups?indicator=${indicator}&round=2&uf=MA`);
+    for (const group of ma.groups) { const br = groups.groups.find((item) => item.index === group.index); if (br) assert.deepEqual([group.lower, group.upper], [br.lower, br.upper], `${indicator}: limites iguais no Brasil e no MA`); }
     assert.equal(sum(groups.groups, 'totalVotes'), groups.coverage.votesInGroups); assert.ok(groups.coverage.votesInGroups <= groups.coverage.totalVotes);
-    const shares = groups.groups.map((group) => group.eligible / sum(groups.groups, 'eligible'));
-    if (indicator !== 'income-median') assert.ok(shares.every((share) => share > 0.15 && share < 0.25), `${indicator}: grupos com ~1/5 do eleitorado`);
-    else for (const group of groups.groups) assert.ok((group.lower === null || group.from > group.lower) && (group.upper === null || group.to <= group.upper), `Faixa ${group.index}: valores dentro dos limites`);
+    for (const group of groups.groups) assert.ok((group.lower === null || group.from > group.lower) && (group.upper === null || group.to <= group.upper), `Faixa ${group.index}: valores dentro dos limites`);
   }
   // Moradores por faixa (todos os setores): faixas + sem mediana = total; UFs somam o Brasil; página do município mostra a tabela.
   if (catalog.incomeBandsDatasets?.length) {

@@ -291,5 +291,7 @@ Complemento na mesma data, a pedido de Rafael (antes das novas métricas): quant
 
 Rafael decidiu as faixas etárias por obrigatoriedade do voto e o escopo (participação + locais). Publicados `turnout-profiles-2022-v1` (comparecimento e abstenção do TSE cruzados por gênero, faixa etária e escolaridade, por UF e turno; página `/participacao`; contagens da fonte, conferidas linha a linha e contra o contexto municipal; DF ausente na fonte) e `place-groups-2022-v3` (métrica E com eleitoras, 16 a 24 anos, 60 anos ou mais e até fundamental incompleto). Detalhes e números em `docs/plano-ibge.md`. Verificado com testes, smokes e axe-core. Sem publicação externa.
 
+Complemento: a pedido de Rafael, todos os indicadores de `/perfis` passaram a faixas fixas de números redondos (`place-groups-2022-v4`), porque os quintis davam grupos sempre de ~1/5 dos eleitores e sem definição estável.
+
 Pendente/possível: estado civil (já no perfil por local e no comparecimento, não exibido); cruzamento por município na participação (hoje só marginais municipais no contexto); leitor de tela real, Chrome/Safari; sensibilidade da associação local → setor.
 
