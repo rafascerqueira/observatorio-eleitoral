@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022 } from '../src';
+import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022, placeGroupBandOf, placeGroupsQuerySchema, turnoutProfilesQuerySchema } from '../src';
 
 test('aplica defaults e limita a paginação sem coerção de entradas vazias', () => {
   const defaults = municipalityQuerySchema.parse({});
@@ -55,4 +55,19 @@ test('senador é cargo estadual de turno único', () => {
 test('faixas fixas de renda: limite superior incluído, em salários mínimos de 2022', () => {
   assert.deepEqual([100, 1212, 1212.5, 1818, 1818.5, 2424, 2425, 3636, 3640, 22600].map(incomeBandOf), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
   assert.equal(INCOME_BANDS.length, 5); assert.equal(MINIMUM_WAGE_2022, 1212);
+});
+
+test('faixa de um percentual por contagens: limite superior incluído, sem arredondar', () => {
+  // Mulheres: cortes 50, 52, 54, 56. Exatamente 50% fica na 1ª faixa; 50,01% passa à 2ª.
+  assert.equal(placeGroupBandOf('women', 50, 100), 1); assert.equal(placeGroupBandOf('women', 5001, 10000), 2);
+  assert.equal(placeGroupBandOf('women', 13, 25), 2); assert.equal(placeGroupBandOf('women', 57, 100), 5);
+  // 16 a 24 anos: corte de 12,5% exato (1/8).
+  assert.equal(placeGroupBandOf('age-16-24', 1, 8), 2); assert.equal(placeGroupBandOf('age-16-24', 126, 1000), 3);
+});
+
+test('raio da sensibilidade e município da participação têm formatos fechados', () => {
+  assert.equal(placeGroupsQuerySchema.parse({ indicator: 'income-median', radius: '500' }).radius, '500');
+  assert.equal(placeGroupsQuerySchema.safeParse({ indicator: 'income-median', radius: '300' }).success, false);
+  assert.equal(turnoutProfilesQuerySchema.parse({ uf: 'SP', municipality: '71072' }).municipality, '71072');
+  for (const municipality of ['7107', '710720', 'abcde']) assert.equal(turnoutProfilesQuerySchema.safeParse({ uf: 'SP', municipality }).success, false, municipality);
 });

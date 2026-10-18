@@ -23,19 +23,23 @@ const VERSION = 'place-groups-2022-v4';
 const SCOPE = '2022/places/groups';
 type Input = { id: string; scope: string; metadata: { rounds?: Array<'1' | '2'>; level?: string; office?: string; uf?: string } };
 
-async function compute(client: PoolClient, input: { results: string; profiles: string; tracts: string; numerators: Record<string, string>; office: string; uf: string | null; round: string; indicator: PlaceGroupIndicator }): Promise<PlaceGroups> {
-  const indicatorSql = input.indicator !== 'income-median'
+/**
+ * `banded`: SQL alternativo que já entrega a faixa (1–5) em `value` (uf, municipality_code, zone, code, value, weight; pode usar
+ * $5 = perfil por local), usado pela análise de sensibilidade da associação local → setor; os valores observados ficam nulos.
+ */
+export async function compute(client: PoolClient, input: { results: string; profiles: string; tracts: string; numerators: Record<string, string>; office: string; uf: string | null; round: string; indicator: PlaceGroupIndicator; banded?: string }): Promise<PlaceGroups> {
+  const indicatorSql = input.banded ?? (input.indicator !== 'income-median'
     ? `SELECT uf, municipality_code, zone, place_code AS code, (${input.numerators[input.indicator]}) * 100 / eligible AS value, eligible AS weight FROM polling_place_profiles WHERE batch_id=$5 AND eligible > 0`
     : `SELECT t.uf, t.municipality_code, t.zone, t.place_code AS code, c.responsible_income_median AS value, pp.eligible AS weight
        FROM polling_place_tracts t JOIN census_tract_context c ON c.batch_id=t.batch_id AND c.cd_setor=t.cd_setor
        JOIN polling_place_profiles pp ON pp.batch_id=$5 AND pp.uf=t.uf AND pp.municipality_code=t.municipality_code AND pp.zone=t.zone AND pp.place_code=t.place_code
-       WHERE t.batch_id=$6 AND t.status='associated' AND t.shared_coordinate=0 AND c.responsible_income_median IS NOT NULL AND pp.eligible > 0`;
+       WHERE t.batch_id=$6 AND t.status='associated' AND t.shared_coordinate=0 AND c.responsible_income_median IS NOT NULL AND pp.eligible > 0`);
   const method = PLACE_GROUP_METHODS[input.indicator];
   if (method !== 'bands') throw new Error(`${input.indicator}: método ${method} fora da v4.`);
   // Faixas fixas: limite superior incluído; valores iguais ficam sempre na mesma faixa.
   const cuts = PLACE_GROUP_CUTS[input.indicator];
-  const groupSql = `CASE ${cuts.map((cut, index) => `WHEN value <= ${cut} THEN ${index + 1}`).join(' ')} ELSE ${cuts.length + 1} END`;
-  const params = [input.results, Number(input.round), input.office, input.uf, input.profiles, ...(input.indicator === 'income-median' ? [input.tracts] : [])];
+  const groupSql = input.banded ? 'value::integer' : `CASE ${cuts.map((cut, index) => `WHEN value <= ${cut} THEN ${index + 1}`).join(' ')} ELSE ${cuts.length + 1} END`;
+  const params = [input.results, Number(input.round), input.office, input.uf, input.profiles, ...(input.indicator === 'income-median' && !input.banded ? [input.tracts] : [])];
   const rows = await client.query<{ kind: string; g: number; from: string | null; to: string | null; places: number | null; eligible: string | null; valid: string | null; blank: string | null; nulls: string | null; total: string | null; number: string | null; name: string | null; party: string | null; votes: string | null }>(`
     WITH ind AS (${indicatorSql}),
     base AS (SELECT p.result, ind.value, ind.weight, p.uf, p.municipality_code, p.zone, p.code FROM national_place_results p
@@ -54,7 +58,7 @@ async function compute(client: PoolClient, input: { results: string; profiles: s
       .sort((a, b) => b.votes - a.votes || a.number.localeCompare(b.number));
     if (candidates.reduce((sum, item) => sum + item.votes, 0) !== valid) throw new Error(`Grupo ${row.g} (${input.office}/${input.uf ?? 'BR'}/${input.round}/${input.indicator}): candidaturas não somam os válidos.`);
     const limits = placeGroupLimits(input.indicator, row.g);
-    return { index: row.g, from: Number(row.from), to: Number(row.to), ...limits, places: row.places!, eligible: Number(row.eligible), valid, blank: Number(row.blank), null: Number(row.nulls), totalVotes: Number(row.total), candidates };
+    return { index: row.g, from: input.banded ? null : Number(row.from), to: input.banded ? null : Number(row.to), ...limits, places: row.places!, eligible: Number(row.eligible), valid, blank: Number(row.blank), null: Number(row.nulls), totalVotes: Number(row.total), candidates };
   });
   return placeGroupsSchema.parse({ status: 'published', indicator: input.indicator, method, office: input.office, round: input.round, uf: input.uf,
     groups, coverage: { places: coverage.rows[0]!.places, placesInGroups: groups.reduce((sum, group) => sum + group.places, 0), totalVotes: Number(coverage.rows[0]!.total), votesInGroups: groups.reduce((sum, group) => sum + group.totalVotes, 0) } });
@@ -108,4 +112,4 @@ async function run() {
     } catch (error) { await client.query('ROLLBACK'); throw error; }
   } finally { client.release(); await pool.end(); }
 }
-run().catch((error: unknown) => { console.error(error instanceof Error ? error.message : 'Grupos de locais falharam.'); process.exitCode = 1; });
+if (require.main === module) run().catch((error: unknown) => { console.error(error instanceof Error ? error.message : 'Grupos de locais falharam.'); process.exitCode = 1; });

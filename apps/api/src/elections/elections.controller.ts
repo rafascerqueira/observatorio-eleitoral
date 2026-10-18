@@ -3,12 +3,14 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { nationalSummary } from './national-summary';
 
 const INCOME_BANDS_SCOPE = '2022/context/income-bands';
 const TURNOUT_PROFILES_SCOPE = '2022/context/turnout-profiles';
+const TRACT_SENSITIVITY_SCOPE = '2022/places/tract-sensitivity';
+const TRACT_DEMOGRAPHY_SCOPE = '2022/context/tract-demography';
 
 @Controller('elections')
 export class ElectionsController {
@@ -147,21 +149,45 @@ export class ElectionsController {
   async placeGroups(@Query() query: Record<string, unknown>) {
     const parsed = placeGroupsQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException({ message: 'Filtros dos grupos de locais inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
-    const { year, round, office, uf, indicator } = parsed.data;
+    const { year, round, office, uf, indicator, radius } = parsed.data;
     if (isStateOffice(office) && !uf) throw new BadRequestException({ message: `${OFFICE_LABELS[office]} é cargo estadual: informe a UF.`, fields: ['uf'] });
+    if (radius && indicator !== 'income-median') throw new BadRequestException({ message: 'O raio da associação local → setor só se aplica à renda do setor.', fields: ['radius'] });
     await this.database.check();
     const base = { indicator, office, round, uf: uf ?? null, groups: [], coverage: { places: 0, placesInGroups: 0, totalVotes: 0, votesInGroups: 0 } };
     const dataset = await this.publishedDataset(year, office, uf);
     if (!dataset || !['national', 'state'].includes(dataset.level)) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
     if (!roundHeld(dataset, round)) return placeGroupsSchema.parse({ ...base, status: 'round-not-held' });
     // Grupos pré-calculados na importação (`import:place-groups`), ligados à publicação de resultados em uso.
-    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.place_groups')::text AS registry");
-    const row = registry.rows[0]?.registry ? await this.database.query<{ result: unknown }>(`SELECT g.result FROM place_groups g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope='2022/places/groups'
-      WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.indicator=$5`, [dataset.id, office, uf ?? 'BR', Number(round), indicator]) : { rows: [] };
+    // Com raio: a sensibilidade da associação (`import:tract-sensitivity`), publicação própria que não substitui a métrica E.
+    const registry = await this.database.query<{ registry: string | null }>(`SELECT to_regclass('public.${radius ? 'place_group_sensitivity' : 'place_groups'}')::text AS registry`);
+    const row = !registry.rows[0]?.registry ? { rows: [] } : radius
+      ? await this.database.query<{ result: unknown }>(`SELECT g.result FROM place_group_sensitivity g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope=$6
+        WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.radius=$5`, [dataset.id, office, uf ?? 'BR', Number(round), Number(radius), TRACT_SENSITIVITY_SCOPE])
+      : await this.database.query<{ result: unknown }>(`SELECT g.result FROM place_groups g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope='2022/places/groups'
+      WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.indicator=$5`, [dataset.id, office, uf ?? 'BR', Number(round), indicator]);
     if (!row.rows[0]) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
-    // Faixas fixas de renda: moradores do território nas mesmas faixas, de todos os setores (publicação própria, opcional).
-    const population = indicator === 'income-median' && (row.rows[0].result as { method?: string }).method === 'bands' ? await this.incomeBands({ uf: uf ?? null }) : undefined;
+    // Faixas fixas: moradores do território nas mesmas faixas, de todos os setores (publicações próprias, opcionais) — renda
+    // (domicílios particulares permanentes ocupados) ou o equivalente censitário de gênero e idade (moradores de 15+).
+    const bands = (row.rows[0].result as { method?: string }).method === 'bands';
+    const population = !bands ? undefined : indicator === 'income-median' ? await this.incomeBands({ uf: uf ?? null })
+      : indicator in TRACT_DEMOGRAPHY_INDICATORS ? await this.tractDemography(uf ?? null, indicator as TractDemographyIndicator) : undefined;
     try { return placeGroupsSchema.parse({ ...(row.rows[0].result as object), ...(population === undefined ? {} : { population }) }); } catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes.'); }
+  }
+
+  /** Moradores de 15+ por faixa de perfil do setor (demografia do Censo), somados nos municípios do território; `null` sem publicação. */
+  private async tractDemography(uf: string | null, indicator: TractDemographyIndicator) {
+    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.municipality_tract_demography')::text AS registry");
+    if (!registry.rows[0]?.registry) return null;
+    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_tract_demography m JOIN import_batches b ON b.id=m.batch_id AND b.published AND b.scope=$1
+      WHERE ($2::text IS NULL OR m.uf=$2)`, [TRACT_DEMOGRAPHY_SCOPE, uf]);
+    if (!rows.rows.length) return null;
+    const total = { total: 0, bands: INCOME_BANDS.map((band) => ({ index: band.index, residents: 0, tracts: 0 })), noData: { residents: 0, tracts: 0 }, undisclosed: { tracts: 0 }, coverage: { residents: 0, total: 0 } };
+    for (const row of rows.rows) {
+      const item = tractDemographySchema.parse(row.result).indicators[indicator];
+      total.total += item.total; total.coverage.residents += item.coverage?.residents ?? 0; total.coverage.total += item.coverage?.total ?? 0; total.noData.residents += item.noData.residents; total.noData.tracts += item.noData.tracts; total.undisclosed.tracts += item.undisclosed.tracts;
+      for (const band of item.bands) { total.bands[band.index - 1]!.residents += band.residents; total.bands[band.index - 1]!.tracts += band.tracts; }
+    }
+    return total;
   }
 
   /** Moradores por faixa fixa de renda do setor: soma dos municípios do território (Brasil, UF) ou um município IBGE; `null` sem publicação. */
@@ -186,28 +212,54 @@ export class ElectionsController {
    */
   @Get('turnout/profiles')
   async turnoutProfiles(@Query() query: Record<string, unknown>) {
-    const parsed = turnoutProfilesQuerySchema.pick({ year: true, round: true, uf: true }).strict().safeParse(query);
+    const parsed = turnoutProfilesQuerySchema.pick({ year: true, round: true, uf: true, municipality: true }).strict().safeParse(query);
     if (!parsed.success) throw new BadRequestException({ message: 'Filtros do comparecimento por perfil inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
-    const { year, round, uf } = parsed.data;
+    const { year, round, uf, municipality } = parsed.data;
+    if (municipality && !uf) throw new BadRequestException({ message: 'Informe a UF do município.', fields: ['uf'] });
     await this.database.check();
     const categories = { gender: [...TSE_PROFILE_LABELS.gender], age: AGE_GROUPS.map(({ key, label }) => ({ key, label })), education: [...TSE_PROFILE_LABELS.education] };
     const base = { round, uf: uf ?? null, ufs: [], missingUfs: [], categories, cells: [], resultsEligible: null };
-    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.turnout_profiles')::text AS registry");
-    const batch = registry.rows[0]?.registry ? await this.database.query<{ id: string; metadata: { missingUfs: string[] } }>('SELECT id, metadata FROM import_batches WHERE published AND scope=$1 LIMIT 1', [TURNOUT_PROFILES_SCOPE]) : { rows: [] };
+    const batch = await this.database.query<{ id: string; metadata: { missingUfs: string[]; cellFormat?: string; order?: unknown } }>('SELECT id, metadata FROM import_batches WHERE published AND scope=$1 LIMIT 1', [TURNOUT_PROFILES_SCOPE]);
     if (!batch.rows[0] || year !== '2022') return turnoutProfilesSchema.parse({ ...base, status: 'awaiting-import' });
-    const missingUfs = batch.rows[0].metadata.missingUfs;
+    const { id, metadata } = batch.rows[0];
+    const missingUfs = metadata.missingUfs;
     if (uf && missingUfs.includes(uf)) return turnoutProfilesSchema.parse({ ...base, missingUfs, status: 'not-in-source' });
-    const rows = await this.database.query<{ uf: string; result: { cells: Array<[string, string, string, number, number, number]>; resultsEligible: number } }>(
-      'SELECT uf, result FROM turnout_profiles WHERE batch_id=$1 AND round=$2 AND ($3::text IS NULL OR uf=$3) ORDER BY uf', [batch.rows[0].id, Number(round), uf ?? null]);
-    const cells = new Map<string, { gender: string; age: string; education: string; optional: boolean; eligible: number; turnout: number; abstentions: number }>();
-    for (const row of rows.rows) for (const [gender, band, education, eligible, turnout, abstentions] of row.result.cells) {
-      const age = ageGroupOf(band); const key = `${gender}/${age}/${education}`;
-      const cell = cells.get(key) ?? { gender, age, education, optional: optionalVoter(band, education), eligible: 0, turnout: 0, abstentions: 0 };
-      cell.eligible += eligible; cell.turnout += turnout; cell.abstentions += abstentions; cells.set(key, cell);
+    type Cell = { gender: string; age: string; education: string; maritalStatus?: string; optional: boolean; eligible: number; turnout: number; abstentions: number };
+    const cells = new Map<string, Cell>();
+    const add = (cell: Omit<Cell, 'eligible' | 'turnout' | 'abstentions'>, eligible: number, turnout: number, abstentions: number) => {
+      const key = `${cell.gender}/${cell.age}/${cell.education}/${cell.maritalStatus ?? ''}`; const item = cells.get(key) ?? { ...cell, eligible: 0, turnout: 0, abstentions: 0 };
+      item.eligible += eligible; item.turnout += turnout; item.abstentions += abstentions; cells.set(key, item);
+    };
+    if (metadata.cellFormat !== 'int4-groups-v2') {
+      // v1: só UFs, sem estado civil; um município pedido fica sem publicação (não é zero).
+      if (municipality) return turnoutProfilesSchema.parse({ ...base, status: 'awaiting-import' });
+      const rows = await this.database.query<{ uf: string; result: { cells: Array<[string, string, string, number, number, number]>; resultsEligible: number } }>(
+        'SELECT uf, result FROM turnout_profiles WHERE batch_id=$1 AND round=$2 AND ($3::text IS NULL OR uf=$3) ORDER BY uf', [id, Number(round), uf ?? null]);
+      for (const row of rows.rows) for (const [gender, band, education, eligible, turnout, abstentions] of row.result.cells) add({ gender, age: ageGroupOf(band), education, optional: optionalVoter(band, education) }, eligible, turnout, abstentions);
+      try {
+        return turnoutProfilesSchema.parse({ ...base, status: 'published', ufs: rows.rows.map((row) => row.uf), missingUfs: uf ? [] : missingUfs, cells: [...cells.values()],
+          resultsEligible: rows.rows.reduce((sum, row) => sum + row.result.resultsEligible, 0) });
+      } catch { throw new ServiceUnavailableException('Comparecimento por perfil inconsistente.'); }
+    }
+    // v2: vetores int4 em grupos de 7 (índices de gênero, grupo etário, escolaridade e estado civil + aptos, comparecimento, abstenção).
+    // Compara dimensão a dimensão: o JSONB não preserva a ordem das chaves do objeto, só a dos vetores.
+    const order = (metadata.order ?? {}) as Record<string, unknown>;
+    if ((Object.keys(TURNOUT_CELL_ORDER) as Array<keyof typeof TURNOUT_CELL_ORDER>).some((dimension) => JSON.stringify(order[dimension]) !== JSON.stringify(TURNOUT_CELL_ORDER[dimension])) || Object.keys(order).length !== Object.keys(TURNOUT_CELL_ORDER).length) throw new ServiceUnavailableException('Ordem das categorias do comparecimento por perfil diverge dos contratos.');
+    const rows = await this.database.query<{ uf: string; cells: number[]; results_eligible: string }>('SELECT uf, cells, results_eligible::text FROM turnout_profile_cells WHERE batch_id=$1 AND round=$2 AND municipality_code=$3 AND ($4::text IS NULL OR uf=$4) ORDER BY uf',
+      [id, Number(round), municipality ?? '', uf ?? null]);
+    const names = uf ? await this.database.query<{ code: string; name: string }>(`SELECT c.code, c.result->>'name' AS name FROM municipality_context c JOIN import_batches b ON b.id=c.batch_id AND b.published AND b.scope='2022/context/municipal'
+      WHERE c.uf=$1 AND EXISTS (SELECT 1 FROM turnout_profile_cells t WHERE t.batch_id=$2 AND t.uf=c.uf AND t.municipality_code=c.code AND t.round=1)`, [uf, id]) : { rows: [] };
+    const municipalities = names.rows.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    if (municipality && !rows.rows[0]) throw new NotFoundException('Município sem comparecimento por perfil nesta UF.');
+    for (const row of rows.rows) for (let index = 0; index < row.cells.length; index += 7) {
+      const [g, a, e, m, eligible, turnout, abstentions] = row.cells.slice(index, index + 7) as [number, number, number, number, number, number, number];
+      const education = TURNOUT_CELL_ORDER.education[e]!, group = AGE_GROUPS[a]!;
+      add({ gender: TURNOUT_CELL_ORDER.gender[g]!, age: group.key, education, maritalStatus: TURNOUT_CELL_ORDER.maritalStatus[m]!, optional: group.optional || education === 'illiterate' }, eligible, turnout, abstentions);
     }
     try {
-      return turnoutProfilesSchema.parse({ ...base, status: 'published', ufs: rows.rows.map((row) => row.uf), missingUfs: uf ? [] : missingUfs, cells: [...cells.values()],
-        resultsEligible: rows.rows.reduce((sum, row) => sum + row.result.resultsEligible, 0) });
+      return turnoutProfilesSchema.parse({ ...base, status: 'published', categories: { ...categories, maritalStatus: [...TSE_PROFILE_LABELS.maritalStatus] }, ufs: rows.rows.map((row) => row.uf), missingUfs: uf ? [] : missingUfs,
+        municipality: municipality ? { code: municipality, name: municipalities.find((item) => item.code === municipality)?.name ?? municipality } : null, ...(uf ? { municipalities } : {}),
+        cells: [...cells.values()], resultsEligible: rows.rows.reduce((sum, row) => sum + Number(row.results_eligible), 0) });
     } catch { throw new ServiceUnavailableException('Comparecimento por perfil inconsistente.'); }
   }
 
@@ -260,6 +312,54 @@ export class ElectionsController {
       items = [...byUf].map(([code, sum]) => ({ id: items.find((item) => item.uf === code)!.id.slice(0, 2), code, uf: code, name: code, ...sum, value: value(sum.numerator, sum.denominator) }));
     }
     return mapValuesSchema.parse({ status: 'published', indicator, level, round, items: items.sort((a, b) => a.uf.localeCompare(b.uf) || a.name.localeCompare(b.name, 'pt-BR')) });
+  }
+
+  /**
+   * Mapa por candidatura: votos de cada candidatura e válidos por unidade (UF somando municípios, ou municípios de uma UF).
+   * Toda unidade precisa trazer todas as candidaturas do recorte (zero explícito na fonte); falta bloqueia, nunca vira zero.
+   */
+  @Get('map/candidates')
+  async candidateMap(@Query() query: Record<string, unknown>) {
+    const parsed = candidateMapQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'Filtros do mapa por candidatura inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    const { year, round, office, uf } = parsed.data;
+    if (isStateOffice(office) && !uf) throw new BadRequestException({ message: `${OFFICE_LABELS[office]} é cargo estadual: informe a UF.`, fields: ['uf'] });
+    const level = uf ? 'municipality' as const : 'uf' as const;
+    const base = { office, round, level, uf: uf ?? null, candidates: [], items: [] };
+    await this.database.check();
+    const dataset = await this.publishedDataset(year, office, uf);
+    if (!dataset || !['national', 'state'].includes(dataset.level)) return candidateMapSchema.parse({ ...base, status: 'awaiting-import' });
+    if (!roundHeld(dataset, round)) return candidateMapSchema.parse({ ...base, status: 'round-not-held' });
+    const context = await this.database.query<{ id: string }>("SELECT id FROM import_batches WHERE published AND scope='2022/context/municipal' LIMIT 1");
+    if (!context.rows[0]) return candidateMapSchema.parse({ ...base, status: 'awaiting-import' });
+    const params = [dataset.id, Number(round), office, uf ?? null, context.rows[0].id];
+    const scope = `FROM municipality_results m JOIN municipality_context x ON x.batch_id=$5 AND x.uf=m.uf AND x.code=m.code
+      WHERE m.batch_id=$1 AND m.round=$2 AND m.office=$3 AND m.uf<>'ZZ' AND ($4::text IS NULL OR m.uf=$4)`;
+    const unit = level === 'uf' ? `m.uf` : `m.code`;
+    const [totals, units, votes] = await Promise.all([
+      this.database.query<{ number: string; name: string; party: string; names: number; votes: string }>(`SELECT c->>'number' AS number, min(c->>'name') AS name, min(c->>'party') AS party, count(DISTINCT c->>'name')::integer AS names, sum((c->>'votes')::bigint)::text AS votes
+        ${scope.replace('WHERE', 'CROSS JOIN LATERAL jsonb_array_elements(m.result->\'candidates\') c WHERE')} GROUP BY 1`, params),
+      this.database.query<{ key: string; id: string; uf: string; name: string; valid: string; municipalities: number }>(`SELECT ${unit} AS key, ${level === 'uf' ? 'left(min(x.ibge_code), 2)' : 'min(x.ibge_code)'} AS id, min(m.uf) AS uf,
+        ${level === 'uf' ? 'm.uf' : "min(m.result->>'name')"} AS name, sum((m.result->'totals'->>'valid')::bigint)::text AS valid, count(*)::integer AS municipalities ${scope} GROUP BY 1`, params),
+      this.database.query<{ key: string; number: string; votes: string; entries: number }>(`SELECT ${unit} AS key, c->>'number' AS number, sum((c->>'votes')::bigint)::text AS votes, count(*)::integer AS entries
+        ${scope.replace('WHERE', 'CROSS JOIN LATERAL jsonb_array_elements(m.result->\'candidates\') c WHERE')} GROUP BY 1, 2`, params),
+    ]);
+    if (!units.rows.length) return candidateMapSchema.parse({ ...base, status: 'awaiting-import' });
+    if (totals.rows.some((row) => row.names > 1)) throw new ServiceUnavailableException('Candidatura com nomes diferentes no recorte.');
+    const totalValid = units.rows.reduce((sum, row) => sum + Number(row.valid), 0);
+    const candidates = totals.rows.map((row) => ({ number: row.number, name: row.name, party: row.party, votes: Number(row.votes), percentValid: percent(Number(row.votes), totalValid) }))
+      .sort((a, b) => b.votes - a.votes || a.number.localeCompare(b.number));
+    const byUnit = new Map<string, Map<string, { votes: number; entries: number }>>();
+    for (const row of votes.rows) { const item = byUnit.get(row.key) ?? new Map(); item.set(row.number, { votes: Number(row.votes), entries: row.entries }); byUnit.set(row.key, item); }
+    const items = units.rows.map((row) => {
+      const entry = byUnit.get(row.key);
+      // Cada município da unidade traz cada candidatura uma vez; a soma das candidaturas é o total de válidos.
+      if (!entry || candidates.some((candidate) => entry.get(candidate.number)?.entries !== row.municipalities)) throw new ServiceUnavailableException(`Candidaturas incompletas em ${row.key}.`);
+      const list = candidates.map((candidate) => entry.get(candidate.number)!.votes);
+      if (list.reduce((sum, value) => sum + value, 0) !== Number(row.valid)) throw new ServiceUnavailableException(`Válidos divergentes em ${row.key}.`);
+      return { id: row.id, code: row.key, uf: row.uf, name: row.name, valid: Number(row.valid), votes: list };
+    }).sort((a, b) => a.uf.localeCompare(b.uf) || a.name.localeCompare(b.name, 'pt-BR'));
+    return candidateMapSchema.parse({ ...base, status: 'published', candidates, items });
   }
 
   /** Contexto do município: Censo 2022 (IBGE) e perfis do TSE como base própria; nada é estimado aqui, só lido da publicação. */
@@ -351,9 +451,11 @@ export class ElectionsController {
       tractsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/tracts').map((batch) => batch.metadata),
       placeProfilesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/profiles').map((batch) => batch.metadata),
       placeGroupsImport: batches.rows.find((batch) => batch.published && batch.scope === '2022/places/groups')?.metadata ?? null,
+      tractSensitivityImport: batches.rows.find((batch) => batch.published && batch.scope === TRACT_SENSITIVITY_SCOPE)?.metadata ?? null,
       contextDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/context/municipal').map((batch) => batch.metadata),
       turnoutProfilesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === TURNOUT_PROFILES_SCOPE).map((batch) => batch.metadata),
       incomeBandsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === INCOME_BANDS_SCOPE).map((batch) => batch.metadata),
+      tractDemographyDatasets: batches.rows.filter((batch) => batch.published && batch.scope === TRACT_DEMOGRAPHY_SCOPE).map((batch) => batch.metadata),
       mapDatasets: batches.rows.filter((batch) => batch.published && isMap(batch.scope)).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
       // Cargo estadual: só as UFs sem publicação continuam pendentes.
       ...STATE_OFFICES.flatMap((office) => {

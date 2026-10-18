@@ -120,6 +120,33 @@ if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
   const page = await html('/perfis?indicator=income-median&round=2');
   for (const text of ['Resultados por perfil dos locais', 'Grupos de locais', 'descrevem locais, não pessoas', 'Mais de 3 SM', '3.636']) assert.ok(page.includes(text), text);
   await request(api, '/elections/places/groups?indicator=college&office=governor', 400);
+  // Sensibilidade da associação local → setor: mesmos locais e votos do recorte; muda só a faixa de cada local.
+  if (catalog.tractSensitivityImport) {
+    const reference = await json('/elections/places/groups?indicator=income-median&round=1');
+    for (const radius of ['250', '500', '1000']) {
+      const groups = await json(`/elections/places/groups?indicator=income-median&round=1&radius=${radius}`);
+      assert.equal(groups.status, 'published'); assert.equal(groups.association.radius, radius);
+      assert.deepEqual([groups.coverage.places, groups.coverage.totalVotes], [reference.coverage.places, reference.coverage.totalVotes], `${radius} m: mesmo universo`);
+      for (const group of groups.groups) { assert.equal(sum(group.candidates, 'votes'), group.valid); assert.equal(group.from, null); }
+      const agreement = Object.values(groups.association.agreement);
+      assert.equal(sum(agreement, 'places'), sum(Object.values(catalog.tractSensitivityImport.national[radius]), 'places'), `${radius} m: concordância nacional`);
+    }
+    await request(api, '/elections/places/groups?indicator=college&round=1&radius=500', 400);
+    const alternative = await html('/perfis?indicator=income-median&round=1&radius=500');
+    for (const text of ['Associação alternativa: setores a até 500 m', 'Sensibilidade à associação local → setor', 'vs. publicada']) assert.ok(alternative.includes(text), text);
+  }
+  // Demografia por setor (Censo): moradores de 15+ por faixa de eleitoras e de idade; escolaridade não tem equivalente.
+  if (catalog.tractDemographyDatasets?.length) {
+    const [demography] = catalog.tractDemographyDatasets;
+    for (const indicator of ['women', 'age-16-24', 'age-60-plus']) {
+      const population = (await json(`/elections/places/groups?indicator=${indicator}&round=1`)).population;
+      assert.ok(population, `${indicator}: moradores por faixa`);
+      assert.equal(sum(population.bands, 'residents'), population.total, `${indicator}: faixas = total de 15+`);
+      assert.equal(sum(population.bands, 'tracts') + population.noData.tracts + population.undisclosed.tracts, demography.totals.tracts, `${indicator}: todos os setores`);
+    }
+    assert.equal((await json('/elections/places/groups?indicator=education-low&round=1')).population ?? null, null);
+    assert.ok((await html('/perfis?indicator=age-60-plus&uf=MA')).includes('Moradores de 15+ em setores da faixa'));
+  }
 }
 // Participação por perfil (TSE): contagens somam os totais publicados; DF fora da fonte; facultativo pela regra constitucional.
 if (catalog.turnoutProfilesDatasets?.length) {
@@ -144,5 +171,35 @@ if (catalog.turnoutProfilesDatasets?.length) {
   for (const text of ['Taxa de abstenção', 'Facultativo (16–17, 70+ ou analfabeto)', 'Superior completo', 'não indica motivação']) assert.ok(page.includes(text), text);
   assert.ok((await html('/participacao?rows=age&cols=age')).includes('Escolha dimensões diferentes para linhas e colunas.'));
   assert.ok((await html('/participacao?uf=DF')).includes('não traz o'));
+  // v2: estado civil e municípios, conferidos com as marginais do contexto municipal.
+  if (dataset.cellFormat === 'int4-groups-v2') {
+    const city = await json('/elections/turnout/profiles?round=1&uf=SP&municipality=71072');
+    const context = (await json('/elections/municipalities/71072/context?uf=SP')).item.turnout['1'];
+    assert.equal(city.municipality.name, 'São Paulo'); assert.equal(sum(city.cells, 'eligible'), context.eligible);
+    const marital = context.dimensions.find((item) => item.dimension === 'maritalStatus');
+    for (const category of marital.categories) assert.equal(sum(city.cells.filter((cell) => cell.maritalStatus === category.key), 'abstentions'), category.abstentions, `estado civil ${category.key}`);
+    assert.ok((await json('/elections/turnout/profiles?round=1&uf=SP')).municipalities.length === 645);
+    await request(api, '/elections/turnout/profiles?municipality=71072', 400);
+    await request(api, '/elections/turnout/profiles?uf=SP&municipality=99999', 404);
+    const page = await html('/participacao?uf=SP&municipality=71072&round=1&rows=maritalStatus&cols=gender');
+    for (const text of ['Participação por perfil — São Paulo / SP', 'Solteiro(a)', 'Viúvo(a)']) assert.ok(page.includes(text), text);
+    assert.ok((await html('/participacao?uf=SP&municipality=99999')).includes('não é de um município'));
+    // Envio sem JavaScript: "Toda a UF" chega como municipality vazio e vale como ausência do filtro.
+    assert.ok((await html('/participacao?uf=SP&municipality=&round=1&rows=education&cols=gender')).includes('Taxa de abstenção: Escolaridade declarada × Gênero'));
+  }
+}
+assert.ok((await html('/municipios/71072?uf=SP&round=1')).includes('Estado civil dos eleitores aptos'));
+// Mapa por candidatura: escala fixa; cada unidade traz todas as candidaturas e soma os válidos.
+{
+  const map = await json('/elections/map/candidates?round=1');
+  assert.equal(map.status, 'published'); assert.equal(map.items.length, 27); assert.equal(map.candidates.length, 11);
+  for (const item of map.items) assert.equal(sum(item.votes.map((value) => ({ value }))), item.valid, item.uf);
+  map.candidates.forEach((candidate, index) => assert.equal(sum(map.items.map((item) => ({ value: item.votes[index] }))), candidate.votes, candidate.number));
+  const governor = await json('/elections/map/candidates?office=governor&uf=SP&round=2');
+  assert.equal(governor.items.length, 645); assert.equal(governor.candidates.length, 2);
+  await request(api, '/elections/map/candidates?office=governor', 400);
+  assert.equal((await json('/elections/map/candidates?office=senator&uf=SP&round=2')).status, 'round-not-held');
+  const page = await html('/mapa/candidaturas?office=governor&uf=SP&round=2');
+  for (const text of ['Votação por candidatura — São Paulo', 'mesma escala em todos os mapas', 'maioria absoluta dos votos válidos']) assert.ok(page.includes(text), text);
 }
 console.log(`Smoke do contexto municipal aprovado: ${requests} requisições.`);

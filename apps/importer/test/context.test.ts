@@ -67,7 +67,7 @@ test('distribuição confere a soma das categorias, salvo quando há supressão'
 });
 
 test('rótulos dos cruzamentos nos contratos = ordem do importador; faixas agregadas cobrem todas as faixas do TSE uma vez', () => {
-  for (const dimension of ['gender', 'education'] as const) assert.deepEqual(TSE_PROFILE_LABELS[dimension], tseOrder(dimension));
+  for (const dimension of ['gender', 'education', 'maritalStatus'] as const) assert.deepEqual(TSE_PROFILE_LABELS[dimension], tseOrder(dimension));
   const bands = AGE_GROUPS.flatMap((group) => group.bands as readonly string[]);
   assert.deepEqual([...bands].sort(), tseOrder('age').map((item) => item.key).sort());
   assert.equal(ageGroupOf('a17'), '16-17'); assert.equal(ageGroupOf('a70-74'), '70+'); assert.equal(ageGroupOf('a18'), '18-24');

@@ -5,6 +5,8 @@ import { getMapGeometry, getMapValues } from '../../lib/results';
 import { QueryForm } from '../../components/query-form';
 import { ErrorSummary, QuerySelect, TurnField } from '../../components/query-fields';
 import { Choropleth, MapShapeDefs, projectShapes, type Topology } from '../../components/choropleth';
+import { MapHover } from '../../components/map-hover';
+import { MapTabs } from '../../components/map-tabs';
 import { UF_NAMES, queryErrors, rawValue, type RawQuery } from '../../lib/query-ui';
 
 export const metadata: Metadata = { title: 'Mapa' };
@@ -32,11 +34,14 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
   const name = (item: MapValues['items'][number]) => level === 'uf' ? UF_NAMES[item.uf] : item.name;
   const href = (item: MapValues['items'][number]) => level === 'uf' ? `/mapa?${new URLSearchParams({ indicator: filters.indicator, round: filters.round, uf: item.uf })}` : `/municipios/${item.code}?${new URLSearchParams({ uf: item.uf, round: filters.round })}`;
   const tseById = new Map(right?.items.map((item) => [item.id, item]) ?? []);
+  // Na visão por UF, a API traz a sigla como nome: a dica do mapa mostra o nome por extenso.
+  const named = (items: MapValues['items']) => level === 'uf' ? items.map((item) => ({ ...item, name: UF_NAMES[item.uf] })) : items;
   const map = topology ? projectShapes(topology as Topology) : { shapes: [], height: 0, insets: [] };
   return <>
     <section className="hero places-hero"><p className="eyebrow">MAPA · CENSO 2022 E ELEIÇÕES 2022</p><h1>Território e participação — {place}</h1>
-      <p className="hero-description">Dois mapas lado a lado: um indicador do Censo 2022 sobre quem mora no território e a abstenção nos resultados da Presidência. Mapas lado a lado não demonstram relação de causa, nem dizem como votou cada grupo.</p></section>
+      <p className="hero-description">Dois mapas lado a lado: um indicador do Censo 2022 sobre quem mora no território e a abstenção nos resultados da Presidência. Mapas lado a lado não demonstram relação de causa, nem dizem como votou cada grupo. A votação de cada candidatura está em <Link href="/mapa/candidaturas">Votação por candidatura</Link>.</p></section>
     <section className="explorer" aria-labelledby="mapa-filtros">
+      <MapTabs current="territory" />
       <div className="section-heading"><div><p className="eyebrow">ESCOLHA O RECORTE</p><h2 id="mapa-filtros">Indicadores e território</h2></div><Link className="text-link" href="/metodologia#mapas">Como ler <span aria-hidden="true">↗</span></Link></div>
       <ErrorSummary errors={errors} targets={{ indicator: 'indicator', uf: 'uf', round: 'round-1' }} />
       <QueryForm key={JSON.stringify(raw)} action="/mapa" className="municipality-filters" label="Filtros do mapa" submitLabel="Ver mapas" resultsId="mapas" hasErrors={errors.length > 0}>
@@ -49,12 +54,12 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
       <div id="mapas" className="query-results">
         {!parsed.success ? <p className="notice scope-notice">Corrija os filtros acima para ver os mapas.</p> : !topology || !left || !right ? <p className="notice scope-notice" role="status">Mapas indisponíveis: as malhas do IBGE, o contexto municipal ou os resultados ainda não foram publicados, ou o serviço não respondeu.</p> : <>
           <MapShapeDefs shapes={map.shapes} />
-          <div className="choropleth-pair">
-            <Choropleth map={map} items={left.items} ramp="teal" href={href} title={meta.label}
+          <MapHover className="choropleth-pair">
+            <Choropleth map={map} items={named(left.items)} ramp="teal" href={href} title={meta.label}
               description={`${meta.source} · ${KIND[meta.kind]} · por ${unit}${level === 'uf' ? ' (soma dos municípios)' : ''}`} />
-            <Choropleth map={map} items={right.items} ramp="copper" href={href} title={`Abstenção na Presidência — ${filters.round}º turno`}
+            <Choropleth map={map} items={named(right.items)} ramp="copper" href={href} title={`Abstenção na Presidência — ${filters.round}º turno`}
               description={`${MAP_INDICATORS.abstention.source} · abstenções ÷ eleitores aptos · por ${unit}`} />
-          </div>
+          </MapHover>
           <div className="notice scope-notice map-caveats"><p><strong>Como ler.</strong> Cada mapa tem sua própria escala, em quintis. Cores parecidas nos dois mapas não significam relação, e nenhum dos dois indica o voto de grupos: o Censo descreve quem mora no território; a abstenção descreve o eleitorado inscrito ali. Municípios extensos e pouco populosos ocupam mais área no mapa do que seu peso em pessoas.</p></div>
           <details className="context-section map-table"><summary>Tabela dos mapas ({left.items.length.toLocaleString('pt-BR')} {level === 'uf' ? 'UFs' : 'municípios'})</summary>
             <div className="table-scroll context-table" role="region" aria-label="Tabela dos mapas" tabIndex={0}><table>

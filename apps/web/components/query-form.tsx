@@ -24,10 +24,12 @@ export function QueryForm({ action, children, label, hintId, className, submitLa
     if (pending) results.setAttribute('aria-busy', 'true'); else results.removeAttribute('aria-busy');
   }, [pending, resultsId]);
   function submit(event: FormEvent<HTMLFormElement>) {
+    const data = new FormData(event.currentTarget);
+    let href: string;
+    // Ação fora da lista da navegação aprimorada: segue o envio GET nativo, em vez de falhar em silêncio.
+    try { href = queryHref(action, data); } catch { return; }
     event.preventDefault();
     if (pending) return;
-    const data = new FormData(event.currentTarget);
-    const href = queryHref(action, data);
     // Troca de turno ganha direção na transição; as demais mudanças fazem só o crossfade.
     const before = new URLSearchParams(window.location.search).get('round') ?? '1';
     const after = String(data.get('round') ?? '1');

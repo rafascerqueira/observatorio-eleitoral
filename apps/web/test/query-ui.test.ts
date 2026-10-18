@@ -46,7 +46,13 @@ test('GET aprimorado preserva zeros, texto e âncora sem transformar entrada em 
   assert.equal(url.searchParams.get('zone'), '0001'); assert.equal(url.searchParams.get('section'), '0002');
   assert.equal(url.searchParams.get('search'), 'São João & filhos'); assert.equal(url.searchParams.has('local'), false);
   assert.equal(queryHref('/', [['uf', ''], ['search', ' ']]), '/');
-  for (const action of ['https://example.com', '//example.com', 'javascript:alert(1)', '/\\example.com', '/?year=2022']) assert.throws(() => queryHref(action, entries));
+  for (const action of ['https://example.com', '//example.com', 'javascript:alert(1)', '/\\example.com', '/?year=2022', '/mapa/outra']) assert.throws(() => queryHref(action, entries));
+});
+
+test('todas as páginas com formulário de consulta navegam no envio aprimorado', () => {
+  // As ações reais das páginas: uma ação fora da lista fazia o envio falhar em silêncio (/participacao, 17/10/2026).
+  for (const action of ['/', '/mapa', '/mapa/candidaturas', '/perfis', '/participacao', '/exterior', '/municipios/71072#resultados']) assert.ok(queryHref(action, [['rows', 'education'], ['cols', 'gender']]).startsWith(action.split('#')[0]!), action);
+  assert.equal(queryHref('/participacao', [['uf', 'SP'], ['municipality', ''], ['rows', 'education']]), '/participacao?uf=SP&rows=education');
 });
 
 test('voltar ao Brasil remove recorte e paginação, mantendo eleição e turno', () => {

@@ -24,6 +24,8 @@
     "import:place-groups": "npm run build -w @observatorio/contracts && npm run place-groups -w @observatorio/importer",
     "import:income-bands": "npm run build -w @observatorio/contracts && npm run income-bands -w @observatorio/importer",
     "import:turnout-profiles": "npm run build -w @observatorio/contracts && npm run turnout-profiles -w @observatorio/importer",
+    "import:tract-sensitivity": "npm run build -w @observatorio/contracts && npm run tract-sensitivity -w @observatorio/importer",
+    "import:tract-demography": "npm run build -w @observatorio/contracts && npm run tract-demography -w @observatorio/importer",
     "smoke:national": "node scripts/smoke-national.mjs",
     "smoke:summary": "node scripts/smoke-summary.mjs",
     "smoke:exterior": "node scripts/smoke-forms-exterior.mjs",

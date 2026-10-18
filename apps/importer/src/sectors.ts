@@ -19,7 +19,7 @@ import { municipalityCode } from './territory';
 // v2: aceita coordenadas sem zero inicial (".85"); a v1 as descartava e deixava sem associação locais perto do Equador.
 const VERSION = 'polling-place-tracts-2022-v2';
 const SCOPE = '2022/places/tracts';
-const IBGE = 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios';
+export const IBGE = 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios';
 const STATUSES = ['associated', 'no-coordinate', 'conflicting-coordinates', 'relocated', 'outside-tracts', 'other-municipality', 'ambiguous'] as const;
 type Status = typeof STATUSES[number];
 type Place = { uf: string; code: string; zone: number; local: string; ibge: string; names: Set<string>; coordinates: Set<string>; electors: number; relocated: boolean };
@@ -43,7 +43,7 @@ export function coordinate(latitude: string | undefined, longitude: string | und
   return lat > -34 && lat < 6 && lon > -74 && lon < -28 ? [lat, lon] : null;
 }
 
-async function loadTracts(client: PoolClient, gpkgPath: string) {
+export async function loadTracts(client: PoolClient, gpkgPath: string) {
   const db = new DatabaseSync(gpkgPath, { readOnly: true });
   const contents = db.prepare("SELECT table_name, srs_id FROM gpkg_contents WHERE data_type='features'").all() as Array<{ table_name: string; srs_id: number }>;
   if (contents.length !== 1) throw new Error(`GeoPackage com ${contents.length} camadas; esperada uma.`);
@@ -80,14 +80,14 @@ async function loadTracts(client: PoolClient, gpkgPath: string) {
   return { rows: total, tracts: distinct.rows[0]!.n, multipart: distinct.rows[0]!.parts };
 }
 
-/** Valores por setor de um agregado do IBGE (CSV do FTP), só para os setores pedidos. */
-async function tractValues(zip: string, wanted: Set<string>, fields: string[]) {
+/** Valores por setor de um agregado do IBGE (CSV do FTP), só para os setores pedidos (`null`: todos). */
+export async function tractValues(zip: string, wanted: Set<string> | null, fields: string[]) {
   const values = new Map<string, Record<string, number | null>>();
   const entry = entries(zip).find((name) => name.toLowerCase().endsWith('.csv'));
   if (!entry) throw new Error(`Sem CSV em ${zip}.`);
   for await (const row of rows(zip, entry)) {
     const setor = row.CD_SETOR ?? row.CD_setor;
-    if (!setor || !wanted.has(setor)) continue;
+    if (!setor || (wanted && !wanted.has(setor))) continue;
     values.set(setor, Object.fromEntries(fields.map((field) => {
       const raw = (row[field] ?? row[field.toLowerCase()])?.replace(',', '.');
       if (raw === undefined) throw new Error(`Campo ${field} ausente em ${entry}.`);

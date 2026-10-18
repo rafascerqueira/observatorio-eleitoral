@@ -1,4 +1,4 @@
-import { placeGroupsSchema, turnoutProfilesSchema, mapGeometrySchema, mapValuesSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
+import { placeGroupsSchema, turnoutProfilesSchema, mapGeometrySchema, mapValuesSchema, candidateMapSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
 
 export async function getExterior(filters: ExteriorQuery) {
   try {
@@ -81,7 +81,7 @@ export async function getContext(code: string, uf: string, year: string) {
   } catch { return { kind: 'unavailable' as const }; }
 }
 
-async function mapRequest(path: 'geometry' | 'values', params: Record<string, string | undefined>): Promise<unknown> {
+async function mapRequest(path: 'geometry' | 'values' | 'candidates', params: Record<string, string | undefined>): Promise<unknown> {
   try {
     const url = new URL(`/elections/map/${path}`, process.env.API_URL ?? 'http://127.0.0.1:3001');
     for (const [key, value] of Object.entries(params)) if (value) url.searchParams.set(key, value);
@@ -91,6 +91,7 @@ async function mapRequest(path: 'geometry' | 'values', params: Record<string, st
 }
 export async function getMapGeometry(uf?: string) { const body = await mapRequest('geometry', { uf }); const parsed = mapGeometrySchema.safeParse(body); return parsed.success ? parsed.data : null; }
 export async function getMapValues(params: Record<string, string | undefined>) { const body = await mapRequest('values', params); const parsed = mapValuesSchema.safeParse(body); return parsed.success ? parsed.data : null; }
+export async function getCandidateMap(params: Record<string, string | undefined>) { const body = await mapRequest('candidates', params); const parsed = candidateMapSchema.safeParse(body); return parsed.success ? parsed.data : null; }
 
 export async function getTurnoutProfiles(params: Record<string, string | undefined>) {
   try {

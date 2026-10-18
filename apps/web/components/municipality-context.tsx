@@ -80,13 +80,19 @@ export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands
 
     <details className="context-section" open><summary>Comparecimento e abstenção por perfil — {round}º turno</summary>
       {turnout === null ? <p className="notice">O arquivo de comparecimento por perfil do TSE de 2022 não traz esta UF. Não disponível — não é zero.</p> : <>
-        <p className="query-note">Base própria do TSE: {number(turnout.eligible)} aptos, {number(turnout.turnout)} comparecimentos. Abstenção do grupo ÷ aptos do grupo, no próprio arquivo; abstenção não indica motivação.</p>
+        <p className="query-note">Base própria do TSE: {number(turnout.eligible)} aptos, {number(turnout.turnout)} comparecimentos. Abstenção do grupo ÷ aptos do grupo, no próprio arquivo; abstenção não indica motivação. <Link href={`/participacao?uf=${item.uf}&municipality=${item.code}&round=${round}#participacao`}>Cruzar dois perfis deste município (por exemplo, faixa etária × gênero)</Link>.</p>
         {turnout.dimensions.map((dimension) => <div key={dimension.dimension} className="table-scroll context-table" role="region" aria-label={`Comparecimento por ${DIMENSION_LABEL[dimension.dimension].toLowerCase()}`} tabIndex={0}><table>
           <caption><span className="context-caption">{DIMENSION_LABEL[dimension.dimension]}</span> <Kind kind="cadastro" /> <span className="source-note">TSE, comparecimento e abstenção por perfil 2022</span></caption>
           <thead><tr><th scope="col">Grupo</th><th scope="col">Aptos</th><th scope="col">Comparecimento</th><th scope="col">Abstenção</th><th scope="col">% de abstenção</th></tr></thead>
           <tbody>{dimension.categories.map((entry) => <tr key={entry.key}><th scope="row">{entry.label}</th><td>{number(entry.eligible)}</td><td>{number(entry.turnout)}</td><td>{number(entry.abstentions)}</td><td>{rate(percent(entry.abstentions, entry.eligible))}</td></tr>)}</tbody>
         </table></div>)}
       </>}
+    </details>
+
+    <details className="context-section"><summary>Eleitorado por gênero e estado civil (TSE)</summary>
+      <p className="query-note">Cadastro eleitoral: gênero e estado civil declarados ao TSE; o estado civil é o do alistamento ou da última atualização e pode estar desatualizado. Esta página não traz um dado do Censo equivalente para comparar.</p>
+      <DistributionTable title="Gênero dos eleitores aptos" data={item.electorate.gender} unit="Eleitores" />
+      <DistributionTable title="Estado civil dos eleitores aptos" data={item.electorate.maritalStatus} unit="Eleitores" />
     </details>
 
     <details className="context-section"><summary>Escolaridade: eleitorado (TSE) e população de 18+ (IBGE)</summary>

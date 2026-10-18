@@ -150,6 +150,18 @@
 .swatch-missing { background: #dedcd3; box-shadow: inset 0 0 0 1px #b9b7ad; }
 .choropleth-note { margin: 6px 0 0; font-size: 12px; }
 .map-caveats { font-size: 13px; }
+/* Dica dos mapas (MapHover): segue o cursor, nunca cobre o ponto apontado; texto em tinta, não na cor da série. */
+.map-hover { position: relative; }
+.map-tooltip { position: absolute; z-index: 5; display: grid; gap: 2px; width: max-content; max-width: 220px; padding: 6px 9px; transform: translate(14px, -50%); pointer-events: none;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px #182e2c1f; font-size: 12px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.map-tooltip.is-flipped { transform: translate(calc(-100% - 14px), -50%); }
+.map-tooltip span { color: var(--muted); }
+/* Mapas por candidatura: pequenos múltiplos com uma só legenda e escala fixa. */
+.map-tabs { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0 28px; margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.map-tabs a[aria-current="page"] { color: var(--ink); text-decoration: none; border-bottom: 2px solid var(--teal); }
+.candidate-maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px 24px; padding: 8px 28px 0; }
+.candidate-maps .choropleth-title { font-size: 14px; }
+.shared-legend { padding: 4px 28px 0; }
 .map-table { margin-top: 8px; }
 /* Métrica E: pontos por candidatura e grupo, escala comum. */
 .dot-figure { margin: 8px 28px 18px; }
@@ -216,6 +228,7 @@
   .round-note { margin-inline: 18px; }
   .context-section { margin-inline: 18px; }
   .choropleth-pair { grid-template-columns: minmax(0, 1fr); padding-inline: 18px; }
+  .candidate-maps, .shared-legend, .map-tabs { padding-inline: 18px; }
   .dot-figure { margin-inline: 18px; }
   .section-heading .badge-round { margin-left: 0; }
   .query-context, .query-errors { margin-inline: 18px; }
@@ -249,4 +262,8 @@
   .hero a { color: LinkText; }
 }
 /* Participação: contagem da célula em linha própria, para a taxa ficar alinhada em tabelas largas. */
-.participation-table .cell-count { display: block; white-space: nowrap; }
+.participation-table .cell-count, .context-table .cell-count { display: block; white-space: nowrap; }
+.sensitivity-heading { margin: 28px 28px 8px; }
+@media (max-width: 650px) { .sensitivity-heading { margin-inline: 18px; } }
+/* Perfis: a definição por extenso não pode virar uma coluna de uma palavra por linha. */
+.context-table .definition-cell { min-width: 15rem; }

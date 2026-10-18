@@ -92,6 +92,19 @@ export const coverageItemSchema = z.object({
   status: z.enum(['reconciled', 'blocked', 'excluded', 'pending']), reason: z.string().nullable(),
   sectionRows: nonnegative, metadataConflicts: nonnegative,
 });
+/**
+ * Sensibilidade da associação local → setor (só renda): raios em metros. Com raio, a faixa do local é a predominante entre os
+ * moradores (V06002) dos setores do mesmo município a até essa distância do ponto do TSE; empate não escolhe faixa.
+ */
+export const TRACT_SENSITIVITY_RADII = ['250', '500', '1000'] as const;
+export type TractSensitivityRadius = typeof TRACT_SENSITIVITY_RADII[number];
+const agreementCountSchema = z.object({ places: nonnegative, eligible: nonnegative });
+/**
+ * Comparação, por local associado do território, entre a faixa do setor que contém o ponto (publicada) e a faixa pelo raio:
+ * mesma faixa, vizinha, a duas ou mais; empate no raio (sem faixa); só o raio classifica (setor do ponto sem mediana); nenhum.
+ */
+export const tractAgreementSchema = z.object({ same: agreementCountSchema, adjacent: agreementCountSchema, distant: agreementCountSchema, tie: agreementCountSchema, radiusOnly: agreementCountSchema, none: agreementCountSchema });
+export type TractAgreement = z.infer<typeof tractAgreementSchema>;
 export const catalogSchema = z.object({
   datasets: z.array(datasetSchema),
   imports: z.array(z.object({ id: z.string(), scope: z.string(), published: z.boolean(), failureReason: z.string().nullable().default(null), coverage: z.array(z.object({ uf: z.enum(TERRITORIES), status: coverageItemSchema.shape.status, municipalities: nonnegative, sectionRows: nonnegative })) })),
@@ -101,7 +114,9 @@ export const catalogSchema = z.object({
   tractsDatasets: z.array(z.lazy(() => tractsDatasetSchema)).default([]),
   placeProfilesDatasets: z.array(z.lazy(() => placeProfilesDatasetSchema)).default([]),
   placeGroupsImport: z.object({ id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string() }).nullable().default(null),
+  tractSensitivityImport: z.object({ id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string(), method: z.string(), notes: z.array(z.string()), national: z.record(z.enum(TRACT_SENSITIVITY_RADII), tractAgreementSchema) }).nullable().default(null),
   incomeBandsDatasets: z.array(z.lazy(() => incomeBandsDatasetSchema)).default([]),
+  tractDemographyDatasets: z.array(z.lazy(() => tractDemographyDatasetSchema)).default([]),
   turnoutProfilesDatasets: z.array(z.lazy(() => turnoutProfilesDatasetSchema)).default([]),
 });
 const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
@@ -182,6 +197,7 @@ const turnoutCountsSchema = z.object({ eligible: nonnegative, turnout: nonnegati
 export const turnoutRoundSchema = turnoutCountsSchema.extend({
   dimensions: z.array(z.object({ dimension: z.enum(TURNOUT_DIMENSIONS), categories: z.array(turnoutCountsSchema.extend({ key: z.string(), label: z.string() })) })),
 });
+export type TurnoutRound = z.infer<typeof turnoutRoundSchema>;
 export const municipalityContextSchema = z.object({
   code: z.string(), name: z.string(), uf: z.enum(STATES), ibgeCode: z.string().regex(/^\d{7}$/), ibgeName: z.string(),
   population: z.object({ total: sourceCount, age16plus: sourceCount, age16to17: sourceCount, age18to69: sourceCount, age70plus: sourceCount }),
@@ -220,6 +236,20 @@ export const mapValuesSchema = z.object({
   items: z.array(z.object({ id: z.string(), code: z.string(), uf: z.enum(STATES), name: z.string(), numerator: sourceCount, denominator: sourceCount, value: z.number().min(0).max(100).nullable() })),
 });
 export type MapValues = z.infer<typeof mapValuesSchema>;
+/**
+ * Mapa por candidatura: % dos votos válidos de cada candidatura em cada unidade (UF ou município), numa escala fixa igual para
+ * todas as candidaturas, cargos e territórios (limite superior incluído). 50% marca a maioria absoluta dos válidos na unidade.
+ */
+export const CANDIDATE_MAP_CUTS = [10, 20, 35, 50] as const;
+export const candidateMapQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).strict();
+export const candidateMapSchema = z.object({
+  status: z.enum(['published', 'awaiting-import', 'round-not-held']), office: z.enum(OFFICES), round: z.enum(['1', '2']), level: z.enum(['uf', 'municipality']), uf: z.enum(STATES).nullable(),
+  // Ordem por votos no recorte (sem exterior); `votes` de cada unidade segue esta ordem.
+  candidates: z.array(z.object({ number: z.string(), name: z.string(), party: z.string(), votes: nonnegative, percentValid: z.number().nullable() })),
+  // `id`: código IBGE do polígono; `valid`: votos válidos da unidade (denominador). O exterior não tem polígono e fica fora.
+  items: z.array(z.object({ id: z.string(), code: z.string(), uf: z.enum(STATES), name: z.string(), valid: nonnegative, votes: z.array(nonnegative) })),
+});
+export type CandidateMap = z.infer<typeof candidateMapSchema>;
 export const mapGeometrySchema = z.object({ status: z.enum(['published', 'awaiting-import']), level: z.enum(['uf', 'municipality']), uf: z.string(), batchId: z.string().nullable(), topology: z.unknown() });
 export const TRACT_STATUSES = ['associated', 'no-coordinate', 'conflicting-coordinates', 'relocated', 'outside-tracts', 'other-municipality', 'ambiguous'] as const;
 const statusCountSchema = z.object({ places: nonnegative, electors: nonnegative });
@@ -279,8 +309,17 @@ export const incomeBandPopulationSchema = z.object({
   bands: z.array(z.object({ index: z.number().int().min(1).max(5), residents: nonnegative, tracts: nonnegative })).length(5),
   noData: z.object({ residents: nonnegative, tracts: nonnegative }),
   undisclosed: z.object({ tracts: nonnegative }),
+  // Só na demografia por setor: moradores (V01006) dos setores usados no indicador e de todos os setores divulgados — o IBGE
+  // omite células isoladas ("X"), e o setor com célula omitida no indicador fica fora, sem estimativa.
+  coverage: z.object({ residents: nonnegative, total: nonnegative }).optional(),
 });
 export type IncomeBandPopulation = z.infer<typeof incomeBandPopulationSchema>;
+/** Por município: para cada indicador de demografia, moradores de 15+ por faixa do setor (mesmo formato das faixas de renda). */
+export const tractDemographySchema = z.object({ residents: nonnegative, indicators: z.object({ women: incomeBandPopulationSchema, 'age-16-24': incomeBandPopulationSchema, 'age-60-plus': incomeBandPopulationSchema }) });
+export const tractDemographyDatasetSchema = z.object({
+  id: z.string(), kind: z.literal('tract-demography'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
+  scope: z.string(), notes: z.array(z.string()), totals: z.object({ municipalities: nonnegative, tracts: nonnegative, residents: nonnegative, undisclosedTracts: nonnegative }),
+});
 export const incomeBandsDatasetSchema = z.object({
   id: z.string(), kind: z.literal('income-bands'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
   scope: z.string(), notes: z.array(z.string()), totals: z.object({ municipalities: nonnegative, tracts: nonnegative }).and(incomeBandPopulationSchema),
@@ -297,23 +336,43 @@ export const PLACE_GROUP_CUTS: Record<PlaceGroupIndicator, readonly number[]> = 
   college: [5, 10, 20, 30], 'education-low': [20, 30, 40, 50], women: [50, 52, 54, 56], 'age-16-24': [10, 12.5, 15, 20], 'age-60-plus': [15, 20, 25, 30],
   'income-median': INCOME_BANDS.flatMap((band) => band.upper === null ? [] : [band.upper * MINIMUM_WAGE_2022]),
 };
+/** Faixa fixa (1–5) de um percentual `numerator`/`denominator` (contagens inteiras), mesma regra do SQL: superior incluído, sem arredondar. */
+export function placeGroupBandOf(indicator: PlaceGroupIndicator, numerator: number, denominator: number) {
+  const cuts = PLACE_GROUP_CUTS[indicator];
+  const index = cuts.findIndex((cut) => numerator * 100 <= cut * denominator);
+  return index < 0 ? cuts.length + 1 : index + 1;
+}
+/**
+ * Equivalente do Censo 2022 por setor (agregados de demografia, universo) para indicadores de perfil: o setor entra na faixa
+ * pela parcela calculada entre os seus moradores de 15 anos ou mais (o agregado por setor agrupa 15 a 19 anos). Não é o eleitorado.
+ */
+export const TRACT_DEMOGRAPHY_INDICATORS = {
+  women: { definition: 'mulheres entre os moradores de 15 anos ou mais', numerator: ['V01023', 'V01024', 'V01025', 'V01026', 'V01027', 'V01028', 'V01029', 'V01030'] },
+  'age-16-24': { definition: 'moradores de 15 a 24 anos entre os de 15 anos ou mais', numerator: ['V01034', 'V01035'] },
+  'age-60-plus': { definition: 'moradores de 60 anos ou mais entre os de 15 anos ou mais', numerator: ['V01040', 'V01041'] },
+} as const satisfies Partial<Record<PlaceGroupIndicator, { definition: string; numerator: readonly string[] }>>;
+export type TractDemographyIndicator = keyof typeof TRACT_DEMOGRAPHY_INDICATORS;
+/** Moradores de 15 anos ou mais (denominador dos indicadores de demografia por setor). */
+export const TRACT_DEMOGRAPHY_BASE = ['V01034', 'V01035', 'V01036', 'V01037', 'V01038', 'V01039', 'V01040', 'V01041'] as const;
 /** Limites da faixa `index` (1–5) de um indicador: inferior excluído, superior incluído; null quando aberto. */
 export function placeGroupLimits(indicator: PlaceGroupIndicator, index: number) {
   const cuts = PLACE_GROUP_CUTS[indicator];
   return { lower: index === 1 ? null : cuts[index - 2]!, upper: index > cuts.length ? null : cuts[index - 1]! };
 }
-export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).extend({ indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]) }).strict();
+export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).extend({ indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]), radius: z.enum(TRACT_SENSITIVITY_RADII).optional() }).strict();
 export const placeGroupsSchema = z.object({
   status: z.enum(['published', 'awaiting-import', 'round-not-held']), indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]),
   office: z.enum(OFFICES), round: z.enum(['1', '2']), uf: z.enum(STATES).nullable(),
   method: z.enum(['quintiles', 'bands']).optional(),
-  // `from`/`to`: menor e maior valor observado no grupo. `lower`/`upper` (só faixas): limites da faixa em reais, null quando aberta.
-  groups: z.array(z.object({ index: z.number().int().min(1).max(5), from: z.number(), to: z.number(), lower: z.number().nullable().optional(), upper: z.number().nullable().optional(),
+  // `from`/`to`: menor e maior valor observado no grupo (null na sensibilidade por raio, em que o local tem só a faixa). `lower`/`upper` (só faixas): limites da faixa em reais, null quando aberta.
+  groups: z.array(z.object({ index: z.number().int().min(1).max(5), from: z.number().nullable(), to: z.number().nullable(), lower: z.number().nullable().optional(), upper: z.number().nullable().optional(),
     places: nonnegative, eligible: nonnegative, valid: nonnegative, blank: nonnegative, null: nonnegative, totalVotes: nonnegative, candidates: z.array(candidateSchema) })),
   // Votos de locais sem o indicador ficam fora dos grupos e são informados aqui (nunca redistribuídos).
   coverage: z.object({ places: nonnegative, placesInGroups: nonnegative, totalVotes: nonnegative, votesInGroups: nonnegative }),
   // Só faixas de renda: moradores do território (Brasil ou UF) nos setores de cada faixa, de todos os setores, com ou sem local de votação.
   population: incomeBandPopulationSchema.nullable().optional(),
+  // Só na sensibilidade da associação (renda com raio): o raio usado e a concordância com a associação publicada no território.
+  association: z.object({ radius: z.enum(TRACT_SENSITIVITY_RADII), agreement: tractAgreementSchema }).optional(),
 });
 export type PlaceGroups = z.infer<typeof placeGroupsSchema>;
 /**
@@ -347,11 +406,20 @@ export const TSE_PROFILE_LABELS = {
   education: [{ key: 'illiterate', label: 'Analfabeto' }, { key: 'reads-writes', label: 'Lê e escreve' }, { key: 'fundamental-incomplete', label: 'Ensino fundamental incompleto' },
     { key: 'fundamental-complete', label: 'Ensino fundamental completo' }, { key: 'high-school-incomplete', label: 'Ensino médio incompleto' }, { key: 'high-school-complete', label: 'Ensino médio completo' },
     { key: 'college-incomplete', label: 'Superior incompleto' }, { key: 'college-complete', label: 'Superior completo' }, { key: 'not-informed', label: 'Não informado na fonte' }],
+  maritalStatus: [{ key: 'single', label: 'Solteiro(a)' }, { key: 'married', label: 'Casado(a)' }, { key: 'separated', label: 'Separado(a) judicialmente' }, { key: 'divorced', label: 'Divorciado(a)' },
+    { key: 'widowed', label: 'Viúvo(a)' }, { key: 'not-informed', label: 'Não informado na fonte' }],
 } as const;
-/** Comparecimento por perfil do TSE (base própria, declarada), cruzado por gênero × faixa etária × escolaridade, por UF e turno. */
-export const TURNOUT_CROSS_DIMENSIONS = ['gender', 'age', 'education', 'obligation'] as const;
+/**
+ * Comparecimento por perfil do TSE (base própria, declarada), cruzado por gênero × faixa etária × escolaridade × estado civil
+ * (v2), por UF ou município e turno. `obligation` deriva da idade e da escolaridade.
+ */
+export const TURNOUT_CROSS_DIMENSIONS = ['gender', 'age', 'education', 'maritalStatus', 'obligation'] as const;
+/** Ordem das categorias nos vetores de células da v2 (índices guardados no banco; a API confere com a publicação). */
+export const TURNOUT_CELL_ORDER = { gender: TSE_PROFILE_LABELS.gender.map((item) => item.key), age: AGE_GROUPS.map((item) => item.key), education: TSE_PROFILE_LABELS.education.map((item) => item.key), maritalStatus: TSE_PROFILE_LABELS.maritalStatus.map((item) => item.key) };
 export type TurnoutCrossDimension = typeof TURNOUT_CROSS_DIMENSIONS[number];
 export const turnoutProfilesQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, uf: true }).extend({
+  // Código TSE do município (cinco dígitos); exige a UF.
+  municipality: z.string().regex(/^\d{5}$/).optional(),
   rows: z.enum(TURNOUT_CROSS_DIMENSIONS).default('age'), cols: z.enum(TURNOUT_CROSS_DIMENSIONS).default('gender'),
 }).strict();
 export type TurnoutProfilesQuery = z.infer<typeof turnoutProfilesQuerySchema>;
@@ -360,9 +428,12 @@ export const turnoutProfilesSchema = z.object({
   status: z.enum(['published', 'awaiting-import', 'not-in-source']), round: z.enum(['1', '2']), uf: z.enum(STATES).nullable(),
   // UFs somadas (Brasil = UFs da fonte) e UFs que a fonte não traz (DF em 2022).
   ufs: z.array(z.enum(STATES)), missingUfs: z.array(z.enum(STATES)),
-  categories: z.object({ gender: z.array(categoryLabelSchema), age: z.array(categoryLabelSchema), education: z.array(categoryLabelSchema) }),
-  // Célula = gênero × grupo etário × escolaridade; `optional`: voto facultativo (idade ou analfabetismo).
-  cells: z.array(z.object({ gender: z.string(), age: z.string(), education: z.string(), optional: z.boolean(), eligible: nonnegative, turnout: nonnegative, abstentions: nonnegative })),
+  // Município consultado (código TSE) e, com UF, a lista dos municípios da UF na publicação.
+  municipality: z.object({ code: z.string(), name: z.string() }).nullable().optional(), municipalities: z.array(z.object({ code: z.string(), name: z.string() })).optional(),
+  // `maritalStatus` só a partir da v2; ausente na v1 (não é "não informado").
+  categories: z.object({ gender: z.array(categoryLabelSchema), age: z.array(categoryLabelSchema), education: z.array(categoryLabelSchema), maritalStatus: z.array(categoryLabelSchema).optional() }),
+  // Célula = gênero × grupo etário × escolaridade (× estado civil na v2); `optional`: voto facultativo (idade ou analfabetismo).
+  cells: z.array(z.object({ gender: z.string(), age: z.string(), education: z.string(), maritalStatus: z.string().optional(), optional: z.boolean(), eligible: nonnegative, turnout: nonnegative, abstentions: nonnegative })),
   // Aptos nos resultados publicados (Presidência) das mesmas UFs: a diferença para o cadastro por perfil é exibida, não ajustada.
   resultsEligible: nonnegative.nullable(),
 });
@@ -371,6 +442,9 @@ export const turnoutProfilesDatasetSchema = z.object({
   id: z.string(), kind: z.literal('turnout-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
   scope: z.string(), notes: z.array(z.string()), missingUfs: z.array(z.enum(STATES)),
   totals: z.array(z.object({ round: z.enum(['1', '2']), eligible: nonnegative, turnout: nonnegative, abstentions: nonnegative, resultsEligible: nonnegative })),
+  // v2: células em vetores int4 (`turnout_profile_cells`), uma linha por UF e por município, nesta ordem de categorias.
+  cellFormat: z.literal('int4-groups-v2').optional(), order: z.object({ gender: z.array(z.string()), age: z.array(z.string()), education: z.array(z.string()), maritalStatus: z.array(z.string()) }).optional(),
+  municipalities: nonnegative.optional(),
 });
 export type TurnoutProfilesDataset = z.infer<typeof turnoutProfilesDatasetSchema>;
 export const contextResponseSchema = z.discriminatedUnion('status', [

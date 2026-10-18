@@ -295,3 +295,20 @@ Complemento: a pedido de Rafael, todos os indicadores de `/perfis` passaram a fa
 
 Pendente/possível: estado civil (já no perfil por local e no comparecimento, não exibido); cruzamento por município na participação (hoje só marginais municipais no contexto); leitor de tela real, Chrome/Safari; sensibilidade da associação local → setor.
 
+
+## 25. Método, dados e mapas pendentes — 17/10/2026
+
+Rafael pediu para atacar o "o que ainda falta" na ordem: melhorias de método e de dados, depois interface. Feito (detalhes e números em `docs/plano-ibge.md`):
+
+- Sensibilidade da associação local → setor (`tract-sensitivity-2022-v1`): grupos de renda refeitos com a faixa predominante nos setores a até 250 m, 500 m e 1 km; tabela de concordância e visão alternativa em `/perfis`. Análise, não substitui a métrica E publicada.
+- Participação v2 (`turnout-profiles-2022-v2`): estado civil e cruzamento por município em `/participacao`, conferido com o contexto municipal; página do município com cadastro por gênero e estado civil e link para o cruzamento.
+- Moradores de 15+ por faixa de perfil do setor (`tract-demography-2022-v1`, agregado de demografia do Censo): coluna de comparação em `/perfis` para eleitoras, 16 a 24 e 60+; omissões de células do IBGE ficam fora, sem estimativa, com cobertura declarada.
+- Interface: `/mapa/candidaturas` (um mapa por candidatura, mesma escala fixa para todas, uma só cor); dica própria ao passar o mouse nos mapas; "valores observados" em `/perfis` sem colidir com o limite excluído da faixa.
+
+Defeito apontado por Rafael (mesma data): em `/participacao`, mudar linhas/colunas e enviar não fazia nada. Causa: a navegação aprimorada (`queryHref`) só aceita ações de uma lista fechada, sem `/participacao` (nem `/mapa/candidaturas`); o envio falhava em silêncio depois de cancelar o GET nativo. Corrigido: ações incluídas, teste com todas as páginas de consulta, e `QueryForm` passa ao envio nativo se a ação for recusada; sem JavaScript, `municipality` vazio ("Toda a UF") vale como ausência. Os smokes e o axe abrem URLs prontas e não pegavam isso; o envio foi conferido no Firefox (puppeteer) nas duas páginas.
+
+Sensibilidade (resumo): 61,6–70,9% dos eleitores dos locais associados ficam na mesma faixa conforme o raio (1 km–250 m); a maior diferença de % válidos de uma candidatura num grupo é de 1,3–2,8 p.p. no Brasil e chega a 9,6 p.p. no MA, em faixas com poucos locais.
+
+Verificado: typecheck, testes unitários (65), todos os smokes, envio dos formulários no Firefox, axe-core sem violações e sem rolagem horizontal em 39 páginas × 3 larguras; capturas de tela das páginas novas. Banco: 10.141 MB (+48 MB: células da participação 31 MB, demografia por setor 15 MB, sensibilidade 1 MB); `data/` 17 GB (+22,5 MB do agregado de demografia). Sem publicação externa.
+
+Pendente: leitor de tela real e Chrome/Safari (nunca verificados); limpeza de armazenamento, hospedagem, suplementar de RR e o bug da rota de relatório em modo de desenvolvimento (adiados por Rafael); coluna `responsible_with_income` com nome impreciso (sem uso na interface).

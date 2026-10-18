@@ -64,7 +64,9 @@ npm run import:sectors                               # locais de votação → s
 npm run import:place-profiles                        # perfil do eleitorado por local (TSE, por seção)
 npm run import:place-groups                          # métrica E pré-calculada (depois das anteriores)
 npm run import:income-bands                          # moradores por faixa de renda do setor (depois do contexto)
-npm run import:turnout-profiles                      # comparecimento por gênero × idade × escolaridade (depois do contexto)
+npm run import:turnout-profiles                      # comparecimento por gênero × idade × escolaridade × estado civil, por UF e município (depois do contexto)
+npm run import:tract-demography                      # moradores de 15+ por faixa de eleitoras e idade do setor (depois do contexto)
+npm run import:tract-sensitivity                     # sensibilidade da associação local → setor por raio (depois da métrica E; ~25 min)
 ```
 
 `import:state` usa as entradas da UF nos mesmos ZIPs de apuração e votação nominal e baixa o ZIP de seções da UF (2,86 GiB nas 27 UFs; SP: 859 MiB, com todos os cargos estaduais; só o cargo pedido é selecionado). A verificação da persistência roda dentro do importador, antes da publicação. Para todas as UFs: `for uf in AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO; do npm run import:state -- --office governor --uf $uf; done` (cerca de 75 min na primeira execução; troque `governor` por `senator` para o Senado).
