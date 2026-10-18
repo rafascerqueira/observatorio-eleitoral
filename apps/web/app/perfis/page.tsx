@@ -22,9 +22,9 @@ const groupName = (data: PlaceGroups, index: number) => data.method === 'bands' 
 /** Definição por extenso: o critério que põe um local no grupo, sem rótulos de classe. */
 const definition = (data: PlaceGroups, index: number, group: Group | undefined) => {
   if (data.method === 'bands') return `Locais em setores com renda mediana do responsável ${bandRange(index)}`;
-  return group ? `${index}º quinto dos eleitores aptos, em locais com ${pct(group.from)} a ${pct(group.to)} de eleitores com superior completo` : '';
+  return group ? `${index}º quinto dos eleitores aptos, em locais com ${pct(group.from)} a ${pct(group.to)} de ${PLACE_GROUP_INDICATORS[data.indicator].short}` : '';
 };
-const observed = (indicator: PlaceGroupIndicator, group: Group) => indicator === 'college' ? `${pct(group.from)} a ${pct(group.to)}`
+const observed = (indicator: PlaceGroupIndicator, group: Group) => indicator !== 'income-median' ? `${pct(group.from)} a ${pct(group.to)}`
   : `${reais(group.from)} a ${reais(group.to)} (${wages(group.from / MINIMUM_WAGE_2022)} a ${wages(group.to / MINIMUM_WAGE_2022)} SM)`;
 
 /** Pontos por candidatura, um por grupo, na mesma escala para todas (HTML: texto legível em qualquer largura). A matriz abaixo é o acesso por teclado e leitor de tela. */
@@ -100,7 +100,7 @@ export default async function Profiles({ searchParams }: { searchParams: Promise
             <tbody>{order.map(({ candidate, info }) => <tr key={candidate}><th scope="row">{info.name} <span className="candidate-number">{candidate}</span> <span className="source-note">{info.party}</span></th>
               {published.groups.map((group) => { const item = group.candidates.find((entry) => entry.number === candidate); return <td key={group.index}>{pct(item?.percentValid ?? null)}{item && <span className="source-note"> · {number(item.votes)}</span>}</td>; })}</tr>)}</tbody>
           </table></div>
-          <div className="notice scope-notice map-caveats"><p><strong>Como ler.</strong> Diferenças entre grupos descrevem locais de votação com características diferentes, não o voto de pessoas com essas características: um local com mais eleitores de nível superior não diz como votaram esses eleitores. O endereço do local não é a residência dos eleitores. {filters.indicator === 'college' ? 'A escolaridade é a declarada no alistamento e pode estar desatualizada.' : 'A renda é a mediana do rendimento nominal mensal do responsável pelos domicílios do setor que contém o local, no Censo 2022 — contexto do entorno, não dos eleitores. Faixas com poucos locais reúnem poucos eleitores e variam mais; veja as colunas de locais e eleitores.'} Nenhuma relação de causa é sugerida.</p></div>
+          <div className="notice scope-notice map-caveats"><p><strong>Como ler.</strong> Diferenças entre grupos descrevem locais de votação com características diferentes, não o voto de pessoas com essas características: um local com mais {PLACE_GROUP_INDICATORS[filters.indicator].short} não diz como votaram essas pessoas. O endereço do local não é a residência dos eleitores. {filters.indicator === 'college' || filters.indicator === 'education-low' ? 'A escolaridade é a declarada no alistamento e pode estar desatualizada.' : filters.indicator !== 'income-median' ? 'Gênero e idade são os do cadastro eleitoral; cada indicador é olhado isoladamente, e os grupos também diferem em outras características que não são controladas.' : 'A renda é a mediana do rendimento nominal mensal do responsável pelos domicílios do setor que contém o local, no Censo 2022 — contexto do entorno, não dos eleitores. Faixas com poucos locais reúnem poucos eleitores e variam mais; veja as colunas de locais e eleitores.'} Nenhuma relação de causa é sugerida.</p></div>
         </>}
       </div>
     </section>

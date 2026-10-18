@@ -248,3 +248,5 @@
   .field-error, .query-errors a { color: CanvasText; }
   .hero a { color: LinkText; }
 }
+/* Participação: contagem da célula em linha própria, para a taxa ficar alinhada em tabelas largas. */
+.participation-table .cell-count { display: block; white-space: nowrap; }

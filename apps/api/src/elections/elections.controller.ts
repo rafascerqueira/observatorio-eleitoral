@@ -3,11 +3,12 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { nationalSummary } from './national-summary';
 
 const INCOME_BANDS_SCOPE = '2022/context/income-bands';
+const TURNOUT_PROFILES_SCOPE = '2022/context/turnout-profiles';
 
 @Controller('elections')
 export class ElectionsController {
@@ -179,6 +180,37 @@ export class ElectionsController {
     return total;
   }
 
+  /**
+   * Comparecimento e abstenção por perfil (TSE, base própria): células gênero × grupo etário × escolaridade do Brasil (UFs da
+   * fonte) ou de uma UF, somando contagens; nenhuma taxa é calculada aqui. Sem voto por candidatura: o voto é secreto.
+   */
+  @Get('turnout/profiles')
+  async turnoutProfiles(@Query() query: Record<string, unknown>) {
+    const parsed = turnoutProfilesQuerySchema.pick({ year: true, round: true, uf: true }).strict().safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'Filtros do comparecimento por perfil inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    const { year, round, uf } = parsed.data;
+    await this.database.check();
+    const categories = { gender: [...TSE_PROFILE_LABELS.gender], age: AGE_GROUPS.map(({ key, label }) => ({ key, label })), education: [...TSE_PROFILE_LABELS.education] };
+    const base = { round, uf: uf ?? null, ufs: [], missingUfs: [], categories, cells: [], resultsEligible: null };
+    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.turnout_profiles')::text AS registry");
+    const batch = registry.rows[0]?.registry ? await this.database.query<{ id: string; metadata: { missingUfs: string[] } }>('SELECT id, metadata FROM import_batches WHERE published AND scope=$1 LIMIT 1', [TURNOUT_PROFILES_SCOPE]) : { rows: [] };
+    if (!batch.rows[0] || year !== '2022') return turnoutProfilesSchema.parse({ ...base, status: 'awaiting-import' });
+    const missingUfs = batch.rows[0].metadata.missingUfs;
+    if (uf && missingUfs.includes(uf)) return turnoutProfilesSchema.parse({ ...base, missingUfs, status: 'not-in-source' });
+    const rows = await this.database.query<{ uf: string; result: { cells: Array<[string, string, string, number, number, number]>; resultsEligible: number } }>(
+      'SELECT uf, result FROM turnout_profiles WHERE batch_id=$1 AND round=$2 AND ($3::text IS NULL OR uf=$3) ORDER BY uf', [batch.rows[0].id, Number(round), uf ?? null]);
+    const cells = new Map<string, { gender: string; age: string; education: string; optional: boolean; eligible: number; turnout: number; abstentions: number }>();
+    for (const row of rows.rows) for (const [gender, band, education, eligible, turnout, abstentions] of row.result.cells) {
+      const age = ageGroupOf(band); const key = `${gender}/${age}/${education}`;
+      const cell = cells.get(key) ?? { gender, age, education, optional: optionalVoter(band, education), eligible: 0, turnout: 0, abstentions: 0 };
+      cell.eligible += eligible; cell.turnout += turnout; cell.abstentions += abstentions; cells.set(key, cell);
+    }
+    try {
+      return turnoutProfilesSchema.parse({ ...base, status: 'published', ufs: rows.rows.map((row) => row.uf), missingUfs: uf ? [] : missingUfs, cells: [...cells.values()],
+        resultsEligible: rows.rows.reduce((sum, row) => sum + row.result.resultsEligible, 0) });
+    } catch { throw new ServiceUnavailableException('Comparecimento por perfil inconsistente.'); }
+  }
+
   /** Malha do IBGE: Brasil por UF ou uma UF por município (publicação `2022/maps/ibge`). */
   @Get('map/geometry')
   async mapGeometry(@Query() query: Record<string, unknown>) {
@@ -319,7 +351,8 @@ export class ElectionsController {
       tractsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/tracts').map((batch) => batch.metadata),
       placeProfilesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/profiles').map((batch) => batch.metadata),
       placeGroupsImport: batches.rows.find((batch) => batch.published && batch.scope === '2022/places/groups')?.metadata ?? null,
-      contextDatasets: batches.rows.filter((batch) => batch.published && isContext(batch.scope) && batch.scope !== INCOME_BANDS_SCOPE).map((batch) => batch.metadata),
+      contextDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/context/municipal').map((batch) => batch.metadata),
+      turnoutProfilesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === TURNOUT_PROFILES_SCOPE).map((batch) => batch.metadata),
       incomeBandsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === INCOME_BANDS_SCOPE).map((batch) => batch.metadata),
       mapDatasets: batches.rows.filter((batch) => batch.published && isMap(batch.scope)).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
       // Cargo estadual: só as UFs sem publicação continuam pendentes.

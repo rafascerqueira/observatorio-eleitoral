@@ -102,6 +102,7 @@ export const catalogSchema = z.object({
   placeProfilesDatasets: z.array(z.lazy(() => placeProfilesDatasetSchema)).default([]),
   placeGroupsImport: z.object({ id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string() }).nullable().default(null),
   incomeBandsDatasets: z.array(z.lazy(() => incomeBandsDatasetSchema)).default([]),
+  turnoutProfilesDatasets: z.array(z.lazy(() => turnoutProfilesDatasetSchema)).default([]),
 });
 const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
@@ -235,9 +236,22 @@ export const placeProfilesDatasetSchema = z.object({
 });
 /** Métrica E: locais agrupados pelo perfil do eleitorado (TSE) ou pelo entorno (IBGE); resultados somados por grupo. */
 export const PLACE_GROUP_INDICATORS = {
-  college: { label: 'Eleitores aptos do local com superior completo (escolaridade declarada no alistamento)', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
-  'income-median': { label: 'Rendimento mediano do responsável pelo domicílio no setor censitário do local', source: 'IBGE, Censo 2022 — agregados por setor (rendimento do responsável); local → setor pelo ponto do TSE', kind: 'universo', unit: 'reais' },
+  // `short`: o que o percentual conta, para as definições dos grupos ("locais com X% a Y% de …").
+  college: { label: 'Eleitores aptos do local com superior completo (escolaridade declarada no alistamento)', short: 'eleitores com superior completo', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  'education-low': { label: 'Eleitores aptos do local com até o fundamental incompleto (analfabeto, lê e escreve ou fundamental incompleto; escolaridade declarada)', short: 'eleitores com até o fundamental incompleto', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  women: { label: 'Eleitoras entre os eleitores aptos do local (gênero do cadastro eleitoral)', short: 'eleitoras (gênero feminino no cadastro)', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  'age-16-24': { label: 'Eleitores aptos do local com 16 a 24 anos', short: 'eleitores de 16 a 24 anos', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  'age-60-plus': { label: 'Eleitores aptos do local com 60 anos ou mais', short: 'eleitores de 60 anos ou mais', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  'income-median': { label: 'Rendimento mediano do responsável pelo domicílio no setor censitário do local', short: 'renda mediana do responsável no setor', source: 'IBGE, Censo 2022 — agregados por setor (rendimento do responsável); local → setor pelo ponto do TSE', kind: 'universo', unit: 'reais' },
 } as const;
+/** Categorias do perfil por local somadas no numerador de cada indicador percentual (chaves de `tseOrder`). */
+export const PLACE_GROUP_NUMERATORS: Record<Exclude<PlaceGroupIndicator, 'income-median'>, { dimension: 'gender' | 'age' | 'education'; keys: readonly string[] }> = {
+  college: { dimension: 'education', keys: ['college-complete'] },
+  'education-low': { dimension: 'education', keys: ['illiterate', 'reads-writes', 'fundamental-incomplete'] },
+  women: { dimension: 'gender', keys: ['female'] },
+  'age-16-24': { dimension: 'age', keys: ['a16', 'a17', 'a18', 'a19', 'a20', 'a21-24'] },
+  'age-60-plus': { dimension: 'age', keys: ['a60-64', 'a65-69', 'a70-74', 'a75-79', 'a80-84', 'a85-89', 'a90-94', 'a95-99', 'a100+'] },
+};
 export type PlaceGroupIndicator = keyof typeof PLACE_GROUP_INDICATORS;
 /** Salário mínimo vigente na data de referência do Censo 2022 (31/07/2022): R$ 1.212 (Lei 14.358/2022). */
 export const MINIMUM_WAGE_2022 = 1212;
@@ -273,7 +287,7 @@ export const incomeBandsDatasetSchema = z.object({
 });
 export type IncomeBandsDataset = z.infer<typeof incomeBandsDatasetSchema>;
 /** Como os grupos foram formados: quintis ponderados por eleitores aptos (sem dividir valores iguais) ou faixas fixas. Ausente (v1): quintis. */
-export const PLACE_GROUP_METHODS = { college: 'quintiles', 'income-median': 'bands' } as const;
+export const PLACE_GROUP_METHODS = { college: 'quintiles', 'education-low': 'quintiles', women: 'quintiles', 'age-16-24': 'quintiles', 'age-60-plus': 'quintiles', 'income-median': 'bands' } as const;
 export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).extend({ indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]) }).strict();
 export const placeGroupsSchema = z.object({
   status: z.enum(['published', 'awaiting-import', 'round-not-held']), indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]),
@@ -288,6 +302,63 @@ export const placeGroupsSchema = z.object({
   population: incomeBandPopulationSchema.nullable().optional(),
 });
 export type PlaceGroups = z.infer<typeof placeGroupsSchema>;
+/**
+ * Faixas etárias agregadas (decisão de Rafael, 17/10/2026): separam quem vota de forma facultativa (16–17 e 70+) dos obrigados.
+ * `bands`: chaves das faixas do TSE (`tseOrder('age')`) somadas em cada grupo; idade inválida e não informada ficam como na fonte.
+ */
+export const AGE_GROUPS = [
+  { key: '16-17', label: '16 e 17 anos', bands: ['a16', 'a17'], optional: true },
+  { key: '18-24', label: '18 a 24 anos', bands: ['a18', 'a19', 'a20', 'a21-24'], optional: false },
+  { key: '25-34', label: '25 a 34 anos', bands: ['a25-29', 'a30-34'], optional: false },
+  { key: '35-44', label: '35 a 44 anos', bands: ['a35-39', 'a40-44'], optional: false },
+  { key: '45-59', label: '45 a 59 anos', bands: ['a45-49', 'a50-54', 'a55-59'], optional: false },
+  { key: '60-69', label: '60 a 69 anos', bands: ['a60-64', 'a65-69'], optional: false },
+  { key: '70+', label: '70 anos ou mais', bands: ['a70-74', 'a75-79', 'a80-84', 'a85-89', 'a90-94', 'a95-99', 'a100+'], optional: true },
+  { key: 'invalid', label: 'Idade inválida (fonte)', bands: ['invalid'], optional: false },
+  { key: 'not-informed', label: 'Não informada', bands: ['not-informed'], optional: false },
+] as const;
+export type AgeGroup = typeof AGE_GROUPS[number]['key'];
+export function ageGroupOf(band: string): AgeGroup {
+  const group = AGE_GROUPS.find((item) => (item.bands as readonly string[]).includes(band));
+  if (!group) throw new Error(`Faixa etária sem grupo: ${band}.`);
+  return group.key;
+}
+/** Voto facultativo pela Constituição (art. 14): 16 e 17 anos, 70 anos ou mais e analfabetos. Conferido contra a divisão da fonte. */
+export function optionalVoter(ageBand: string, education: string) {
+  return education === 'illiterate' || AGE_GROUPS.some((group) => group.optional && (group.bands as readonly string[]).includes(ageBand));
+}
+/** Rótulos das categorias do TSE usadas nos cruzamentos, na ordem da fonte (iguais a `tseOrder` do importador; teste confere). */
+export const TSE_PROFILE_LABELS = {
+  gender: [{ key: 'female', label: 'Feminino' }, { key: 'male', label: 'Masculino' }, { key: 'not-informed', label: 'Não informado na fonte' }],
+  education: [{ key: 'illiterate', label: 'Analfabeto' }, { key: 'reads-writes', label: 'Lê e escreve' }, { key: 'fundamental-incomplete', label: 'Ensino fundamental incompleto' },
+    { key: 'fundamental-complete', label: 'Ensino fundamental completo' }, { key: 'high-school-incomplete', label: 'Ensino médio incompleto' }, { key: 'high-school-complete', label: 'Ensino médio completo' },
+    { key: 'college-incomplete', label: 'Superior incompleto' }, { key: 'college-complete', label: 'Superior completo' }, { key: 'not-informed', label: 'Não informado na fonte' }],
+} as const;
+/** Comparecimento por perfil do TSE (base própria, declarada), cruzado por gênero × faixa etária × escolaridade, por UF e turno. */
+export const TURNOUT_CROSS_DIMENSIONS = ['gender', 'age', 'education', 'obligation'] as const;
+export type TurnoutCrossDimension = typeof TURNOUT_CROSS_DIMENSIONS[number];
+export const turnoutProfilesQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, uf: true }).extend({
+  rows: z.enum(TURNOUT_CROSS_DIMENSIONS).default('age'), cols: z.enum(TURNOUT_CROSS_DIMENSIONS).default('gender'),
+}).strict();
+export type TurnoutProfilesQuery = z.infer<typeof turnoutProfilesQuerySchema>;
+const categoryLabelSchema = z.object({ key: z.string(), label: z.string() });
+export const turnoutProfilesSchema = z.object({
+  status: z.enum(['published', 'awaiting-import', 'not-in-source']), round: z.enum(['1', '2']), uf: z.enum(STATES).nullable(),
+  // UFs somadas (Brasil = UFs da fonte) e UFs que a fonte não traz (DF em 2022).
+  ufs: z.array(z.enum(STATES)), missingUfs: z.array(z.enum(STATES)),
+  categories: z.object({ gender: z.array(categoryLabelSchema), age: z.array(categoryLabelSchema), education: z.array(categoryLabelSchema) }),
+  // Célula = gênero × grupo etário × escolaridade; `optional`: voto facultativo (idade ou analfabetismo).
+  cells: z.array(z.object({ gender: z.string(), age: z.string(), education: z.string(), optional: z.boolean(), eligible: nonnegative, turnout: nonnegative, abstentions: nonnegative })),
+  // Aptos nos resultados publicados (Presidência) das mesmas UFs: a diferença para o cadastro por perfil é exibida, não ajustada.
+  resultsEligible: nonnegative.nullable(),
+});
+export type TurnoutProfiles = z.infer<typeof turnoutProfilesSchema>;
+export const turnoutProfilesDatasetSchema = z.object({
+  id: z.string(), kind: z.literal('turnout-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
+  scope: z.string(), notes: z.array(z.string()), missingUfs: z.array(z.enum(STATES)),
+  totals: z.array(z.object({ round: z.enum(['1', '2']), eligible: nonnegative, turnout: nonnegative, abstentions: nonnegative, resultsEligible: nonnegative })),
+});
+export type TurnoutProfilesDataset = z.infer<typeof turnoutProfilesDatasetSchema>;
 export const contextResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('awaiting-import'), dataset: z.null(), item: z.null() }),
   z.object({ status: z.literal('published'), dataset: contextDatasetSchema, item: municipalityContextSchema, incomeBands: incomeBandPopulationSchema.nullable().optional() }),

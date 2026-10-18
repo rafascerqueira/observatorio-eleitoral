@@ -287,3 +287,9 @@ Próximo passo indicado por Rafael (sem início): aprofundar métricas por gêne
 
 Complemento na mesma data, a pedido de Rafael (antes das novas métricas): quanto cada faixa de renda representa da população. Publicado `income-bands-2022-v1` (`npm run import:income-bands`): moradores em domicílios particulares permanentes ocupados de todos os setores somados pela faixa da mediana do setor, conferidos com o total municipal do IBGE nos 5.570 municípios; exibido em `/perfis` (Brasil/UF, ao lado da parcela dos eleitores) e na página do município. Dicionário do IBGE preservado: V06006 é a mediana dos responsáveis **com rendimento** (pendência resolvida). Setores com dados omitidos pelo IBGE ficam contados à parte, sem estimativa. Detalhes em `docs/plano-ibge.md`.
 
+## 24. Participação por perfil e novos agrupamentos de locais — 17/10/2026
+
+Rafael decidiu as faixas etárias por obrigatoriedade do voto e o escopo (participação + locais). Publicados `turnout-profiles-2022-v1` (comparecimento e abstenção do TSE cruzados por gênero, faixa etária e escolaridade, por UF e turno; página `/participacao`; contagens da fonte, conferidas linha a linha e contra o contexto municipal; DF ausente na fonte) e `place-groups-2022-v3` (métrica E com eleitoras, 16 a 24 anos, 60 anos ou mais e até fundamental incompleto). Detalhes e números em `docs/plano-ibge.md`. Verificado com testes, smokes e axe-core. Sem publicação externa.
+
+Pendente/possível: estado civil (já no perfil por local e no comparecimento, não exibido); cruzamento por município na participação (hoje só marginais municipais no contexto); leitor de tela real, Chrome/Safari; sensibilidade da associação local → setor.
+

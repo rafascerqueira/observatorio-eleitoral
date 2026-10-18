@@ -87,10 +87,10 @@ if (catalog.tractsDatasets?.length) {
   assert.ok((await html('/fontes')).includes('Locais de votação e setores censitários'));
 }
 if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
-  for (const indicator of ['college', 'income-median']) {
+  for (const indicator of ['college', 'education-low', 'women', 'age-16-24', 'age-60-plus', 'income-median']) {
     const groups = await json(`/elections/places/groups?indicator=${indicator}&round=2`);
     assert.equal(groups.status, 'published'); assert.equal(groups.groups.length, 5);
-    assert.equal(groups.method, indicator === 'college' ? 'quintiles' : 'bands');
+    assert.equal(groups.method, indicator === 'income-median' ? 'bands' : 'quintiles');
     for (const group of groups.groups) {
       assert.equal(sum(group.candidates, 'votes'), group.valid, `${indicator} grupo ${group.index}: candidaturas = válidos`);
       assert.ok(group.from <= group.to);
@@ -99,7 +99,7 @@ if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
     for (let index = 1; index < 5; index++) assert.ok(groups.groups[index].from > groups.groups[index - 1].to, 'Grupos ordenados, sem empates divididos');
     assert.equal(sum(groups.groups, 'totalVotes'), groups.coverage.votesInGroups); assert.ok(groups.coverage.votesInGroups <= groups.coverage.totalVotes);
     const shares = groups.groups.map((group) => group.eligible / sum(groups.groups, 'eligible'));
-    if (indicator === 'college') assert.ok(shares.every((share) => share > 0.15 && share < 0.25), `${indicator}: grupos com ~1/5 do eleitorado`);
+    if (indicator !== 'income-median') assert.ok(shares.every((share) => share > 0.15 && share < 0.25), `${indicator}: grupos com ~1/5 do eleitorado`);
     else for (const group of groups.groups) assert.ok((group.lower === null || group.from > group.lower) && (group.upper === null || group.to <= group.upper), `Faixa ${group.index}: valores dentro dos limites`);
   }
   // Moradores por faixa (todos os setores): faixas + sem mediana = total; UFs somam o Brasil; página do município mostra a tabela.
@@ -119,5 +119,29 @@ if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
   const page = await html('/perfis?indicator=income-median&round=2');
   for (const text of ['Resultados por perfil dos locais', 'Grupos de locais', 'descrevem locais, não pessoas', 'Mais de 3 SM', '3.636']) assert.ok(page.includes(text), text);
   await request(api, '/elections/places/groups?indicator=college&office=governor', 400);
+}
+// Participação por perfil (TSE): contagens somam os totais publicados; DF fora da fonte; facultativo pela regra constitucional.
+if (catalog.turnoutProfilesDatasets?.length) {
+  const dataset = catalog.turnoutProfilesDatasets[0];
+  assert.deepEqual(dataset.missingUfs, ['DF']);
+  for (const round of ['1', '2']) {
+    const br = await json(`/elections/turnout/profiles?round=${round}`);
+    assert.equal(br.status, 'published'); assert.equal(br.ufs.length, 26); assert.deepEqual(br.missingUfs, ['DF']);
+    const total = dataset.totals.find((item) => item.round === round);
+    assert.equal(sum(br.cells, 'eligible'), total.eligible, `${round}º turno: aptos = total publicado`);
+    assert.equal(sum(br.cells, 'abstentions'), total.abstentions); assert.equal(br.resultsEligible, total.resultsEligible);
+    for (const cell of br.cells) {
+      assert.equal(cell.turnout + cell.abstentions, cell.eligible, 'comparecimento + abstenção = aptos');
+      assert.equal(cell.optional, cell.age === '16-17' || cell.age === '70+' || cell.education === 'illiterate', `facultativo: ${cell.age}/${cell.education}`);
+    }
+  }
+  const sp = await json('/elections/turnout/profiles?round=2&uf=SP');
+  assert.equal(sp.ufs.join(), 'SP'); assert.ok(sum(sp.cells, 'eligible') > 0);
+  assert.equal((await json('/elections/turnout/profiles?uf=DF')).status, 'not-in-source');
+  await request(api, '/elections/turnout/profiles?rows=age', 400);
+  const page = await html('/participacao?uf=BA&round=1&rows=education&cols=obligation');
+  for (const text of ['Taxa de abstenção', 'Facultativo (16–17, 70+ ou analfabeto)', 'Superior completo', 'não indica motivação']) assert.ok(page.includes(text), text);
+  assert.ok((await html('/participacao?rows=age&cols=age')).includes('Escolha dimensões diferentes para linhas e colunas.'));
+  assert.ok((await html('/participacao?uf=DF')).includes('não traz o'));
 }
 console.log(`Smoke do contexto municipal aprovado: ${requests} requisições.`);

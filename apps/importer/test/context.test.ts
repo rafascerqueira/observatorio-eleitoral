@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { distribution, populationByAge, TSE_AGE_BANDS, tseCategory, tseOrder } from '../src/context-model';
 import { sidraValue } from '../src/sidra';
+import { AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS } from '@observatorio/contracts';
 
 test('valores da SIDRA seguem as convenções do IBGE: "-" é zero; X, .. e ... nunca viram zero', () => {
   assert.equal(sidraValue('1234'), 1234); assert.equal(sidraValue('2713.36'), 2713.36); assert.equal(sidraValue('-'), 0);
@@ -63,4 +64,13 @@ test('distribuição confere a soma das categorias, salvo quando há supressão'
   assert.equal(distribution('universo', 'teste', 15, two, 'sintético', 'partial').undistributed, 5);
   assert.throws(() => distribution('universo', 'teste', 9, two, 'sintético', 'partial'), /acima do total/);
   assert.equal(distribution('universo', 'teste', 10, two, 'sintético', 'partial').undistributed, undefined);
+});
+
+test('rótulos dos cruzamentos nos contratos = ordem do importador; faixas agregadas cobrem todas as faixas do TSE uma vez', () => {
+  for (const dimension of ['gender', 'education'] as const) assert.deepEqual(TSE_PROFILE_LABELS[dimension], tseOrder(dimension));
+  const bands = AGE_GROUPS.flatMap((group) => group.bands as readonly string[]);
+  assert.deepEqual([...bands].sort(), tseOrder('age').map((item) => item.key).sort());
+  assert.equal(ageGroupOf('a17'), '16-17'); assert.equal(ageGroupOf('a70-74'), '70+'); assert.equal(ageGroupOf('a18'), '18-24');
+  assert.ok(optionalVoter('a17', 'college-complete') && optionalVoter('a40-44', 'illiterate') && optionalVoter('a100+', 'reads-writes'));
+  assert.ok(!optionalVoter('a18', 'reads-writes') && !optionalVoter('a65-69', 'not-informed') && !optionalVoter('invalid', 'college-complete'));
 });

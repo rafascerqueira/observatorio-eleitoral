@@ -1,4 +1,4 @@
-import { placeGroupsSchema, mapGeometrySchema, mapValuesSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
+import { placeGroupsSchema, turnoutProfilesSchema, mapGeometrySchema, mapValuesSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
 
 export async function getExterior(filters: ExteriorQuery) {
   try {
@@ -91,6 +91,17 @@ async function mapRequest(path: 'geometry' | 'values', params: Record<string, st
 }
 export async function getMapGeometry(uf?: string) { const body = await mapRequest('geometry', { uf }); const parsed = mapGeometrySchema.safeParse(body); return parsed.success ? parsed.data : null; }
 export async function getMapValues(params: Record<string, string | undefined>) { const body = await mapRequest('values', params); const parsed = mapValuesSchema.safeParse(body); return parsed.success ? parsed.data : null; }
+
+export async function getTurnoutProfiles(params: Record<string, string | undefined>) {
+  try {
+    const url = new URL('/elections/turnout/profiles', process.env.API_URL ?? 'http://127.0.0.1:3001');
+    for (const [key, value] of Object.entries(params)) if (value) url.searchParams.set(key, value);
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+    if (!response.ok) return null;
+    const parsed = turnoutProfilesSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : null;
+  } catch { return null; }
+}
 
 export async function getPlaceGroups(params: Record<string, string | undefined>) {
   try {

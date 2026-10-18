@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool, type PoolClient } from 'pg';
-import { INCOME_BANDS, MINIMUM_WAGE_2022, percent, placeGroupsSchema, placeProfilesDatasetSchema, PLACE_GROUP_INDICATORS, PLACE_GROUP_METHODS, STATES, type PlaceGroupIndicator, type PlaceGroups } from '@observatorio/contracts';
+import { INCOME_BANDS, MINIMUM_WAGE_2022, percent, placeGroupsSchema, placeProfilesDatasetSchema, PLACE_GROUP_INDICATORS, PLACE_GROUP_METHODS, PLACE_GROUP_NUMERATORS, STATES, type PlaceGroupIndicator, type PlaceGroups } from '@observatorio/contracts';
 import { ROOT } from './sources';
 
 /**
@@ -14,14 +14,16 @@ import { ROOT } from './sources';
  * v2: a renda usa faixas fixas de salário mínimo (`INCOME_BANDS`), iguais em todos os recortes; a escolaridade segue em
  * quintis ponderados por eleitores aptos, mas locais com o mesmo valor ficam sempre no mesmo grupo. A v1 desempatava
  * pela chave do local e, onde muitos setores têm mediana de 1 SM, separava valores iguais em grupos diferentes.
+ * v3: novos indicadores do perfil por local (até fundamental incompleto, eleitoras, 16 a 24 anos, 60 anos ou mais), em
+ * quintis como a escolaridade; regras de v2 mantidas.
  */
-const VERSION = 'place-groups-2022-v2';
+const VERSION = 'place-groups-2022-v3';
 const SCOPE = '2022/places/groups';
 type Input = { id: string; scope: string; metadata: { rounds?: Array<'1' | '2'>; level?: string; office?: string; uf?: string } };
 
-async function compute(client: PoolClient, input: { results: string; profiles: string; tracts: string; college: number; office: string; uf: string | null; round: string; indicator: PlaceGroupIndicator }): Promise<PlaceGroups> {
-  const indicatorSql = input.indicator === 'college'
-    ? `SELECT uf, municipality_code, zone, place_code AS code, (counts->'education'->>${input.college})::numeric * 100 / eligible AS value, eligible AS weight FROM polling_place_profiles WHERE batch_id=$5 AND eligible > 0`
+async function compute(client: PoolClient, input: { results: string; profiles: string; tracts: string; numerators: Record<string, string>; office: string; uf: string | null; round: string; indicator: PlaceGroupIndicator }): Promise<PlaceGroups> {
+  const indicatorSql = input.indicator !== 'income-median'
+    ? `SELECT uf, municipality_code, zone, place_code AS code, (${input.numerators[input.indicator]}) * 100 / eligible AS value, eligible AS weight FROM polling_place_profiles WHERE batch_id=$5 AND eligible > 0`
     : `SELECT t.uf, t.municipality_code, t.zone, t.place_code AS code, c.responsible_income_median AS value, pp.eligible AS weight
        FROM polling_place_tracts t JOIN census_tract_context c ON c.batch_id=t.batch_id AND c.cd_setor=t.cd_setor
        JOIN polling_place_profiles pp ON pp.batch_id=$5 AND pp.uf=t.uf AND pp.municipality_code=t.municipality_code AND pp.zone=t.zone AND pp.place_code=t.place_code
@@ -69,7 +71,12 @@ async function run() {
     const published = (await client.query<Input>("SELECT id, scope, metadata FROM import_batches WHERE published AND (scope='2022/president/BR' OR scope LIKE '2022/governor/%' OR scope LIKE '2022/senator/%' OR scope IN ('2022/places/profiles','2022/places/tracts'))")).rows;
     const profiles = published.find((row) => row.scope === '2022/places/profiles'); const tracts = published.find((row) => row.scope === '2022/places/tracts');
     if (!profiles || !tracts) throw new Error('Perfil por local e associação aos setores precisam estar publicados.');
-    const college = placeProfilesDatasetSchema.parse(profiles.metadata).order.education.indexOf('college-complete');
+    // Numerador de cada indicador percentual: soma das categorias do perfil por local, pelas posições guardadas na publicação.
+    const order = placeProfilesDatasetSchema.parse(profiles.metadata).order;
+    const numerators = Object.fromEntries(Object.entries(PLACE_GROUP_NUMERATORS).map(([indicator, { dimension, keys }]) => {
+      const positions = keys.map((key) => { const index = order[dimension]!.indexOf(key); if (index < 0) throw new Error(`${indicator}: categoria ${dimension}/${key} ausente no perfil por local.`); return index; });
+      return [indicator, positions.map((index) => `(counts->'${dimension}'->>${index})::numeric`).join(' + ')];
+    }));
     const recortes: Array<{ results: string; office: string; uf: string | null; round: string }> = [];
     for (const batch of published.filter((row) => !row.scope.startsWith('2022/places/'))) {
       const [, office, territory] = batch.scope.split('/') as [string, string, string];
@@ -85,12 +92,12 @@ async function run() {
       await client.query('DELETE FROM place_groups WHERE batch_id=$1', [id]);
       let done = 0;
       for (const recorte of recortes) for (const indicator of Object.keys(PLACE_GROUP_INDICATORS) as PlaceGroupIndicator[]) {
-        const result = await compute(client, { ...recorte, profiles: profiles.id, tracts: tracts.id, college, indicator });
+        const result = await compute(client, { ...recorte, profiles: profiles.id, tracts: tracts.id, numerators, indicator });
         await client.query('INSERT INTO place_groups VALUES($1,$2,$3,$4,$5,$6,$7)', [id, recorte.results, recorte.office, recorte.uf ?? 'BR', Number(recorte.round), indicator, result]);
         if (++done % 50 === 0) console.log(`${done} recortes calculados.`);
       }
       const dataset = { kind: 'place-groups', id, importerVersion: VERSION, importedAt: new Date().toISOString(), inputs: published.map((row) => ({ id: row.id, scope: row.scope })), recortes: done,
-        scope: 'Métrica E: locais agrupados pela escolaridade declarada dos eleitores (TSE; quintis ponderados por eleitores aptos, sem separar valores iguais) ou pelo rendimento mediano do responsável no setor do local (IBGE; faixas fixas de salário mínimo de 2022: até 1, mais de 1 a 1,5, mais de 1,5 a 2, mais de 2 a 3 e mais de 3 SM), com votos somados por grupo.' };
+        scope: 'Métrica E: locais agrupados pelo perfil declarado dos seus eleitores (TSE: superior completo, até fundamental incompleto, eleitoras, 16 a 24 anos e 60 anos ou mais; quintis ponderados por eleitores aptos, sem separar valores iguais) ou pelo rendimento mediano do responsável no setor do local (IBGE; faixas fixas de salário mínimo de 2022: até 1, mais de 1 a 1,5, mais de 1,5 a 2, mais de 2 a 3 e mais de 3 SM), com votos somados por grupo.' };
       await client.query('UPDATE import_batches SET metadata=$2 WHERE id=$1', [id, dataset]);
       await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
       await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
