@@ -1,6 +1,28 @@
 # Contexto do projeto — Observatório eleitoral brasileiro
 
-Consolidado em 12/10/2026 para continuidade no Codex local. Nome provisório. Este documento registra decisões e propostas; não certifica conjuntos de dados ainda não auditados.
+Criado em 12/10/2026 e revisado em **19/10/2026**. Fonte de verdade sobre finalidade, princípios, decisões e continuidade do projeto. O resumo abaixo descreve o estado vigente; os registros a partir do §12 preservam o estado de cada marco, inclusive pendências depois resolvidas. Nome e licença continuam sem decisão.
+
+## Estado atual
+
+Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`, enviado para `upstream/main` em 19/10; a revisão documental posterior está registrada no §30.
+
+| Frente | Situação em 19/10/2026 |
+| --- | --- |
+| Resultados eleitorais | Presidência 2022 nacional e exterior; Governador e Senador nas 27 UFs, com turnos e categorias não válidas auditados. Deputados fora do escopo; 2026 e suplementar de RR não importados. |
+| IBGE e perfis TSE | Contexto municipal, mapas, associação local → setor, perfil por local, faixas de renda, participação por perfil, demografia, grupos e sensibilidade publicados no banco local. Nove versões atuais e ordem de importação no [README](README.md); IDs e auditorias em [reimportações](docs/reimportacoes-2026-10-18.md). |
+| Interface | Busca com sugestões, listagem municipal compacta/paginada, detalhe de todas as candidaturas, formulários GET sem JS, participação por município/estado civil e mapas por candidatura concluídos. |
+| Robustez e rastreabilidade | Isolamento por ano/cargo; downloads de relatórios/originais, inclusive GeoPackage; distinção entre falha técnica e ausência na fonte; dependências versionadas e publicação bloqueada por divergência. |
+| Última verificação da aplicação | 86 testes, typecheck/build, nove smokes, 31 regressões HTTP e 60 avaliações automáticas em Chrome/Firefox aprovados em 19/10; nove reexecuções idempotentes e duas comparações integrais das 11 tabelas, com dados anteriores preservados (§28). |
+| Operação | npm workspaces, Node 24.21.0, Next.js/NestJS, PostgreSQL/PostGIS e `pg_trgm`. Acesso por `pg`, sem Prisma. API/web temporárias encerradas no fim da verificação; banco preservado. |
+
+### Pendências vigentes
+
+- **Antes de declarar acessibilidade completa:** leitor de tela humano, Safari e dispositivos reais, zoom de texto/alto contraste do sistema. Chrome/Firefox e verificações automáticas já foram realizados; não substituem esses ensaios.
+- **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
+- **Decisões abertas:** licença, nome definitivo e eventual tratamento da suplementar de Governador de RR/2026. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila.
+- **Manutenção registrada, sem execução autorizada nesta etapa:** limpeza de armazenamento; renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
+
+A página longa, autocomplete, relatório em modo dev, participação por município/estado civil, sensibilidade e mapas por candidatura **já foram resolvidos**. Não recolocá-los na fila com base em listas antigas. O §11 organiza a continuidade; o histórico registra como as decisões foram tomadas.
 
 ## 1. Finalidade e intenção do autor
 
@@ -23,7 +45,7 @@ O projeto começa pequeno com dados oficiais do TSE e IBGE. Não deve partir de 
 
 ## 3. Escopo inicial e apresentação
 
-Primeira entrega: tabela didática por município, com filtros de eleição, turno, cargo e território; permitir abrir o detalhe dos locais de votação. Priorizar leitura simples e acessibilidade, inclusive no celular. Mapas e gráficos ficam para evolução; evitar visualizações densas ou difíceis de interpretar.
+A primeira entrega priorizou tabelas por município e detalhe dos locais. Hoje há filtros por ano, turno, cargo e território, listagem compacta paginada e detalhe nativo com todas as candidaturas, além de mapas e perfis (§§21–28). Manter leitura simples, tabelas equivalentes às visualizações e uso em telas pequenas, sem depender de JavaScript para consultar os formulários e abrir o detalhe municipal.
 
 Exibir votos absolutos e percentuais de todas as candidaturas, aptos, comparecimento, abstenção, brancos e nulos. A diferença entre candidaturas pode ser mostrada em pontos percentuais, com definição explícita do par comparado.
 
@@ -35,9 +57,9 @@ Preservar a granularidade das seções na base e agregá-las por local de votaç
 
 ## 4. Anos e cargos
 
-O usuário quer aproveitar 2022 e 2026. Resultados por zona e seção já existiam em 2022; não são uma novidade exclusiva de 2026. A cobertura e qualidade das localizações de cada ano precisam ser auditadas.
+O interesse original abrange 2022 e 2026; o **escopo implementado e auditado é 2022**: Presidência nacional e exterior, Governador e Senador nas 27 UFs. Os turnos permanecem separados; o Senado de 2022 tem turno único e uma vaga por UF. Deputados foram retirados do escopo por decisão de 17/10 (§20).
 
-Começar pela eleição presidencial, mantendo os turnos separados; modelar os cargos para expansão futura a governador, senador, deputados etc. Regras de denominador variam por cargo — atenção especial ao Senado em anos com duas escolhas por eleitor.
+Resultados de 2026 e a suplementar de Governador de RR não foram importados. Não são extensão automática da carga de 2022: precisam de recorte decidido com Rafael, fontes auditadas e regras próprias, inclusive para Senado com duas vagas. Resultados por zona/seção já existiam em 2022; cobertura, localizações e denominadores devem ser auditados em cada novo recorte.
 
 Não presumir que resultados de 2026 ou localizações estejam completos só porque o catálogo os apresenta. Verificar arquivos, geração, cobertura e situação de totalização. Não inventar resultados de turnos ainda não realizados. Comparações só são publicadas depois da validação de cada conjunto.
 
@@ -47,9 +69,9 @@ Um exemplo mencionado pelo usuário sobre Rio de Janeiro, Niterói e interior n�
 
 - Seção é um agrupamento eleitoral; local de votação é o prédio; zona é uma unidade administrativa. Não equivalem automaticamente a bairro ou setor censitário.
 - O endereço do local mostra onde o eleitor vota, não onde mora.
-- O entorno socioeconômico será uma aproximação do contexto territorial. Não atribuir sua renda aos eleitores inscritos.
-- Definir e versionar o método: setor que contém o local, setores próximos ou área delimitada por distância. Nenhuma distância foi decidida.
-- Testar sensibilidade a diferentes delimitações e informar casos sem associação confiável.
+- O entorno socioeconômico é uma aproximação do contexto territorial. Não atribuir sua renda aos eleitores inscritos.
+- Método publicado: setor que contém a coordenada do local, com município validado pela correspondência oficial TSE–IBGE e associação recusada quando ambígua. A coordenada não identifica residência.
+- Sensibilidade implementada: faixa predominante nos setores do mesmo município a até **250 m, 500 m e 1 km**, com comparação à associação pelo ponto (§25; detalhes em `docs/plano-ibge.md`). É uma análise alternativa, não substitui a métrica publicada. Casos sem associação confiável continuam separados.
 - Várias seções no mesmo prédio compartilham contexto geográfico; não tratá-las como observações socioeconômicas independentes.
 - Não calcular renda média do entorno pela média simples das médias de setores: usar os denominadores apropriados quando disponíveis. Não agregar medianas como se fossem médias.
 - Associação territorial não demonstra causa, motivo individual, ideologia ou transferência individual de votos entre eleições.
@@ -67,7 +89,7 @@ Distinguir rigorosamente:
 
 Renda domiciliar não deve ser chamada automaticamente de renda familiar. O salário mínimo é uma unidade de expressão da renda, não uma segunda renda. Registrar valor, vigência e período de referência. Para renda de 2022, usar uma referência de 2022 explicitada; comparações temporais de poder de compra exigem tratamento próprio.
 
-O levantamento encontrou divulgação do IBGE de rendimento do responsável por setor censitário. Isso não comprova disponibilidade de renda domiciliar total ou per capita na mesma escala. Confirmar dicionários antes de implementar camadas. Se só houver média/mediana, rotular exatamente a medida; não afirmar proporções por faixa.
+As fontes implementadas distinguem classes de rendimento domiciliar per capita da amostra municipal (SIDRA), valores per capita em reais e **mediana do responsável com rendimento por setor** (V06006, dicionário conferido). As faixas do entorno classificam setores pela sua mediana; os moradores entram integralmente na faixa do setor, sem inferir a renda de cada pessoa. Isso não é uma distribuição individual de renda nem demonstra renda domiciliar total/per capita na escala de setor. Células omitidas e diferenças não discriminadas ficam explícitas, sem preenchimento. Novas camadas exigem conferência própria de arquivo e dicionário.
 
 ## 7. Fontes e referências
 
@@ -92,23 +114,19 @@ Referências de produtos levantadas, sem auditoria integral:
 
 Fontes futuras, fora do MVP: CESOP/ESEB para atitudes individuais (https://www.cesop.unicamp.br/por/eseb), Ipea, RAIS/Caged e MDS. Surveys não devem ser presumidos representativos de cada município.
 
-## 8. Direção técnica acordada
+## 8. Direção técnica implementada
 
-Stack: TypeScript e Node.js; NextJS no frontend, NestJS no backend, PostgreSQL. Prisma é compatível com a experiência do usuário; seu uso e versão ainda precisam ser definidos. Docker Compose para ambiente local; Docker e Traefik são familiares ao usuário para hospedagem futura.
+Monorepo TypeScript com **npm workspaces**, Node 24.21.0 e npm 12.2.0 como referência de desenvolvimento (requisitos em `.nvmrc`/`package.json`). Next.js 16/React no frontend, NestJS na API, scripts TypeScript no importador e PostgreSQL/PostGIS com `pg_trgm` no Compose. Versões exatas e decisões em `docs/decisoes-tecnicas.md` e nos manifests/lockfile. Acesso SQL por `pg`; Prisma não foi adotado e não é pré-requisito pendente para a entrega atual.
 
-Proposta de monorepo:
+- `apps/web`: consultas, detalhe territorial, mapas, perfis, participação, fontes e metodologia; SSR e formulários GET.
+- `apps/api`: leitura com contratos Zod, paginação, validação territorial e de dependências; originais/relatórios em fluxo.
+- `apps/importer`: obtenção e preservação de originais, auditoria, preparação, reconciliação e publicação transacional.
+- `packages/contracts`: contratos e fórmulas compartilhados, consumidos pelo `dist/` compilado.
+- `scripts` e `docs`: execução local, smokes/auditorias, decisões e evidências de cada marco.
 
-- apps/web: NextJS, tabela e páginas de fontes/metodologia.
-- apps/api: NestJS, API de consulta com paginação e ordenação.
-- apps/importer: proposta de importador TypeScript executado separadamente.
-- packages/: contratos compartilhados apenas quando necessários.
-- docs/: contexto, fontes e decisões.
+Importações fora das requisições do visitante. Preservar originais e versões anteriores; preparar, validar e só então trocar a publicação. Usar SQL em lote e agregados por território, sem enviar a base nacional inteira ao navegador. A fase espacial usa PostGIS; seção, local e setor mantêm chaves/universos próprios.
 
-Importações fora das requisições do visitante. Preservar originais e metadados; carregar em área de preparação, validar e publicar versão consistente. Usar importação em lote e SQL quando apropriado, evitando inserir milhões de registros individualmente pelo ORM. PostgreSQL/PostGIS é uma opção para a etapa espacial, não uma decisão já fechada.
-
-Persistir agregados por município e local para consultas econômicas. Backend modular único; sem microserviços, Redis ou filas no início sem necessidade demonstrada. Nunca enviar a base nacional inteira ao navegador. Dimensionar hospedagem só após medir volume e carga.
-
-Gerenciador de pacotes, versões, município/UF piloto, licença, nome definitivo, hospedagem e fonte exata de cada variável ainda não foram decididos. Linux é habitual ao usuário, mas o ambiente local atual precisa ser inspecionado.
+Backend único, sem microserviços, Redis ou filas sem necessidade demonstrada. Compose é ambiente local; a web empacotada usa saída `standalone`, conforme o Dockerfile. Hospedagem, limites de carga e restauração em destino exigem verificação própria antes de implantação autorizada. Nome definitivo e licença permanecem em aberto.
 
 ## 9. Validação e rastreabilidade
 
@@ -144,15 +162,20 @@ Achados a evitar:
 
 Limites da revisão: leitura de código e documentação, importação dos módulos analíticos e teste pontual do fuso. Painel não executado; dados oficiais nacionais não baixados; validações nacionais relatadas pelo autor não reproduzidas. Logs de urna ficam fora do MVP.
 
-## 11. Próxima tarefa para o Codex local
+## 11. Continuidade e próximos marcos
 
-Leia este arquivo e instruções existentes (AGENTS.md e outras aplicáveis). Inspecione ambiente e repositório sem sobrescrever trabalho existente. Inicialize uma estrutura executável com NextJS, NestJS, TypeScript e PostgreSQL via Docker Compose, documentando como iniciar. Escolha versões compatíveis consultando documentação oficial atual e registre a escolha.
+Ao começar, ler o resumo vigente, o último registro deste plano e `git log`/`git status`, seguindo `AGENTS.md`. Estrutura executável, piloto, expansão de 2022, integração IBGE, interface, correções e reimportações estão concluídos; não reinicializar o projeto nem repetir cargas para aparentar progresso.
 
-Primeiro marco: frontend acessível, API com verificação de saúde e conexão com banco, configuração por ambiente e estado vazio claro na tabela. Não criar números eleitorais para aparentar um produto pronto.
+1. **Manter a entrega local validada:** preservar publicações, originais, relatórios e backups; conferir o estado deixado no Git e não executar importações concorrentes. Comandos e dependências no README; última auditoria integral no §28.
+2. **Avançar na hospedagem com Rafael:** retomar `docs/hospedagem-inicial.md`, escolher a estratégia e validar custos/capacidade atuais. Preparar configuração, restauração e ensaios de carga no destino antes de uma implantação explicitamente autorizada. O estudo de 17/10 não é orçamento vigente nem escolha de provedor.
+3. **Planejar os ensaios manuais de acessibilidade:** leitor de tela, Safari/dispositivos reais e preferências do sistema; registrar os resultados sem ampliar a cobertura declarada dos testes automáticos. Esses itens não foram resolvidos pela revisão documental.
+4. **Tratar manutenção ou expansão separadamente:** limpeza de armazenamento, eventual migração de nomes de colunas, distritos na busca, suplementar de RR e 2026 só entram conforme decisão/necessidade registradas. Deputados continuam fora do escopo.
 
-Segundo marco: auditar e importar um recorte pequeno real do TSE, reconciliar totais e expor tabela paginada. Definir recorte piloto com Rafael antes de uma carga extensa. Depois integrar IBGE no nível municipal e detalhar locais onde a correspondência foi validada.
+Não expandir automaticamente para IA, modelos psicológicos, classificação ideológica ou alertas de fraude. Não contratar, implantar ou alterar recorte sem instrução. Ao concluir cada marco, registrar o que foi feito, verificado e pendente, distinguindo publicação no banco local de implantação externa.
 
-Não expandir automaticamente para IA, modelos psicológicos, classificação ideológica, alertas de fraude ou múltiplas fontes adicionais. Não publicar nem contratar serviços sem instrução. Manter este contexto e decisões atualizados conforme a implementação evoluir.
+## Histórico de implementação
+
+Os registros abaixo preservam as decisões e limitações **na data de cada etapa**. Expressões como “pendente”, “sem commit” ou “não verificado” não representam necessariamente o estado atual; consultar o resumo vigente e os marcos posteriores. Medidas de volume, desempenho e preços são retratos históricos, não garantias atuais.
 
 ## 12. Registro de implementação — 12/10/2026
 
@@ -228,12 +251,12 @@ Primeira pendência da lista. Sem a extensão do Chrome conectada, a revisão us
 
 Corrigidos: rolagem horizontal em `/fontes` no celular, três contrastes abaixo de 4,5:1 no hero e nos cartões, linha de nulos técnicos, recuos, aviso desatualizado e ordem das importações em `/fontes`, rodapé do turno não realizado e plural de zona. Registro e limites em `docs/acessibilidade.md`. Não verificados: leitor de tela real, Chrome/Safari e dispositivos móveis reais, zoom de texto e alto contraste do sistema. Testes e smokes repetidos sem regressão.
 
-### Decisões pendentes para a próxima sessão
+### Pendências registradas em 15/10/2026 (histórico)
 
 1. Suplementar de Governador de RR (eleição 6278, 21/06/2026, presente nos arquivos marcados como 2022): como tratá-la (proposta: recorte próprio "suplementar 2026", sem somar nem comparar com a ordinária de 2022); como apresentar os 160.004 votos "Anulado sub judice", maiores que os válidos (102.845), deixando explícita a provisoriedade da classificação; conferir situação da totalização e eventual 2º turno antes de importar.
 2. Senador 2022 (uma vaga por UF; 2026 terá duas): auditoria e regras. → Concluído no §20.
-3. Página de UF longa (25 municípios com quadros por página): rever apresentação.
-4. Incorporar ao repositório as verificações de acessibilidade (exigiria `puppeteer-core`, `axe-core` e `pngjs` como dependências de desenvolvimento) e testar com leitor de tela real e outros navegadores.
+3. Página de UF longa (25 municípios com quadros por página): rever apresentação. → Concluído no §27.
+4. Incorporar verificações de acessibilidade e testar em outros navegadores. → Automação com `puppeteer-core`/`axe-core`, Chrome e Firefox concluída nos §§27–28; `pngjs` não foi necessário. Leitor de tela humano e Safari continuam pendentes.
 
 ## 20. Senador 2022 nas 27 UFs e mudança de escopo — 17/10/2026
 
@@ -249,7 +272,7 @@ Resultado: 27 UFs publicadas, 5.570 municípios, 3.790.841 registros (igual à a
 
 Também nesta data: `AGENTS.md` passou a ser o único arquivo de orientações (o `CLAUDE.md` só o importa), com uma seção sobre o revezamento entre Codex e Claude Code.
 
-### Decisões pendentes (atualizado em 17/10/2026)
+### Pendências registradas em 17/10/2026 (histórico)
 
 2. Suplementar de Governador de RR (2026), como no item 1 da lista do §19.
 3. IBGE: etapa municipal publicada em 17/10/2026 (contexto Censo 2022 + perfis do TSE como base própria, 5.570 municípios) e protótipo de mapas (malhas do IBGE, `/mapa`). Detalhes, regras de soma e verificação em `docs/plano-ibge.md`. Fase 3 e métrica E concluídas na mesma data (§22).
@@ -263,7 +286,7 @@ Rafael aprovou o plano de `docs/plano-ibge.md`: etapa municipal primeiro, PostGI
 
 Publicados o contexto municipal (`municipal-context-2022-v1`: Censo 2022 via SIDRA ligado aos 5.570 municípios do TSE pela correspondência oficial de códigos; perfil do eleitorado e comparecimento por perfil do TSE) e as malhas do IBGE para mapas (`maps-ibge-2022-v2`). Na página do município, o painel "Território e eleitorado" separa universo, amostra e cadastro; em `/mapa`, dois coropléticos lado a lado (indicador do Censo e abstenção), com quintis, tabela equivalente e avisos de leitura (sem causa, sem voto de grupos, viés de área). Detalhes e números em `docs/plano-ibge.md`. Banco: +38 MB; disco: +0,8 GB. Sem publicação externa.
 
-## 22. Análise de hospedagem inicial — 17/10/2026
+## 21-A. Análise de hospedagem inicial — 17/10/2026
 
 A pedido de Rafael, analisada a estrutura em desenvolvimento e pesquisados preços oficiais de hospedagem. Relatório em `docs/hospedagem-inicial.md`. Medição somente de leitura, aproximadamente às 18h05 (Brasília): PostgreSQL com 10.372.323.007 bytes (9,66 GiB), extensões PostGIS e `pg_trgm`; `data/` com cerca de 16 GiB, dos quais 5,8 GiB são originais. As medidas são um retrato durante trabalho em andamento, sem certificação das novas importações.
 
@@ -293,7 +316,7 @@ Rafael decidiu as faixas etárias por obrigatoriedade do voto e o escopo (partic
 
 Complemento: a pedido de Rafael, todos os indicadores de `/perfis` passaram a faixas fixas de números redondos (`place-groups-2022-v4`), porque os quintis davam grupos sempre de ~1/5 dos eleitores e sem definição estável.
 
-Pendente/possível: estado civil (já no perfil por local e no comparecimento, não exibido); cruzamento por município na participação (hoje só marginais municipais no contexto); leitor de tela real, Chrome/Safari; sensibilidade da associação local → setor.
+Pendente/possível naquele marco: estado civil, cruzamento por município, outros navegadores/leitor de tela e sensibilidade. Estado civil, cruzamento e sensibilidade foram concluídos no §25; Chrome e automação nos §§27–28. Pendências manuais vigentes no resumo inicial.
 
 
 ## 25. Método, dados e mapas pendentes — 17/10/2026
@@ -366,8 +389,16 @@ Encerramento — **19/10 às 11h51 (Brasília)**: API/web/navegadores temporári
 
 ## 29. Consolidação e envio ao Git — 19/10/2026
 
-Rafael autorizou commit e push após confirmar ausência de pendências bloqueantes desta entrega. Conferidos `git status`, histórico e diff final; `git fetch upstream` concluído, `main` sincronizada com `upstream/main` antes da consolidação, sem alteração remota a integrar. Este registro acompanha o commit que reúne as correções, testes, scripts e documentação dos §§26–28.
+Rafael autorizou commit e push após confirmar ausência de pendências bloqueantes desta entrega. Conferidos `git status`, histórico e diff final; `git fetch upstream` concluído, `main` sincronizada com `upstream/main` antes da consolidação, sem alteração remota a integrar. Consolidação concluída no commit `825dffb` e enviada para `upstream/main`, reunindo correções, testes, scripts e documentação dos §§26–28; árvore de trabalho limpa ao terminar o envio.
 
 Mantidas as verificações já aprovadas no mesmo código: 86 testes, typecheck/build, nove smokes, 31 regressões HTTP, 60 avaliações automáticas em Chrome/Firefox, auditorias integrais e nove reexecuções idempotentes; somente documentação de encerramento alterada desde então. `git diff --check` aprovado. Confirmado que `.env`, originais, banco, backup e evidências locais em `data/` estão ignorados e não integram o envio. Nenhuma importação ou serviço temporário reiniciado; somente PostgreSQL permanece ativo.
 
 Escopo de envio: branch `main`, remoto `upstream`, sem reescrever histórico. Permanecem fora desta entrega as pendências manuais/de operação registradas no §28; hospedagem continua por último. Nenhuma implantação ou contratação externa.
+
+## 30. Revisão do planejamento e README — 19/10/2026
+
+A pedido de Rafael, revisados `plan.md` e o README principal após o envio de `825dffb`. Criado resumo vigente separado do histórico; corrigidas instruções iniciais superadas, método espacial já definido e stack adotada; removida a duplicidade do §22 mantendo as referências à etapa local → setor (§22, hospedagem histórica no §21-A). Pendências antigas receberam indicação dos marcos que as resolveram; commit/push anterior confirmado no §29.
+
+README atualizado com todas as funcionalidades atuais, versões dos nove derivados, ordem/dependências das importações, distinção entre carga eleitoral e derivada, limites de cobertura e pendências reais. Execução compilada orientada pelo Compose/servidor standalone já configurado, retirando a recomendação de `next start` incompatível com a configuração. Comandos de exemplo preservam `.env` existente e o laço de UFs para na primeira falha.
+
+Conferência documental: manifests/scripts npm, rotas existentes, versões/entradas dos importadores, Compose/Dockerfile e relatórios da última verificação; 19 links locais, 41 referências a comandos npm, nove blocos shell (somente sintaxe), nove versões comparadas ao código e numeração das seções sem duplicatas conferidos; `git diff --check` aprovado. Não repetidos testes/build/smokes: somente Markdown foi alterado. Sem importação, consulta/mutação de dados, reinício de serviços ou nova implantação. Rafael autorizou consolidar esta revisão em commit documental separado em 19/10, incluindo somente `README.md` e `plan.md`. Sem novo push nesta etapa; verificações manuais e hospedagem seguem no resumo vigente.
