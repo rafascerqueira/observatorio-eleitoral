@@ -10,7 +10,7 @@ Projeto de dashboard público, gratuito e sem fins lucrativos para explorar elei
 - **Governador — 27 UFs:** resultado da UF, municípios e locais; 2º turno nas 12 UFs onde ocorreu, e “turno não realizado” nas demais. A consulta exige UF; sem consolidado Brasil nem exterior para o cargo.
 - **Senador — 27 UFs:** resultado da UF, municípios e locais, em turno único. Em 2022 houve uma vaga por UF e um voto por eleitor; o 2º turno é informado como não realizado.
 - **Consulta municipal:** filtros por cargo/turno/UF/nome, sugestões tolerantes a acentos e erros de digitação, uma linha por município e paginação acima/abaixo. O detalhe nativo mostra todas as candidaturas, brancos, nulos, categorias não válidas e avisos, inclusive sem JavaScript.
-- **Locais de votação:** busca por zona, seção, código, nome ou endereço; cada local mostra suas seções. Endereço do local não é residência do eleitor.
+- **Locais de votação:** busca por zona, seção, código, nome ou endereço; cada local mostra suas seções e o setor censitário associado ao seu ponto (ou o motivo da não associação), com um quadro do município por situação. Endereço do local não é residência do eleitor, e o setor descreve o entorno do prédio, não os eleitores.
 
 Votos anulados, anulados sub judice e nulos técnicos mantêm a classificação da fonte, com candidatura identificada quando aplicável e denominadores explícitos. Liderança não significa maioria absoluta; agregações somam votos e denominadores, sem média de percentuais.
 
@@ -19,7 +19,7 @@ Votos anulados, anulados sub judice e nulos técnicos mantêm a classificação 
 - **Contexto municipal:** população, cor ou raça, alfabetização, instrução, classes de rendimento domiciliar per capita em salários mínimos e valores per capita em reais (Censo 2022); cadastro e comparecimento por perfil do TSE como base própria declarada. Omissões, diferenças não discriminadas e arredondamento ficam explícitos; falha técnica não é apresentada como ausência na fonte.
 - **Participação** (`/participacao`): comparecimento e abstenção por UF/município, turno, gênero, idade, escolaridade, estado civil e obrigatoriedade. A fonte não traz DF nem exterior; indisponibilidade não vira zero. Não contém voto por candidatura de grupos de pessoas.
 - **Perfis dos locais** (`/perfis`): cinco faixas fixas por escolaridade, parcela de eleitoras, eleitores de 16 a 24 anos, de 60 anos ou mais, ou renda mediana do setor do local, com votos somados por grupo. Comparações territoriais de moradores por faixa e sensibilidade por entornos de 250 m, 500 m e 1 km, com cobertura e limites declarados. Descreve locais e setores, não a renda ou o voto de cada eleitor.
-- **Mapas:** Censo e abstenção lado a lado em `/mapa`; um mapa por candidatura, com escala comum, em `/mapa/candidaturas`. Tabelas equivalentes acompanham as visualizações.
+- **Mapas:** em `/mapa`, um indicador do Censo ao lado da abstenção do cargo escolhido ou da votação de uma candidatura (abstenção como padrão), com dispersão sem linha de tendência e exportação CSV com códigos, denominadores e versões; um mapa por candidatura, com escala comum, em `/mapa/candidaturas`. Tabelas equivalentes acompanham as visualizações.
 - **Transparência** (`/fontes`): versões, cobertura, relatórios de auditoria e originais preservados com SHA-256, incluindo GeoPackage. As entradas dos derivados ficam registradas nos metadados/relatórios; mudanças de entrada ou divergências bloqueiam sua publicação.
 
 Resultados de **2026 e a suplementar de Governador de RR/2026 não foram importados**. Deputados estão fora do escopo atual. Não há inferências de motivação, ideologia ou transferência individual de votos.
@@ -32,7 +32,7 @@ Verificação concluída em **19/10/2026**, consolidada no commit `825dffb` e en
 - 60 avaliações automáticas de acessibilidade/refluxo em Chrome e Firefox, sem violações do axe ou rolagem horizontal fora das tabelas; isso não certifica toda a acessibilidade.
 - Nove reexecuções idempotentes e duas comparações integrais das 11 tabelas derivadas: conteúdo idêntico ao anterior, versões antigas e 57 publicações eleitorais preservadas.
 
-Evidências, versões/IDs e limites em [reimportações de 18–19/10](docs/reimportacoes-2026-10-18.md). O volume Docker do PostgreSQL e o diretório `data/` (originais, backups e artefatos) **não acompanham o Git**; um clone novo exige importar os dados ou restaurar um backup próprio.
+Evidências, versões/IDs e limites em [reimportações de 18–19/10](docs/reimportacoes-2026-10-18.md). Depois disso, a fase A do [plano de melhorias](docs/plano-postgis-propostas.md) (setor de cada local, série comparada com dispersão e exportação em `/mapa`) foi verificada localmente em 19/10 e está em commit local, sem push: 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox ([plano](plan.md), §33). O volume Docker do PostgreSQL e o diretório `data/` (originais, backups e artefatos) **não acompanham o Git**; um clone novo exige importar os dados ou restaurar um backup próprio.
 
 ## Iniciar localmente
 

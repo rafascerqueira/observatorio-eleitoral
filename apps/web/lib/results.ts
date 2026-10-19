@@ -1,4 +1,4 @@
-import { placeGroupsSchema, turnoutProfilesSchema, mapGeometrySchema, mapValuesSchema, candidateMapSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
+import { placeGroupsSchema, turnoutProfilesSchema, mapGeometrySchema, mapValuesSchema, candidateMapSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, placeTractsSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
 
 export async function getExterior(filters: ExteriorQuery) {
   try {
@@ -78,6 +78,18 @@ export async function getContext(code: string, uf: string, year: string) {
     if (response.status === 404) return { kind: 'missing' as const };
     if (!response.ok) return { kind: 'unavailable' as const };
     return { kind: 'ready' as const, data: contextResponseSchema.parse(await response.json()) };
+  } catch { return { kind: 'unavailable' as const }; }
+}
+
+/** Associação local → setor dos locais do município; `missing` = município fora da associação publicada. */
+export async function getPlaceTracts(code: string, uf: string, year: string) {
+  try {
+    const url = new URL(`/elections/municipalities/${encodeURIComponent(code)}/place-tracts`, process.env.API_URL ?? 'http://127.0.0.1:3001');
+    url.searchParams.set('uf', uf); url.searchParams.set('year', year);
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (response.status === 404) return { kind: 'missing' as const };
+    if (!response.ok) return { kind: 'unavailable' as const };
+    return { kind: 'ready' as const, data: placeTractsSchema.parse(await response.json()) };
   } catch { return { kind: 'unavailable' as const }; }
 }
 

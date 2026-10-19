@@ -5,7 +5,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, incomeBandOf, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { checkDependencies } from './dependencies';
 import { nationalSummary } from './national-summary';
@@ -15,6 +15,7 @@ const INCOME_BANDS_SCOPE = '2022/context/income-bands';
 const TURNOUT_PROFILES_SCOPE = '2022/context/turnout-profiles';
 const TRACT_SENSITIVITY_SCOPE = '2022/places/tract-sensitivity';
 const TRACT_DEMOGRAPHY_SCOPE = '2022/context/tract-demography';
+const TRACTS_SCOPE = '2022/places/tracts';
 
 @Controller('elections')
 export class ElectionsController {
@@ -288,28 +289,35 @@ export class ElectionsController {
   async mapValues(@Query() query: Record<string, unknown>) {
     const parsed = mapQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException({ message: 'Filtros do mapa inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
-    const { indicator, round, uf, year } = parsed.data;
+    const { indicator, round, uf, year, office } = parsed.data;
+    const census = MAP_INDICATORS[indicator].family === 'ibge';
+    // Abstenção de cargo estadual só existe por UF: os resultados desses cargos não são somados no Brasil.
+    if (!census && isStateOffice(office) && !uf) throw new BadRequestException({ message: `${OFFICE_LABELS[office]} é cargo estadual: informe a UF.`, fields: ['uf'] });
     const level = uf ? 'municipality' as const : 'uf' as const;
-    const empty = mapValuesSchema.parse({ status: 'awaiting-import', indicator, level, round, items: [] });
+    const base = { indicator, level, round, items: [], ...(census ? {} : { office }) };
+    const empty = mapValuesSchema.parse({ ...base, status: 'awaiting-import' });
     if (year !== '2022') return empty;
     await this.database.check();
     let rows: Array<{ id: string; code: string; uf: string; name: string; numerator: string | null; denominator: string | null }>;
-    if (MAP_INDICATORS[indicator].family === 'ibge') {
+    let publications: Array<{ role: 'results' | 'context'; id: string }>;
+    if (census) {
       // Indicadores derivados na importação (tabela `municipality_indicators`), sem ler o JSON de contexto inteiro.
       const batch = await this.checkedPublication('2022/context/municipal');
       if (!batch) return empty;
       const unit = await this.database.query<typeof rows[number]>(`SELECT ibge_code AS id, code, uf, name, numerator::text, denominator::text FROM municipality_indicators
         WHERE batch_id=$1 AND indicator=$2 AND ($3::text IS NULL OR uf=$3)`, [batch.id, indicator, uf ?? null]);
-      rows = unit.rows;
+      rows = unit.rows; publications = [{ role: 'context', id: batch.id }];
     } else {
-      const dataset = await this.publishedDataset(year, 'president');
-      if (!dataset || dataset.level !== 'national') return empty;
+      // Aptos e abstenções do próprio cargo: diferem entre cargos e turnos, e cada recorte usa os seus.
+      const dataset = await this.publishedDataset(year, office, uf);
+      if (!dataset || !['national', 'state'].includes(dataset.level)) return empty;
+      if (!roundHeld(dataset, round)) return mapValuesSchema.parse({ ...base, status: 'round-not-held' });
       const context = await this.checkedPublication('2022/context/municipal');
       if (!context) return empty;
       const unit = await this.database.query<typeof rows[number]>(`SELECT c.ibge_code AS id, m.code, m.uf, m.result->>'name' AS name, m.result->'totals'->>'abstentions' AS numerator, m.result->'totals'->>'eligible' AS denominator
         FROM municipality_results m JOIN municipality_context c ON c.batch_id=$4 AND c.uf=m.uf AND c.code=m.code
-        WHERE m.batch_id=$1 AND m.round=$2::integer AND m.office='president' AND m.uf<>'ZZ' AND ($3::text IS NULL OR m.uf=$3)`, [dataset.id, round, uf ?? null, context.id]);
-      rows = unit.rows;
+        WHERE m.batch_id=$1 AND m.round=$2::integer AND m.office=$5 AND m.uf<>'ZZ' AND ($3::text IS NULL OR m.uf=$3)`, [dataset.id, round, uf ?? null, context.id, office]);
+      rows = unit.rows; publications = [{ role: 'results', id: dataset.id }, { role: 'context', id: context.id }];
     }
     const value = (numerator: number | null, denominator: number | null) => numerator === null || denominator === null || denominator === 0 ? null : numerator / denominator * 100;
     let items = rows.map((row) => { const numerator = row.numerator === null ? null : Number(row.numerator); const denominator = row.denominator === null ? null : Number(row.denominator); return { id: row.id, code: row.code, uf: row.uf, name: row.name, numerator, denominator, value: value(numerator, denominator) }; });
@@ -319,7 +327,7 @@ export class ElectionsController {
       for (const item of items) { const sum = byUf.get(item.uf) ?? { numerator: 0, denominator: 0 }; byUf.set(item.uf, { numerator: sum.numerator === null || item.numerator === null ? null : sum.numerator + item.numerator, denominator: sum.denominator === null || item.denominator === null ? null : sum.denominator + item.denominator }); }
       items = [...byUf].map(([code, sum]) => ({ id: items.find((item) => item.uf === code)!.id.slice(0, 2), code, uf: code, name: code, ...sum, value: value(sum.numerator, sum.denominator) }));
     }
-    return mapValuesSchema.parse({ status: 'published', indicator, level, round, items: items.sort((a, b) => a.uf.localeCompare(b.uf) || a.name.localeCompare(b.name, 'pt-BR')) });
+    return mapValuesSchema.parse({ ...base, status: 'published', items: items.sort((a, b) => a.uf.localeCompare(b.uf) || a.name.localeCompare(b.name, 'pt-BR')), publications });
   }
 
   /**
@@ -367,7 +375,7 @@ export class ElectionsController {
       if (list.reduce((sum, value) => sum + value, 0) !== Number(row.valid)) throw new ServiceUnavailableException(`Válidos divergentes em ${row.key}.`);
       return { id: row.id, code: row.key, uf: row.uf, name: row.name, valid: Number(row.valid), votes: list };
     }).sort((a, b) => a.uf.localeCompare(b.uf) || a.name.localeCompare(b.name, 'pt-BR'));
-    return candidateMapSchema.parse({ ...base, status: 'published', candidates, items });
+    return candidateMapSchema.parse({ ...base, status: 'published', candidates, items, publications: [{ role: 'results', id: dataset.id }, { role: 'context', id: context.id }] });
   }
 
   /** Contexto do município: Censo 2022 (IBGE) e perfis do TSE como base própria; nada é estimado aqui, só lido da publicação. */
@@ -387,6 +395,40 @@ export class ElectionsController {
     const incomeBands = await this.incomeBands({ ibgeCode: (item.rows[0].result as { ibgeCode: string }).ibgeCode });
     try { return contextResponseSchema.parse({ status: 'published', dataset, item: item.rows[0].result, incomeBands }); }
     catch { throw new ServiceUnavailableException('Contexto municipal inconsistente.'); }
+  }
+
+  /**
+   * Associação local → setor dos locais do município (publicação `2022/places/tracts`), com o contexto do setor associado.
+   * Independe de cargo e turno (o prédio é o mesmo). O resumo soma locais e eleitores do cadastro de locais por situação.
+   */
+  @Get('municipalities/:code/place-tracts')
+  async placeTracts(@Param('code') code: string, @Query() query: Record<string, unknown>) {
+    if (!/^\d+$/.test(code)) throw new NotFoundException('Código municipal inválido.');
+    const parsed = placeTractsQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'Informe ano e UF do município.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    await this.database.check();
+    const empty = placeTractsSchema.parse({ status: 'awaiting-import', batchId: null, summary: null, items: [] });
+    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.polling_place_tracts')::text AS registry");
+    if (parsed.data.year !== '2022' || !registry.rows[0]?.registry) return empty;
+    const batch = await this.checkedPublication(TRACTS_SCOPE);
+    if (!batch) return empty;
+    const rows = await this.database.query<{ zone: number; code: string; status: typeof TRACT_STATUSES[number]; latitude: number | null; longitude: number | null; electors: number; shared: number; cd_setor: string | null; context: boolean; situation: string | null; residents: string | null; median: string | null }>(
+      `SELECT t.zone, t.place_code AS code, t.status, t.latitude, t.longitude, t.electors, t.shared_coordinate AS shared, t.cd_setor, c.cd_setor IS NOT NULL AS context,
+        c.situation, c.population::text AS residents, c.responsible_income_median::text AS median
+      FROM polling_place_tracts t LEFT JOIN census_tract_context c ON c.batch_id=t.batch_id AND c.cd_setor=t.cd_setor
+      WHERE t.batch_id=$1 AND t.uf=$2 AND t.municipality_code=$3 ORDER BY t.zone, t.place_code`, [batch.id, parsed.data.uf, code.padStart(5, '0')]);
+    if (!rows.rows.length) throw new NotFoundException('Município sem locais na associação publicada.');
+    // Setor associado sem o contexto gravado na mesma publicação é inconsistência, não setor sem dados.
+    if (rows.rows.some((row) => row.cd_setor !== null && !row.context)) throw new ServiceUnavailableException('Associação dos locais inconsistente.');
+    const summary = Object.fromEntries(TRACT_STATUSES.map((status) => [status, { places: 0, electors: 0 }]));
+    for (const row of rows.rows) { const item = summary[row.status]; if (item) { item.places++; item.electors += row.electors; } }
+    const items = rows.rows.map((row) => {
+      const median = row.median === null ? null : Number(row.median);
+      return { zone: row.zone, code: row.code, status: row.status, latitude: row.latitude, longitude: row.longitude, sharedCoordinate: row.shared,
+        tract: row.cd_setor === null ? null : { code: row.cd_setor, situation: row.situation || null, residents: row.residents === null ? null : Number(row.residents), incomeMedian: median, incomeBand: median === null ? null : incomeBandOf(median) } };
+    });
+    try { return placeTractsSchema.parse({ status: 'published', batchId: batch.id, summary, items }); }
+    catch { throw new ServiceUnavailableException('Associação dos locais inconsistente.'); }
   }
 
   @Get('municipalities/:code/places')

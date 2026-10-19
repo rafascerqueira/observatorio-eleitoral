@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { OFFICES, OFFICE_LABELS, type Office } from '@observatorio/contracts';
 import { getCatalog } from '../../lib/results';
+import { TRACT_STATUS_LABELS } from '../../lib/tracts';
 export const metadata: Metadata = { title: 'Fontes' };
 export const dynamic = 'force-dynamic';
 const date = (value: string) => new Date(value).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -43,7 +44,7 @@ export default async function Sources() {
       <details className="dataset-files"><summary>Arquivos preservados ({dataset.sources.length})</summary>{dataset.sources.map((source) => <article key={`${source.file}/${source.sha256}`}><h3>{source.file}</h3><p><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>Baixar original preservado</a> · <a href={source.url}>Repetir a consulta no IBGE</a></p><p>{source.entry} · SHA-256 <span className="source-hash">{source.sha256}</span></p></article>)}</details>
     </section>)}
     {(catalog?.tractsDatasets ?? []).map((dataset) => { const total = dataset.coverage.reduce((sum, item) => ({ places: sum.places + item.places, electors: sum.electors + item.electors, associated: sum.associated + (item.byStatus.associated?.electors ?? 0) }), { places: 0, electors: 0, associated: 0 });
-      const STATUS = { associated: 'Associado', 'no-coordinate': 'Sem coordenada', 'conflicting-coordinates': 'Coordenadas conflitantes', relocated: 'Seção realocada depois de 2022', 'outside-tracts': 'Fora dos setores', 'other-municipality': 'Em setor de outro município', ambiguous: 'Na divisa de setores' } as const;
+      const STATUS = TRACT_STATUS_LABELS;
       return <section key={dataset.id} id="setores"><h2>Locais de votação e setores censitários</h2><p>{dataset.scope}</p><p><strong>Método:</strong> {dataset.method}</p>
         <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · {total.places.toLocaleString('pt-BR')} locais, {(total.associated / total.electors * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% dos eleitores aptos em locais associados.</p>
         <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>

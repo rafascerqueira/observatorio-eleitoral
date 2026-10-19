@@ -180,8 +180,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
 
       <section className="principles" aria-label="Princípios de leitura">
         <article><span className="card-number">01</span><h2>Resultados, sem rótulos</h2><p>Os mesmos filtros e critérios para todas as candidaturas. A interpretação começa com você.</p></article>
-        <article><span className="card-number">02</span><h2>O território tem contexto</h2><p>Indicadores do IBGE serão apresentados na escala disponível, com definição e ano de referência.</p></article>
-        <article><span className="card-number">03</span><h2>Cada número, uma fonte</h2><p>Origem, cobertura e método de cálculo acompanharão cada conjunto publicado.</p></article>
+        <article><span className="card-number">02</span><h2>O território tem contexto</h2><p>Indicadores do IBGE aparecem na escala disponível, com definição e ano de referência.</p></article>
+        <article><span className="card-number">03</span><h2>Cada número, uma fonte</h2><p>Origem, cobertura e método de cálculo acompanham cada conjunto publicado.</p></article>
       </section>
     </>
   );

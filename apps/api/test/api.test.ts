@@ -21,6 +21,11 @@ let governorRounds = ['1', '2'];
 let stateOffice = 'governor';
 let trigram = true;
 let contextPublished = false;
+let tractsPublished = false;
+// Locais e setores sintéticos (códigos de formato real, valores fictícios) para o contrato da associação local → setor.
+const tractRow = (zone: number, code: string, status: string, setor: string | null, median: string | null) => ({ zone, code, status, latitude: setor ? -23.5 : null, longitude: setor ? -46.6 : null,
+  electors: 100, shared: 0, cd_setor: setor, context: setor !== null, situation: setor ? 'Urbana' : null, residents: setor ? '500' : null, median });
+let tractRows: Array<ReturnType<typeof tractRow>> = [];
 // Contexto sintético mínimo (valores fictícios, só para o contrato HTTP).
 const distribution = (kind: string, total: number | null) => ({ kind, source: 'teste', total, categories: [{ key: 'a', label: 'A', value: total }] });
 const contextItem = { code: '71072', name: 'SÃO PAULO', uf: 'SP', ibgeCode: '3550308', ibgeName: 'São Paulo', population: { total: 10, age16plus: 8, age16to17: 1, age18to69: 6, age70plus: 1 },
@@ -44,6 +49,11 @@ before(async () => {
       if (published) {
         if (sql.includes('to_regclass')) return { rows: [{ registry: 'import_batches' }] };
         if (sql.includes('pg_extension')) return { rows: [{ installed: trigram }] };
+        if (sql.includes('scope=$1') && parameters[0] === '2022/places/tracts') return { rows: tractsPublished ? [{ id: 'e'.repeat(64), metadata: {} }] : [] };
+        if (sql.includes('scope=$1') && parameters[0] === '2022/context/municipal') return { rows: contextPublished ? [{ id: 'd'.repeat(64), metadata: {} }] : [] };
+        if (sql.includes('FROM polling_place_tracts')) return { rows: parameters[2] === '71072' ? tractRows : [] };
+        if (sql.includes("->'totals'->>'abstentions'")) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', numerator: '2', denominator: '10' }] };
+        if (sql.includes('FROM municipality_indicators')) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', numerator: '9', denominator: '10' }] };
         if (sql.includes("scope='2022/context/municipal'")) return { rows: contextPublished ? [{ metadata: contextDataset }] : [] };
         if (sql.includes('FROM municipality_context')) return { rows: parameters[2] === '71072' ? [{ result: contextItem }] : [] };
         if (sql.includes('word_similarity')) return { rows: [{ code: '71072', name: 'SÃO PAULO', uf: 'SP', match: 'prefix' }] };
@@ -294,6 +304,49 @@ test('publicação presidencial de 2022 nunca atende a ano diferente, inclusive 
     }
     assert.equal((await fetch(`${base}/elections/national?year=2022`)).status, 200, 'A publicação correta continua disponível');
   } finally { published = false; national = false; }
+});
+
+test('associação local → setor: exige UF, separa ausência de publicação e valida situação, setor e resumo', async () => {
+  for (const query of ['', 'uf=ZZ', 'uf=SP&round=1', 'uf=SP&year=2024', 'uf=SP&office=governor']) assert.equal((await fetch(`${base}/elections/municipalities/71072/place-tracts?${query}`)).status, 400, query);
+  assert.equal((await fetch(`${base}/elections/municipalities/abc/place-tracts?uf=SP`)).status, 404);
+  assert.equal((await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).json()).status, 'awaiting-import');
+  published = true; tractsPublished = true; queries.length = 0;
+  tractRows = [tractRow(1, '1015', 'associated', '355030807000234', '1515.5'), tractRow(1, '1023', 'associated', '355030890000197', null), tractRow(2, '1040', 'no-coordinate', null, null)];
+  try {
+    const data = await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).json();
+    assert.equal(data.status, 'published'); assert.equal(data.batchId, 'e'.repeat(64));
+    assert.deepEqual(data.summary.associated, { places: 2, electors: 200 }); assert.deepEqual(data.summary['no-coordinate'], { places: 1, electors: 100 });
+    assert.deepEqual(data.summary.relocated, { places: 0, electors: 0 }, 'Situação sem locais é contagem zero, não ausente');
+    assert.deepEqual(data.items[0].tract, { code: '355030807000234', situation: 'Urbana', residents: 500, incomeMedian: 1515.5, incomeBand: 2 });
+    assert.equal(data.items[1].tract.incomeMedian, null); assert.equal(data.items[1].tract.incomeBand, null, 'Mediana omitida pelo IBGE continua null');
+    assert.equal(data.items[2].tract, null); assert.equal(data.items[2].latitude, null);
+    assert.deepEqual(queries.find((query) => query.sql.includes('FROM polling_place_tracts'))!.parameters, ['e'.repeat(64), 'SP', '71072']);
+    queries.length = 0;
+    assert.equal((await fetch(`${base}/elections/municipalities/2550/place-tracts?uf=AM`)).status, 404, 'Município fora da associação');
+    assert.deepEqual(queries.find((query) => query.sql.includes('FROM polling_place_tracts'))!.parameters.slice(1), ['AM', '02550'], 'Código TSE com zeros iniciais');
+    assert.equal((await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP&year=2026`)).json()).status, 'awaiting-import');
+    tractRows = [{ ...tractRow(1, '1015', 'associated', '355030807000234', '1000'), context: false }];
+    assert.equal((await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).status, 503, 'Setor sem contexto gravado é inconsistência');
+    tractRows = [tractRow(1, '1015', 'no-coordinate', '355030807000234', '1000')];
+    assert.equal((await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).status, 503, 'Setor em local não associado é inconsistência');
+  } finally { published = false; tractsPublished = false; tractRows = []; }
+});
+
+test('abstenção do mapa usa aptos e turnos do próprio cargo; cargo estadual exige UF; Censo não depende de cargo', async () => {
+  assert.deepEqual((await (await fetch(`${base}/elections/map/values?indicator=abstention&office=governor`)).json()).fields, ['uf']);
+  assert.equal((await fetch(`${base}/elections/map/values?indicator=abstention&office=deputies&uf=SP`)).status, 400);
+  published = true; governor = true; contextPublished = true; governorRounds = ['1']; queries.length = 0;
+  try {
+    const data = await (await fetch(`${base}/elections/map/values?indicator=abstention&office=governor&uf=SP`)).json();
+    assert.equal(data.status, 'published'); assert.equal(data.office, 'governor'); assert.equal(data.items[0].value, 20);
+    assert.deepEqual(data.publications, [{ role: 'results', id: 'c'.repeat(64) }, { role: 'context', id: 'd'.repeat(64) }]);
+    const select = queries.find((query) => query.sql.includes("->'totals'->>'abstentions'"))!;
+    assert.match(select.sql, /m\.office=\$5/); assert.deepEqual(select.parameters, ['c'.repeat(64), '1', 'SP', 'd'.repeat(64), 'governor']);
+    assert.equal((await (await fetch(`${base}/elections/map/values?indicator=abstention&office=governor&uf=SP&round=2`)).json()).status, 'round-not-held');
+    assert.equal((await (await fetch(`${base}/elections/map/values?indicator=abstention&office=governor&uf=RJ`)).json()).status, 'awaiting-import', 'Outra UF não herda a publicação de SP');
+    const census = await (await fetch(`${base}/elections/map/values?indicator=literacy-15&office=governor`)).json();
+    assert.equal(census.status, 'published'); assert.equal(census.office, undefined); assert.deepEqual(census.publications, [{ role: 'context', id: 'd'.repeat(64) }]);
+  } finally { published = false; governor = false; contextPublished = false; governorRounds = ['1', '2']; }
 });
 
 test('contexto inconsistente não é publicado como ausência na fonte', async () => {

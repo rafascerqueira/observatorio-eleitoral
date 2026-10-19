@@ -38,6 +38,8 @@ export function queryErrors(query: RawQuery, issues: readonly Issue[], mode: 'mu
     round: 'Escolha o 1º ou o 2º turno.',
     radius: 'O raio da associação local → setor aceita 250, 500 ou 1000 metros; os filtros acima voltam à associação publicada.',
     office: 'Escolha um cargo disponível no seletor: Presidência, Governador ou Senador.',
+    indicator: 'Escolha um indicador disponível no seletor.',
+    series: 'Escolha a abstenção ou uma candidatura do seletor “Comparar com”.',
     uf: mode === 'places' ? 'A UF do endereço é inválida. Uma nova busca remove esse valor; volte à consulta municipal para escolher outra UF.' : 'Escolha Todo o Brasil ou uma das 27 UFs.',
     zone: 'Informe uma zona de 1 a 9999, usando apenas números. Zeros iniciais são aceitos.',
     section: 'Informe uma seção de 1 a 99999, usando apenas números. Zeros iniciais são aceitos.',

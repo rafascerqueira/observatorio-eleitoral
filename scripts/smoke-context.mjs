@@ -74,7 +74,8 @@ assert.deepEqual([abstentionSp.numerator, abstentionSp.denominator], [stateSp.su
 await request(api, '/elections/map/values?indicator=renda', 400); await request(api, '/elections/map/values', 400);
 const mapPage = await html('/mapa');
 assert.equal((mapPage.match(/<figure class="choropleth"/g) ?? []).length, 2);
-for (const text of ['Moradores com rendimento domiciliar per capita de até ½ salário mínimo', 'Abstenção na Presidência — 1º turno', 'Quintis', 'não demonstram relação de causa', 'Tabela dos mapas']) assert.ok(mapPage.includes(text), text);
+// Série padrão: abstenção da Presidência (desde 19/10/2026 o cargo é escolhido no formulário).
+for (const text of ['Moradores com rendimento domiciliar per capita de até ½ salário mínimo', 'Abstenção — Presidência, 1º turno', 'Quintis', 'não significam relação de causa', 'Tabela dos mapas', 'class="scatter-figure"']) assert.ok(mapPage.includes(text), text);
 assert.ok((await html('/mapa?uf=PE')).includes('Fernando de Noronha'));
 // Fase 3: locais → setores (v3, mesma associação da v2 com proveniência) e grupos de locais (métrica E).
 if (catalog.tractsDatasets?.length) {
@@ -201,5 +202,38 @@ assert.ok((await html('/municipios/71072?uf=SP&round=1')).includes('Estado civil
   assert.equal((await json('/elections/map/candidates?office=senator&uf=SP&round=2')).status, 'round-not-held');
   const page = await html('/mapa/candidaturas?office=governor&uf=SP&round=2');
   for (const text of ['Votação por candidatura — São Paulo', 'mesma escala em todos os mapas', 'maioria absoluta dos votos válidos']) assert.ok(page.includes(text), text);
+}
+// Série comparada em /mapa (19/10/2026): abstenção do cargo escolhido = consolidado publicado da UF; candidatura; dispersão e CSV.
+{
+  for (const [office, round] of [['governor', '2'], ['senator', '1']]) {
+    const values = await json(`/elections/map/values?indicator=abstention&office=${office}&uf=SP&round=${round}`);
+    const state = await json(`/elections/state?office=${office}&uf=SP&round=${round}`);
+    assert.equal(values.office, office);
+    assert.deepEqual([sum(values.items, 'numerator'), sum(values.items, 'denominator')], [state.summary.totals.abstentions, state.summary.totals.eligible], `Abstenção de ${office} = resultado publicado da UF`);
+  }
+  assert.equal((await json('/elections/map/values?indicator=abstention&office=senator&uf=SP&round=2')).status, 'round-not-held');
+  await request(api, '/elections/map/values?indicator=abstention&office=governor', 400);
+  const page = await html('/mapa?uf=SP&office=governor&round=2&series=13');
+  for (const text of ['Comparar com', 'FERNANDO HADDAD (13) — % dos votos válidos', 'class="scatter-figure"', 'Escala fixa, igual em todos os recortes', 'não traça tendência', 'Baixar estes dados (CSV)']) assert.ok(page.includes(text), text);
+  const dots = (page.match(/class="scatter-dot"/g) ?? []).length;
+  assert.ok(dots === 645 || page.includes(`${645 - dots} unidades sem um dos dois valores`), 'Um ponto por município com os dois valores; os demais declarados');
+  assert.ok((await html('/mapa?uf=SP&office=governor&series=99')).includes('não está em Governador'));
+  const lines = (await (await request(web, '/mapa/dados.csv?uf=SP&office=governor&round=2&series=13&indicator=literacy-15')).text()).replace(/^﻿/, '').trimEnd().split('\r\n');
+  assert.equal(lines.length, 646); assert.ok(lines[0].startsWith('uf;codigo_tse;codigo_ibge;nome;'));
+  const governor = await json('/elections/map/candidates?office=governor&uf=SP&round=2');
+  assert.equal(lines.slice(1).reduce((total, line) => total + Number(line.split(';')[9]), 0), governor.candidates.find((item) => item.number === '13').votes, 'CSV soma os votos publicados da candidatura');
+  await request(web, '/mapa/dados.csv?uf=SP&office=governor&series=99', 400);
+}
+// Associação local → setor por local (São Paulo: 2.049 locais no cadastro, 2.030 associados; conferido no banco em 19/10/2026).
+if (catalog.tractsDatasets?.length) {
+  const tracts = await json('/elections/municipalities/71072/place-tracts?uf=SP');
+  assert.equal(tracts.items.length, 2049); assert.equal(tracts.summary.associated.places, 2030);
+  assert.equal(sum(Object.values(tracts.summary), 'places'), tracts.items.length);
+  assert.equal(tracts.items.find((item) => item.zone === 1 && item.code === '1015').tract.code, '355030807000234');
+  await request(api, '/elections/municipalities/71072/place-tracts', 400);
+  const page = await html('/municipios/71072?uf=SP&round=1');
+  for (const text of ['Setor censitário 355030807000234', 'Locais deste município por situação da associação', 'não os eleitores que votam nele']) assert.ok(page.includes(text), text);
+  assert.ok(!page.includes('Não há associação socioeconômica validada'));
+  assert.ok(!(await html('/metodologia')).includes('O método geográfico ainda não foi definido'));
 }
 console.log(`Smoke do contexto municipal aprovado: ${requests} requisições.`);

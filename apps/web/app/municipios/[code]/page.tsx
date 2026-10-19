@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { placesQuerySchema, OFFICE_LABELS, SINGLE_ROUND_OFFICES } from '@observatorio/contracts';
-import { getCatalog, getContext, getPlaces } from '../../../lib/results';
+import { getCatalog, getContext, getPlaceTracts, getPlaces } from '../../../lib/results';
 import { MunicipalityContextPanel } from '../../../components/municipality-context';
 import { availabilityFromCatalog, roundOptions } from '../../../lib/rounds';
 import { RoundField } from '../../../components/round-field';
@@ -13,6 +13,7 @@ import { ErrorSummary, FieldError, QuerySelect } from '../../../components/query
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from '../../../lib/query-ui';
 import { overviewHref } from '../../../lib/query-navigation';
 import { NonValidVotesTable } from '../../../components/non-valid-votes';
+import { PlaceTractDetails, TractSummaryTable } from '../../../components/place-tract';
 
 export const dynamic = 'force-dynamic';
 export default async function Municipality({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -25,9 +26,13 @@ export default async function Municipality({ params, searchParams }: { params: P
   const parsed = placesQuerySchema.safeParse({ ...query, pageSize: query.pageSize ?? '10' });
   const filters = parsed.success ? parsed.data : placesQuerySchema.parse({ ...recoverQuery(query, 'places'), pageSize: recoverQuery(query, 'places').pageSize ?? '10' });
   const scopeError = officeScopeError(filters.office, filters.uf);
-  // Contexto (IBGE e perfis do TSE) só para municípios brasileiros com UF conhecida; o exterior não tem correspondência com o IBGE.
-  const [response, catalog, context] = await Promise.all([parsed.success && !scopeError ? getPlaces(code, filters) : null, getCatalog(),
-    filters.uf && filters.uf !== 'ZZ' ? getContext(code, filters.uf, filters.year) : null]);
+  // Contexto (IBGE e perfis do TSE) e setor de cada local só para municípios brasileiros com UF conhecida; o exterior não tem correspondência com o IBGE.
+  const domestic = filters.uf && filters.uf !== 'ZZ' ? filters.uf : null;
+  const [response, catalog, context, tracts] = await Promise.all([parsed.success && !scopeError ? getPlaces(code, filters) : null, getCatalog(),
+    domestic ? getContext(code, domestic, filters.year) : null, domestic ? getPlaceTracts(code, domestic, filters.year) : null]);
+  // A associação vale para todos os cargos e turnos (mesmo prédio): chave zona + código do local.
+  const tractData = tracts?.kind === 'ready' && tracts.data.status === 'published' ? tracts.data : null;
+  const tractByPlace = new Map(tractData?.items.map((item) => [`${item.zone}/${item.code}`, item]) ?? []);
   const availability = availabilityFromCatalog(catalog?.datasets ?? []);
   const rounds = roundOptions(availability, filters.office, filters.uf);
   const errors = [...(parsed.success ? [] : queryErrors(query, parsed.error.issues, 'places')), ...(scopeError ? [scopeError] : [])];
@@ -54,6 +59,7 @@ export default async function Municipality({ params, searchParams }: { params: P
     {context?.kind === 'ready' && context.data.status === 'published' && <MunicipalityContextPanel item={context.data.item} incomeBands={context.data.incomeBands} round={filters.round} sourcesHref="/fontes#contexto" />}
     {context?.kind === 'unavailable' && <p className="notice" role="status">Não foi possível consultar ou validar o contexto do município. Isso é uma indisponibilidade técnica ou inconsistência da resposta, não ausência de dados na fonte. Tente novamente; os resultados eleitorais têm consulta própria.</p>}
     {context?.kind === 'ready' && context.data.status === 'awaiting-import' && <p className="notice" role="status">Contexto municipal ainda sem publicação para este ano.</p>}
+    {tracts?.kind === 'unavailable' && <p className="notice" role="status">Não foi possível consultar ou validar a associação dos locais a setores censitários. Isso é uma indisponibilidade técnica ou inconsistência da resposta, não ausência de dados; os resultados dos locais têm consulta própria.</p>}
     <section className="explorer place-search" aria-labelledby="localizar">
       <div className="section-heading"><div><p className="eyebrow">{exterior ? 'BUSCA NA LOCALIDADE DO EXTERIOR' : 'BUSCA NO MUNICÍPIO'}</p><h2 id="localizar">Localizar um local de votação</h2></div></div>
       <p id="search-help" className="query-note">Combine zona e seção para localizar sua unidade. Também é possível buscar pelo código do local, nome ou endereço, com ou sem acentos.</p>
@@ -83,7 +89,9 @@ export default async function Municipality({ params, searchParams }: { params: P
     {/* Só há navegação entre turnos quando o recorte teve dois; a explicação do turno único aparece já no 1º turno. */}
     {rounds.rounds.length > 1 ? <nav className="pagination round-navigation" aria-label="Selecionar turno">{rounds.rounds.map((round) => <Link key={round} href={placesHref(code, filters, { round, page: 1 })} transitionTypes={round === filters.round ? undefined : [round > filters.round ? 'round-next' : 'round-prev']} aria-current={filters.round === round ? 'page' : undefined}>{round}º turno de {filters.year}</Link>)}</nav>
       : <RoundNote decided={rounds.decided} office={officeLabel} place={filters.uf && filters.uf !== 'ZZ' ? `em ${UF_NAMES[filters.uf]}` : 'nesta UF'}>{filters.round !== '1' && <> <Link href={placesHref(code, filters, { round: '1', page: 1 })}>Ver o 1º turno</Link>.</>}</RoundNote>}
-    <details className="notice place-context"><summary>Como interpretar os locais e seus dados</summary><p>Local de votação é onde o eleitor vota, não onde mora. O código do local só é único junto com a zona eleitoral. Prédios compartilhados entre zonas não foram unificados.</p><p>Aptos, comparecimento e abstenção por local não estão disponíveis neste recorte. Não há associação socioeconômica validada.</p></details>
+    <details className="notice place-context"><summary>Como interpretar os locais e seus dados</summary><p>Local de votação é onde o eleitor vota, não onde mora. O código do local só é único junto com a zona eleitoral. Prédios compartilhados entre zonas não foram unificados.</p><p>Aptos, comparecimento e abstenção por local não estão disponíveis neste recorte.</p>
+      {exterior ? <p>Locais do exterior não têm setor censitário do IBGE.</p> : <><p>Cada local mostra o setor censitário do Censo 2022 que contém o seu ponto no cadastro do TSE, quando a associação é possível; nos demais casos, nenhum setor é escolhido. O setor descreve o entorno do prédio, não os eleitores que votam nele. <Link href="/metodologia#perfis">Como a associação é feita</Link>.</p>
+        {tractData ? <TractSummaryTable summary={tractData.summary} /> : tracts?.kind === 'missing' ? <p>Este município não tem locais na associação publicada.</p> : tracts?.kind === 'ready' ? <p>Associação a setores ainda sem publicação para esta eleição.</p> : null}</>}</details>
     <section id="resultados" className="places-results" aria-labelledby="resultados-titulo" tabIndex={-1}>
       <h2 id="resultados-titulo">Locais encontrados</h2>
       <p className="query-note places-scope">{filters.section ? <>A seção {filters.section}{filters.zone ? ` da zona ${filters.zone}` : ''} é usada para localizar o local. </> : null}Os resultados exibidos são do <strong>local inteiro</strong>. Percentuais de candidaturas usam os votos válidos do local.</p>
@@ -96,6 +104,7 @@ export default async function Municipality({ params, searchParams }: { params: P
         <p className="eyebrow">ZONA {place.zone} · LOCAL {place.code}</p><h3>{place.name ?? 'Nome indisponível'}</h3><p>{place.address ?? 'Endereço indisponível'} · {number(place.sections)} seção(ões).</p>
         {filters.section && <p className="section-match">Seção {filters.section} encontrada neste local.</p>}
         <details className="place-sections" open={filters.section !== undefined}><summary>Ver seções deste local ({place.sectionNumbers.length})</summary><ul aria-label={`Seções do local ${place.code}, zona ${place.zone}`}>{place.sectionNumbers.map((section) => <li key={section}><Link className={`section-tag${section === filters.section ? ' is-selected' : ''}`} href={placesHref(code, filters, { zone: place.zone, section, page: 1 })} aria-label={`Localizar zona ${place.zone}, seção ${section}`} aria-current={section === filters.section ? 'true' : undefined} data-section={section}>{section}</Link></li>)}</ul></details>
+        {tractData && <PlaceTractDetails item={tractByPlace.get(`${place.zone}/${place.code}`)} />}
         {place.metadataConflict && <details><summary>Metadados divergentes na fonte</summary><p>O mesmo código eleitoral aparece com nomes ou endereços diferentes. Os campos divergentes permanecem indisponíveis.</p><ul>{place.metadataVariants.map((variant, index) => <li key={index}>{variant.name ?? 'Nome ausente'} · {variant.address ?? 'Endereço ausente'}</li>)}</ul></details>}
         <p>Válidos: {number(place.totals.valid)} · Brancos: {number(place.totals.blank)} · Nulos: {number(place.totals.null)}{place.totals.technicalNull ? ` (dos quais nulos técnicos: ${number(place.totals.technicalNull)})` : ''}{place.totals.annulled ? ` · Anulados: ${number(place.totals.annulled)}` : ''}{place.totals.annulledSubJudice ? ` · Anulados sub judice: ${number(place.totals.annulledSubJudice)}` : ''}.</p>
         <table><caption className="sr-only">Candidaturas no local {place.code}, zona {place.zone}</caption><thead><tr><th scope="col">Candidatura</th><th scope="col">Votos</th><th scope="col">% válidos</th></tr></thead><tbody>{place.candidates.map((candidate) => <tr key={candidate.number}><th scope="row">{candidate.name} ({candidate.party})</th><td>{number(candidate.votes)}</td><td>{candidate.percentValid === null ? 'Indisponível' : `${candidate.percentValid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`}</td></tr>)}</tbody></table>

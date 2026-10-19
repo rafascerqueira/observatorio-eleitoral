@@ -249,17 +249,35 @@ export const MAP_INDICATORS = {
   'income-upto-half-mw': { label: 'Moradores com rendimento domiciliar per capita de até ½ salário mínimo (inclui sem rendimento)', source: 'IBGE, Censo 2022 — SIDRA 10296', kind: 'amostra', family: 'ibge' },
   'college-18': { label: 'Pessoas de 18 anos ou mais com superior completo', source: 'IBGE, Censo 2022 — SIDRA 10061', kind: 'amostra', family: 'ibge' },
   'literacy-15': { label: 'Pessoas de 15 anos ou mais alfabetizadas', source: 'IBGE, Censo 2022 — SIDRA 9542', kind: 'universo', family: 'ibge' },
-  abstention: { label: 'Abstenção (abstenções ÷ eleitores aptos)', source: 'TSE, resultados da Presidência 2022 reconciliados', kind: 'resultados', family: 'tse' },
+  abstention: { label: 'Abstenção (abstenções ÷ eleitores aptos)', source: 'TSE, resultados de 2022 reconciliados, do cargo escolhido', kind: 'resultados', family: 'tse' },
 } as const;
 export type MapIndicator = keyof typeof MAP_INDICATORS;
 export const MAP_INDICATOR_KEYS = Object.keys(MAP_INDICATORS) as [MapIndicator, ...MapIndicator[]];
-export const mapQuerySchema = z.object({ year: z.enum(['2022', '2026']).default('2022'), round: z.enum(['1', '2']).default('1'), uf: z.enum(STATES).optional(), indicator: z.enum(MAP_INDICATOR_KEYS) }).strict();
+/** Indicadores do Censo (lado esquerdo de `/mapa`); a abstenção é uma das séries comparadas. */
+export const CENSUS_MAP_INDICATORS = MAP_INDICATOR_KEYS.filter((key) => MAP_INDICATORS[key].family === 'ibge') as [MapIndicator, ...MapIndicator[]];
+export const mapQuerySchema = z.object({ year: z.enum(['2022', '2026']).default('2022'), round: z.enum(['1', '2']).default('1'), uf: z.enum(STATES).optional(), indicator: z.enum(MAP_INDICATOR_KEYS),
+  // Cargo dos resultados na abstenção (cargo estadual exige UF); os indicadores do Censo não dependem de cargo.
+  office: z.enum(OFFICES).default('president') }).strict();
+/** Publicações lidas numa resposta de mapa: resultados do TSE e contexto municipal (Censo e correspondência TSE–IBGE). */
+export const mapPublicationsSchema = z.array(z.object({ role: z.enum(['results', 'context']), id: z.string().regex(/^[a-f0-9]{64}$/) }));
 export const mapValuesSchema = z.object({
-  status: z.enum(['published', 'awaiting-import']), indicator: z.enum(MAP_INDICATOR_KEYS), level: z.enum(['uf', 'municipality']), round: z.enum(['1', '2']),
+  status: z.enum(['published', 'awaiting-import', 'round-not-held']), indicator: z.enum(MAP_INDICATOR_KEYS), level: z.enum(['uf', 'municipality']), round: z.enum(['1', '2']),
+  // Só na abstenção: cargo dos resultados. Ausente nas respostas anteriores, que eram sempre da Presidência.
+  office: z.enum(OFFICES).optional(),
   // `id`: código IBGE (polígono); `code`: UF ou código TSE do município. Valor `null` quando numerador ou denominador faltam.
   items: z.array(z.object({ id: z.string(), code: z.string(), uf: z.enum(STATES), name: z.string(), numerator: sourceCount, denominator: sourceCount, value: z.number().min(0).max(100).nullable() })),
+  publications: mapPublicationsSchema.optional(),
 });
 export type MapValues = z.infer<typeof mapValuesSchema>;
+/**
+ * Página `/mapa` e sua exportação: indicador do Censo × série comparada — a abstenção do cargo ou o % dos válidos de uma
+ * candidatura do recorte, pelo número de urna. A série padrão é a abstenção: o site não escolhe candidatura.
+ */
+export const mapPageQuerySchema = mapQuerySchema.extend({
+  indicator: z.enum(CENSUS_MAP_INDICATORS).default('income-upto-half-mw'),
+  series: z.union([z.literal('abstention'), z.string().regex(/^\d{2,5}$/)]).default('abstention'),
+}).strict();
+export type MapPageQuery = z.infer<typeof mapPageQuerySchema>;
 /**
  * Mapa por candidatura: % dos votos válidos de cada candidatura em cada unidade (UF ou município), numa escala fixa igual para
  * todas as candidaturas, cargos e territórios (limite superior incluído). 50% marca a maioria absoluta dos válidos na unidade.
@@ -272,6 +290,7 @@ export const candidateMapSchema = z.object({
   candidates: z.array(z.object({ number: z.string(), name: z.string(), party: z.string(), votes: nonnegative, percentValid: z.number().nullable() })),
   // `id`: código IBGE do polígono; `valid`: votos válidos da unidade (denominador). O exterior não tem polígono e fica fora.
   items: z.array(z.object({ id: z.string(), code: z.string(), uf: z.enum(STATES), name: z.string(), valid: nonnegative, votes: z.array(nonnegative) })),
+  publications: mapPublicationsSchema.optional(),
 });
 export type CandidateMap = z.infer<typeof candidateMapSchema>;
 export const mapGeometrySchema = z.object({ status: z.enum(['published', 'awaiting-import']), level: z.enum(['uf', 'municipality']), uf: z.string(), batchId: z.string().nullable(), topology: z.unknown() });
@@ -283,6 +302,32 @@ export const tractsDatasetSchema = z.object({
   scope: z.string(), method: z.string(), notes: z.array(z.string()),
   coverage: z.array(z.object({ uf: z.enum(STATES), places: nonnegative, electors: nonnegative, sharedCoordinate: nonnegative, byStatus: z.record(z.enum(TRACT_STATUSES), statusCountSchema) })),
 });
+/**
+ * Associação local → setor dos locais de um município (publicação `2022/places/tracts`). Vem do cadastro de locais do 1º turno
+ * e vale para todos os cargos (o prédio é o mesmo). Setor e contexto só existem para local associado; nos demais, nada é escolhido.
+ */
+export const placeTractsQuerySchema = municipalityQuerySchema.pick({ year: true }).extend({ uf: z.enum(STATES) }).strict();
+export const placeTractSchema = z.object({
+  zone: z.number().int().positive(), code: z.string(), status: z.enum(TRACT_STATUSES),
+  // Coordenada do cadastro do TSE, quando única para o local: indica onde fica o prédio, não onde moram os eleitores.
+  latitude: z.number().min(-90).max(90).nullable(), longitude: z.number().min(-180).max(180).nullable(),
+  // Outros locais do município, de nome diferente, na mesma coordenada exata (indício de ponto padrão).
+  sharedCoordinate: nonnegative,
+  // Setor do Censo 2022 (universo): pessoas residentes (V0001) e mediana do rendimento do responsável com rendimento (V06006),
+  // na faixa fixa de `INCOME_BANDS`; `null` quando o IBGE omite o valor. Situação urbana/rural da malha.
+  tract: z.object({ code: z.string().regex(/^\d{15}$/), situation: z.string().nullable(), residents: sourceCount, incomeMedian: z.number().nonnegative().nullable(), incomeBand: z.number().int().min(1).max(5).nullable() }).nullable(),
+}).superRefine((item, ctx) => {
+  if ((item.status === 'associated') !== (item.tract !== null)) ctx.addIssue({ code: 'custom', message: 'Setor só existe para local associado.' });
+  if (item.tract && item.tract.incomeBand !== (item.tract.incomeMedian === null ? null : incomeBandOf(item.tract.incomeMedian))) ctx.addIssue({ code: 'custom', message: 'Faixa de renda diverge da mediana do setor.' });
+});
+export type PlaceTract = z.infer<typeof placeTractSchema>;
+export const placeTractsSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('awaiting-import'), batchId: z.null(), summary: z.null(), items: z.array(z.never()).length(0) }),
+  // `summary`: locais e eleitores (cadastro de locais) do município em cada situação; soma = todos os locais da lista.
+  z.object({ status: z.literal('published'), batchId: z.string(), summary: z.record(z.enum(TRACT_STATUSES), statusCountSchema), items: z.array(placeTractSchema) })
+    .refine((data) => Object.values(data.summary).reduce((sum, item) => sum + item.places, 0) === data.items.length, 'Resumo da associação não soma os locais.'),
+]);
+export type PlaceTracts = z.infer<typeof placeTractsSchema>;
 export const placeProfilesDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('place-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),

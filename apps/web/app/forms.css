@@ -176,6 +176,29 @@
 .dot-axis { position: relative; height: 16px; margin-inline: 8px; border-top: 1px solid var(--border); }
 .dot-axis span { position: absolute; top: 2px; transform: translateX(-50%); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 @media (max-width: 480px) { .dot-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } .dot-axis-row .dot-name { display: none; } }
+/* Dispersão de /mapa: HTML posicionado, eixos a partir de zero; o anel separa pontos sobrepostos e o alvo do mouse passa de 24 px. */
+.scatter-figure { margin: 18px 28px; max-width: 760px; }
+.scatter-figure figcaption { display: grid; gap: 2px; margin-bottom: 8px; }
+.scatter { font-size: 11px; color: var(--muted); }
+.scatter-y-title, .scatter-x-title { margin: 0; font-size: 12px; color: var(--muted); }
+.scatter-x-title { text-align: right; margin-right: 14px; }
+.scatter-body { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; }
+.scatter-y-axis { position: relative; width: 36px; margin-top: 14px; }
+.scatter-y-axis span { position: absolute; right: 0; transform: translateY(50%); font-variant-numeric: tabular-nums; }
+.scatter-plot { position: relative; aspect-ratio: 3 / 2; margin: 14px 14px 0 0; border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.scatter-grid { position: absolute; background: var(--soft); }
+.scatter-grid.is-x { top: 0; bottom: 0; width: 1px; }
+.scatter-grid.is-y { left: 0; right: 0; height: 1px; }
+.scatter-dot { position: absolute; border-radius: 50%; background: var(--teal); opacity: .85; box-shadow: 0 0 0 2px var(--surface); transform: translate(-50%, 50%); }
+.scatter-dot::before { content: ''; position: absolute; inset: -8px; border-radius: 50%; }
+.scatter-dot:hover { opacity: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--ink); }
+.scatter-x-axis { grid-column: 2; position: relative; height: 18px; margin-right: 14px; }
+.scatter-x-axis span { position: absolute; top: 2px; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+/* Setor censitário no cartão do local: fatos curtos em lista de definição. */
+.tract-facts { display: grid; gap: 6px; margin: 10px 0; }
+.tract-facts div { display: grid; gap: 0; }
+.tract-facts dt { color: var(--muted); font-size: 12px; }
+.tract-facts dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 /* Filtros aplicados: chips; remover é um link GET. */
 .applied-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
 .applied-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -229,7 +252,7 @@
   .context-section { margin-inline: 18px; }
   .choropleth-pair { grid-template-columns: minmax(0, 1fr); padding-inline: 18px; }
   .candidate-maps, .shared-legend, .map-tabs { padding-inline: 18px; }
-  .dot-figure { margin-inline: 18px; }
+  .dot-figure, .scatter-figure { margin-inline: 18px; }
   .section-heading .badge-round { margin-left: 0; }
   .query-context, .query-errors { margin-inline: 18px; }
   .installation-note, .exterior-cities { margin-inline: 18px; }
@@ -249,7 +272,7 @@
   ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) { animation: none !important; }
 }
 @media (forced-colors: active) {
-  .dot, .dot-legend .swatch { forced-color-adjust: none; }
+  .dot, .dot-legend .swatch, .scatter-dot { forced-color-adjust: none; }
   .choropleth-area { forced-color-adjust: none; }
   .swatch { forced-color-adjust: none; }
   .segmented::before { display: none; }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CANDIDATE_MAP_CUTS, candidateMapQuerySchema, OFFICES, OFFICE_LABELS, percent, STATES, type CandidateMap, type MapValues } from '@observatorio/contracts';
+import { candidateSeries } from '../../../lib/map-series';
 import { getCandidateMap, getCatalog, getMapGeometry } from '../../../lib/results';
 import { QueryForm } from '../../../components/query-form';
 import { ErrorSummary, QuerySelect } from '../../../components/query-fields';
@@ -37,8 +38,7 @@ export default async function CandidateMaps({ searchParams }: { searchParams: Pr
   const href = (item: { code: string; uf: string }) => level === 'uf' ? `/mapa/candidaturas?${new URLSearchParams({ office: filters.office, round: filters.round, uf: item.uf })}`
     : `/municipios/${item.code}?${new URLSearchParams({ uf: item.uf, round: filters.round, office: filters.office })}`;
   // Cada candidatura vira uma série de valores no formato do mapa (% dos válidos da unidade; sem válidos, sem dado).
-  const series = (data: CandidateMap, index: number): MapValues['items'] => data.items.map((item) => ({ id: item.id, code: item.code, uf: item.uf, name: name(item),
-    numerator: item.votes[index]!, denominator: item.valid, value: percent(item.votes[index]!, item.valid) }));
+  const series = (data: CandidateMap, index: number): MapValues['items'] => candidateSeries(data, index).map((item) => ({ ...item, name: level === 'uf' ? UF_NAMES[item.uf] : item.name }));
   const ufChoices = [{ value: '', label: 'Brasil, por UF' }, ...[...STATES].sort((a, b) => UF_NAMES[a].localeCompare(UF_NAMES[b], 'pt-BR')).map((uf) => ({ value: uf as string, label: `${UF_NAMES[uf]}, por município` }))];
   return <>
     <section className="hero places-hero"><p className="eyebrow">MAPA · ELEIÇÕES 2022</p><h1>Votação por candidatura — {place}</h1>

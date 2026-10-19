@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022, placeGroupBandOf, placeGroupsQuerySchema, turnoutProfilesQuerySchema } from '../src';
+import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022, placeGroupBandOf, placeGroupsQuerySchema, turnoutProfilesQuerySchema, mapQuerySchema, mapPageQuerySchema, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES } from '../src';
 
 test('aplica defaults e limita a paginação sem coerção de entradas vazias', () => {
   const defaults = municipalityQuerySchema.parse({});
@@ -70,4 +70,21 @@ test('raio da sensibilidade e município da participação têm formatos fechado
   assert.equal(placeGroupsQuerySchema.safeParse({ indicator: 'income-median', radius: '300' }).success, false);
   assert.equal(turnoutProfilesQuerySchema.parse({ uf: 'SP', municipality: '71072' }).municipality, '71072');
   for (const municipality of ['7107', '710720', 'abcde']) assert.equal(turnoutProfilesQuerySchema.safeParse({ uf: 'SP', municipality }).success, false, municipality);
+});
+
+test('página do mapa: abstenção como série padrão, só indicadores do Censo à esquerda e candidatura pelo número de urna', () => {
+  assert.deepEqual(mapPageQuerySchema.parse({}), { year: '2022', round: '1', office: 'president', indicator: 'income-upto-half-mw', series: 'abstention' });
+  assert.equal(mapPageQuerySchema.parse({ office: 'senator', uf: 'SE', series: '131' }).series, '131');
+  for (const input of [{ indicator: 'abstention' }, { series: 'lula' }, { series: '1' }, { series: '123456' }, { office: 'deputies' }, { unknown: '1' }]) assert.equal(mapPageQuerySchema.safeParse(input).success, false, JSON.stringify(input));
+  assert.equal(mapQuerySchema.parse({ indicator: 'abstention' }).office, 'president', 'Respostas anteriores eram sempre da Presidência');
+});
+
+test('associação local → setor: UF obrigatória, setor só para local associado e resumo igual aos locais', () => {
+  assert.equal(placeTractsQuerySchema.safeParse({ uf: 'ZZ' }).success, false); assert.equal(placeTractsQuerySchema.safeParse({}).success, false);
+  const summary = Object.fromEntries(TRACT_STATUSES.map((status) => [status, { places: status === 'associated' ? 1 : 0, electors: 0 }]));
+  const item = { zone: 1, code: '1015', status: 'associated', latitude: -23.5, longitude: -46.6, sharedCoordinate: 0, tract: { code: '355030807000234', situation: 'Urbana', residents: 10, incomeMedian: MINIMUM_WAGE_2022, incomeBand: 1 } };
+  assert.equal(placeTractsSchema.safeParse({ status: 'published', batchId: 'x', summary, items: [item] }).success, true);
+  for (const items of [[{ ...item, tract: { ...item.tract, incomeBand: 2 } }], [{ ...item, status: 'ambiguous' }], [{ ...item, tract: null }], [item, item], [{ ...item, tract: { ...item.tract, code: '3550308' } }]]) {
+    assert.equal(placeTractsSchema.safeParse({ status: 'published', batchId: 'x', summary, items }).success, false, JSON.stringify(items));
+  }
 });
