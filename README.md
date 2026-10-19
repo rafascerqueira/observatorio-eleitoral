@@ -16,7 +16,7 @@ Votos anulados, anulados sub judice e nulos técnicos mantêm a classificação 
 
 **Território, perfis e mapas:**
 
-- **Contexto municipal:** população, cor ou raça, alfabetização, instrução, classes de rendimento domiciliar per capita em salários mínimos e valores per capita em reais (Censo 2022); cadastro e comparecimento por perfil do TSE como base própria declarada. Omissões, diferenças não discriminadas e arredondamento ficam explícitos; falha técnica não é apresentada como ausência na fonte.
+- **Contexto municipal:** população, cor ou raça, alfabetização, instrução, classes de rendimento domiciliar per capita em salários mínimos e valores per capita em reais (Censo 2022); entorno dos domicílios (calçada, rampa, obstáculo, iluminação, pavimentação, bueiro, ponto de ônibus e árvores) nos setores com essa pesquisa; cadastro e comparecimento por perfil do TSE como base própria declarada. Omissões, diferenças não discriminadas e arredondamento ficam explícitos; falha técnica não é apresentada como ausência na fonte.
 - **Participação** (`/participacao`): comparecimento e abstenção por UF/município, turno, gênero, idade, escolaridade, estado civil e obrigatoriedade. A fonte não traz DF nem exterior; indisponibilidade não vira zero. Não contém voto por candidatura de grupos de pessoas.
 - **Perfis dos locais** (`/perfis`): cinco faixas fixas por escolaridade, parcela de eleitoras, eleitores de 16 a 24 anos, de 60 anos ou mais, ou renda mediana do setor do local, com votos somados por grupo. Comparações territoriais de moradores por faixa e sensibilidade por entornos de 250 m, 500 m e 1 km, com cobertura e limites declarados. Descreve locais e setores, não a renda ou o voto de cada eleitor.
 - **Mapas:** em `/mapa`, um indicador do Censo ao lado da abstenção do cargo escolhido ou da votação de uma candidatura (abstenção como padrão), com dispersão sem linha de tendência e exportação CSV com códigos, denominadores e versões; um mapa por candidatura, com escala comum, em `/mapa/candidaturas`. Tabelas equivalentes acompanham as visualizações.
@@ -32,7 +32,7 @@ Verificação concluída em **19/10/2026**, consolidada no commit `825dffb` e en
 - 60 avaliações automáticas de acessibilidade/refluxo em Chrome e Firefox, sem violações do axe ou rolagem horizontal fora das tabelas; isso não certifica toda a acessibilidade.
 - Nove reexecuções idempotentes e duas comparações integrais das 11 tabelas derivadas: conteúdo idêntico ao anterior, versões antigas e 57 publicações eleitorais preservadas.
 
-Evidências, versões/IDs e limites em [reimportações de 18–19/10](docs/reimportacoes-2026-10-18.md). Depois disso, a fase A do [plano de melhorias](docs/plano-postgis-propostas.md) (setor de cada local, série comparada com dispersão e exportação em `/mapa`) foi verificada localmente em 19/10 e está em commit local, sem push: 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox ([plano](plan.md), §33). O volume Docker do PostgreSQL e o diretório `data/` (originais, backups e artefatos) **não acompanham o Git**; um clone novo exige importar os dados ou restaurar um backup próprio.
+Evidências, versões/IDs e limites em [reimportações de 18–19/10](docs/reimportacoes-2026-10-18.md). Depois disso, a fase A do [plano de melhorias](docs/plano-postgis-propostas.md) (setor de cada local, série comparada com dispersão e exportação em `/mapa`) foi verificada localmente em 19/10 e está em commit local, sem push: 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox ([plano](plan.md), §33). A fase C (entorno dos domicílios, `import:urban-surroundings`) está publicada no banco local, verificada e em commit local, sem push (§34). O volume Docker do PostgreSQL e o diretório `data/` (originais, backups e artefatos) **não acompanham o Git**; um clone novo exige importar os dados ou restaurar um backup próprio.
 
 ## Iniciar localmente
 
@@ -104,6 +104,7 @@ Execute sequencialmente, após a Presidência nacional e os resultados estaduais
   npm run import:income-bands        # moradores por faixa da mediana de renda do setor
   npm run import:turnout-profiles    # participação cruzada por UF/município
   npm run import:tract-demography    # moradores de 15+ por faixas de perfil do setor
+  npm run import:urban-surroundings  # entorno dos domicílios (calçada, rampa, iluminação...)
   npm run import:place-groups        # grupos de locais para os resultados publicados
   npm run import:tract-sensitivity   # grupos alternativos nos três raios
 )
@@ -120,10 +121,11 @@ Pare ao primeiro erro; não trate uma cadeia parcial como concluída. A troca é
 | `import:income-bands` | `income-bands-2022-v2` | Contexto |
 | `import:turnout-profiles` | `turnout-profiles-2022-v3` | Contexto + Presidência nacional |
 | `import:tract-demography` | `tract-demography-2022-v2` | Contexto |
+| `import:urban-surroundings` | `urban-surroundings-2022-v1` | Contexto + associação aos setores |
 | `import:place-groups` | `place-groups-2022-v5` | Resultados publicados + perfil por local + associação aos setores |
 | `import:tract-sensitivity` | `tract-sensitivity-2022-v2` | Entradas dos grupos + publicação dos grupos |
 
-As identidades incluem também os originais e a configuração pertinente. Refaça grupos/sensibilidade após uma nova publicação de resultados; mudanças em qualquer entrada registrada exigem atualizar os dependentes. Renda e demografia fornecem as comparações territoriais da interface. Métodos, cobertura e dicionários em [plano IBGE](docs/plano-ibge.md); IDs e prova de idempotência em [reimportações](docs/reimportacoes-2026-10-18.md).
+As identidades incluem também os originais e a configuração pertinente. Refaça grupos/sensibilidade após uma nova publicação de resultados; mudanças em qualquer entrada registrada exigem atualizar os dependentes. Renda e demografia fornecem as comparações territoriais da interface; o entorno dos domicílios usa só os agregados em contagens de moradores (por setor e município) e guarda, por setor, apenas os associados a locais de votação. Métodos, cobertura e dicionários em [plano IBGE](docs/plano-ibge.md); IDs e prova de idempotência em [reimportações](docs/reimportacoes-2026-10-18.md).
 
 ### Validação e publicação
 

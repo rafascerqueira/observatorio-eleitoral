@@ -46,7 +46,7 @@ async function executable(browser) {
   assert.ok(versions[0], 'Configure UI_EXECUTABLE_PATH com um Chromium/Chrome instalado.');
   return resolve(directory, versions[0], 'chrome-linux64/chrome');
 }
-const urls = ['/', '/?uf=SP', '/?office=senator&uf=SE', '/municipios/71072?uf=SP', '/municipios/26310?uf=PE', '/perfis?indicator=income-median&uf=MA', '/participacao?uf=SP&municipality=71072', '/mapa?uf=PE', '/mapa/candidaturas?uf=SP&round=2', '/fontes', '/mapa?uf=SP&office=governor&round=2&series=10'];
+const urls = ['/', '/?uf=SP', '/?office=senator&uf=SE', '/municipios/71072?uf=SP', '/municipios/26310?uf=PE', '/perfis?indicator=income-median&uf=MA', '/participacao?uf=SP&municipality=71072', '/mapa?uf=PE', '/mapa/candidaturas?uf=SP&round=2', '/fontes', '/mapa?uf=SP&office=governor&round=2&series=10', '/mapa?indicator=urban-ramp&uf=SE'];
 for (const name of browserNames) {
   const launch = async () => puppeteer.launch({ browser: name, executablePath: await executable(name), headless: true, args: name === 'chrome' ? ['--no-sandbox', '--disable-dev-shm-usage'] : [], acceptInsecureCerts: false,
     ...(name === 'firefox' ? { extraPrefsFirefox: { 'ui.prefersReducedMotion': 1 } } : {}) });
@@ -109,6 +109,19 @@ for (const name of browserNames) {
         await page.addScriptTag({ content: axe }); const result = await page.evaluate(async () => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'] } }));
         assert.deepEqual(result.violations.map(({ id, nodes }) => ({ id, targets: nodes.map((node) => node.target) })), [], `axe ${urls[index]} ${width}px`); audits++;
         if ([1, 4, 6].includes(index)) await page.screenshot({ path: resolve(artifactDirectory, `${name}-${width}-${index}.png`), fullPage: true });
+      }
+      return { audits };
+    });
+    // Seções recolhidas não são auditadas no estado padrão: tabelas do contexto e dos cartões de local só aparecem com os detalhes abertos.
+    await scenario('Acessibilidade com detalhes abertos (municípios)', 'Somente GET; abre details nativos na aba, sem enviar formulário.', async (page) => {
+      let audits = 0;
+      for (const width of [1280, 375, 320]) for (const path of ['/municipios/71072?uf=SP', '/municipios/31054?uf=SE']) {
+        console.log(`${name}: axe com detalhes abertos ${width}px ${path}`);
+        await page.setViewport({ width, height: 900 }); await go(page, path);
+        await page.evaluate(() => { for (const element of document.querySelectorAll('details')) element.open = true; });
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1); assert.equal(overflow, false, `Refluxo com detalhes abertos ${width}px: ${path}`);
+        await page.addScriptTag({ content: axe }); const result = await page.evaluate(async () => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'] } }));
+        assert.deepEqual(result.violations.map(({ id, nodes }) => ({ id, targets: nodes.map((node) => node.target) })), [], `axe com detalhes abertos ${path} ${width}px`); audits++;
       }
       return { audits };
     });

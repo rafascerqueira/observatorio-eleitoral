@@ -16,7 +16,7 @@ import { availabilityFromCatalog } from '../../lib/rounds';
 
 export const metadata: Metadata = { title: 'Mapa' };
 export const dynamic = 'force-dynamic';
-const KIND = { universo: 'universo do Censo', amostra: 'estimativa da amostra do Censo', resultados: 'resultados reconciliados' } as const;
+const KIND = { universo: 'universo do Censo', amostra: 'estimativa da amostra do Censo', resultados: 'resultados reconciliados', entorno: 'universo do Censo nos setores com a pesquisa do entorno' } as const;
 const pct = (value: number | null) => value === null ? 'Sem dado' : `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 const number = (value: number) => value.toLocaleString('pt-BR');
 
@@ -85,7 +85,7 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
           <MapHover><Scatter points={plotted} excluded={rows.length - plotted.length} unit={unit} title={`Cada ${unit}: ${meta.label.toLowerCase()} × ${series.kind === 'abstention' ? 'abstenção' : 'votação da candidatura'}`}
             description={`Um ponto por ${unit}; a área do ponto é proporcional aos ${series.weight} (mínimo de 8 px). Os eixos começam em zero.`}
             xLabel={`${meta.label} (%)`} yLabel={series.kind === 'abstention' ? `Abstenção — ${OFFICE_LABELS[filters.office]} (%)` : series.title} /></MapHover>
-          <div className="notice scope-notice map-caveats"><p><strong>Como ler.</strong> {series.kind === 'abstention' ? 'Cada mapa tem sua própria escala, em quintis.' : 'O mapa do Censo usa quintis do recorte; o da candidatura usa a escala fixa de “Votação por candidatura”.'} Cores parecidas nos dois mapas, ou pontos alinhados na dispersão, não significam relação de causa, e nada aqui indica o voto de grupos: o Censo descreve quem mora no território; a abstenção e a votação descrevem o eleitorado inscrito ali. A dispersão não traça tendência nem calcula correlação. Municípios extensos e pouco populosos ocupam mais área no mapa do que seu peso em pessoas; na dispersão, o tamanho do ponto mostra esse peso.</p></div>
+          <div className="notice scope-notice map-caveats"><p><strong>Como ler.</strong> {series.kind === 'abstention' ? 'Cada mapa tem sua própria escala, em quintis.' : 'O mapa do Censo usa quintis do recorte; o da candidatura usa a escala fixa de “Votação por candidatura”.'} Cores parecidas nos dois mapas, ou pontos alinhados na dispersão, não significam relação de causa, e nada aqui indica o voto de grupos: o Censo descreve quem mora no território; a abstenção e a votação descrevem o eleitorado inscrito ali. A dispersão não traça tendência nem calcula correlação. Municípios extensos e pouco populosos ocupam mais área no mapa do que seu peso em pessoas; na dispersão, o tamanho do ponto mostra esse peso.{meta.kind === 'entorno' ? ' No entorno dos domicílios, o denominador são os moradores dos setores com a pesquisa do entorno: setores fora dela não entram, e isso não indica ausência da infraestrutura. Descreve o território, não a opinião dos moradores.' : ''}</p></div>
           <details className="context-section map-table"><summary>Tabela dos mapas ({number(rows.length)} {level === 'uf' ? 'UFs' : 'municípios'})</summary>
             <p className="query-note"><a href={exportHref}>Baixar estes dados (CSV)</a>: códigos do TSE e do IBGE, numeradores, denominadores e versões das publicações usadas.</p>
             <div className="table-scroll context-table" role="region" aria-label="Tabela dos mapas" tabIndex={0}><table>

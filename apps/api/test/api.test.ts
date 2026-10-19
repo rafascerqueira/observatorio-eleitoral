@@ -22,9 +22,12 @@ let stateOffice = 'governor';
 let trigram = true;
 let contextPublished = false;
 let tractsPublished = false;
+let urbanPublished = false;
 // Locais e setores sintéticos (códigos de formato real, valores fictícios) para o contrato da associação local → setor.
-const tractRow = (zone: number, code: string, status: string, setor: string | null, median: string | null) => ({ zone, code, status, latitude: setor ? -23.5 : null, longitude: setor ? -46.6 : null,
-  electors: 100, shared: 0, cd_setor: setor, context: setor !== null, situation: setor ? 'Urbana' : null, residents: setor ? '500' : null, median });
+const tractRow = (zone: number, code: string, status: string, setor: string | null, median: string | null, urban: { surveyed: boolean; urban: number[] | null } = { surveyed: false, urban: null }) => ({ zone, code, status, latitude: setor ? -23.5 : null, longitude: setor ? -46.6 : null,
+  electors: 100, shared: 0, cd_setor: setor, context: setor !== null, situation: setor ? 'Urbana' : null, residents: setor ? '500' : null, median, ...urban });
+// Entorno sintético coerente: base 10 na primeira categoria de cada característica (calçada SIM = posição 21).
+const urbanCounts = () => { const counts = new Array<number>(35).fill(0); counts[0] = 10; let offset = 1; for (const size of [5, 3, 3, 3, 3, 3, 3, 3, 3, 5]) { counts[offset] = 10; offset += size; } return counts; };
 let tractRows: Array<ReturnType<typeof tractRow>> = [];
 // Contexto sintético mínimo (valores fictícios, só para o contrato HTTP).
 const distribution = (kind: string, total: number | null) => ({ kind, source: 'teste', total, categories: [{ key: 'a', label: 'A', value: total }] });
@@ -50,6 +53,11 @@ before(async () => {
         if (sql.includes('to_regclass')) return { rows: [{ registry: 'import_batches' }] };
         if (sql.includes('pg_extension')) return { rows: [{ installed: trigram }] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/places/tracts') return { rows: tractsPublished ? [{ id: 'e'.repeat(64), metadata: {} }] : [] };
+        if (sql.includes('scope=$1') && parameters[0] === '2022/context/urban-surroundings') return { rows: urbanPublished ? [{ id: 'f'.repeat(64), metadata: {} }] : [] };
+        if (sql.includes('FROM import_batches ORDER BY imported_at DESC')) return { rows: urbanPublished ? [{ id: 'f'.repeat(64), scope: '2022/context/urban-surroundings', published: true, metadata: { id: 'f'.repeat(64), kind: 'urban-surroundings', year: 2022, importedAt: '2026-10-19T00:00:00Z',
+          importerVersion: 'test', sources: [], scope: 'Teste', notes: [], totals: { municipalities: 1, tracts: 3, suppressedTracts: 1, residents: 10, associatedTracts: 2, associatedSurveyed: 1, associatedSuppressed: 0 } } }] : [] };
+        if (sql.includes('FROM municipality_urban_surroundings WHERE batch_id=$1 AND ibge_code=$2')) return { rows: [{ tracts: 3, suppressed: 1, counts: urbanCounts() }] };
+        if (sql.includes('FROM municipality_urban_surroundings')) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', counts: urbanCounts() }] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/municipal') return { rows: contextPublished ? [{ id: 'd'.repeat(64), metadata: {} }] : [] };
         if (sql.includes('FROM polling_place_tracts')) return { rows: parameters[2] === '71072' ? tractRows : [] };
         if (sql.includes("->'totals'->>'abstentions'")) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', numerator: '2', denominator: '10' }] };
@@ -330,6 +338,31 @@ test('associação local → setor: exige UF, separa ausência de publicação e
     tractRows = [tractRow(1, '1015', 'no-coordinate', '355030807000234', '1000')];
     assert.equal((await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).status, 503, 'Setor em local não associado é inconsistência');
   } finally { published = false; tractsPublished = false; tractRows = []; }
+});
+
+test('entorno dos domicílios: contexto do município, indicador do mapa e setor pesquisado, omitido ou fora da pesquisa', async () => {
+  published = true; tractsPublished = true; urbanPublished = true; contextPublished = true; queries.length = 0;
+  tractRows = [tractRow(1, '1015', 'associated', '355030807000234', '1000', { surveyed: true, urban: urbanCounts() }), tractRow(1, '1023', 'associated', '355030890000197', '1000', { surveyed: true, urban: null }),
+    tractRow(1, '1040', 'associated', '355030890000198', '1000'), tractRow(2, '1058', 'no-coordinate', null, null)];
+  try {
+    const data = await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).json();
+    assert.equal(data.urbanBatchId, 'f'.repeat(64));
+    assert.deepEqual(data.items.map((item: { tract: { urban?: { status: string } } | null }) => item.tract?.urban?.status ?? null), ['surveyed', 'suppressed', 'outside', null]);
+    assert.equal(data.items[0].tract.urban.counts[21], 10); assert.equal(data.items[1].tract.urban.counts, null, 'Setor omitido pelo IBGE não vira zero');
+    const select = queries.find((query) => query.sql.includes('FROM polling_place_tracts'))!;
+    assert.match(select.sql, /tract_urban_surroundings u ON u.batch_id=\$4/); assert.equal(select.parameters[3], 'f'.repeat(64));
+    const map = await (await fetch(`${base}/elections/map/values?indicator=urban-sidewalk&uf=SP`)).json();
+    assert.equal(map.status, 'published'); assert.deepEqual([map.items[0].numerator, map.items[0].denominator, map.items[0].value], [10, 10, 100]); assert.deepEqual(map.publications, [{ role: 'context', id: 'f'.repeat(64) }]);
+    const context = await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).json();
+    assert.deepEqual([context.urbanSurroundings.tracts, context.urbanSurroundings.suppressedTracts, context.urbanSurroundings.counts[0]], [3, 1, 10]);
+    const catalog = await (await fetch(`${base}/elections/catalog`)).json();
+    assert.equal(catalog.urbanSurroundingsDatasets[0].totals.residents, 10, 'Catálogo lista a publicação do entorno'); assert.equal(catalog.datasets.length, 0, 'Entorno não é publicação de cargo');
+    urbanPublished = false;
+    const without = await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).json();
+    assert.equal(without.urbanBatchId, null); assert.equal(without.items[0].tract.urban, undefined, 'Sem publicação do entorno, o setor não diz "fora da pesquisa"');
+    assert.doesNotMatch(queries.at(-1)!.sql, /tract_urban_surroundings/);
+    assert.equal((await (await fetch(`${base}/elections/map/values?indicator=urban-sidewalk`)).json()).status, 'awaiting-import');
+  } finally { published = false; tractsPublished = false; urbanPublished = false; contextPublished = false; tractRows = []; }
 });
 
 test('abstenção do mapa usa aptos e turnos do próprio cargo; cargo estadual exige UF; Censo não depende de cargo', async () => {

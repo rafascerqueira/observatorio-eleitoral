@@ -1,11 +1,11 @@
 import { reusePublished, publicationId, publishedInputs, preparePublication } from './publication';
-import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
 import { INCOME_BANDS, placeGroupBandOf, TRACT_DEMOGRAPHY_BASE, TRACT_DEMOGRAPHY_INDICATORS, tractDemographyDatasetSchema, tractDemographySchema, type IncomeBandPopulation, type TractDemographyIndicator } from '@observatorio/contracts';
 import { entries, rows } from './csv';
+import { xlsxPairs } from './xlsx';
 import { ROOT } from './sources';
 import { preservedDownload, sidraValue } from './sidra';
 import { IBGE } from './sectors';
@@ -26,24 +26,6 @@ const LABELS: Record<string, string> = { V01006: 'Quantidade de moradores', V010
     .flatMap((band, index) => [[SEX_AGE.male[index]!, `Sexo masculino, ${band}`], [SEX_AGE.female[index]!, `Sexo feminino, ${band}`], [SEX_AGE.age[index]!, band]])) };
 const INDICATORS = Object.keys(TRACT_DEMOGRAPHY_INDICATORS) as TractDemographyIndicator[];
 const emptyPopulation = (): IncomeBandPopulation => ({ total: 0, bands: INCOME_BANDS.map((band) => ({ index: band.index, residents: 0, tracts: 0 })), noData: { residents: 0, tracts: 0 }, undisclosed: { tracts: 0 }, coverage: { residents: 0, total: 0 } });
-
-/** Pares código → descrição das planilhas de um XLSX (strings compartilhadas e valores inline), sem dependência externa. */
-function xlsxPairs(path: string) {
-  const read = (entry: string) => execFileSync('unzip', ['-p', path, entry], { maxBuffer: 256 * 1024 * 1024 }).toString('utf8');
-  const decode = (text: string) => text.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
-  const shared = [...read('xl/sharedStrings.xml').matchAll(/<si>([\s\S]*?)<\/si>/g)].map((match) => decode(match[1]!));
-  const pairs = new Map<string, string>();
-  for (const sheet of entries(path).filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))) {
-    for (const row of read(sheet).matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
-      const values = [...row[1]!.matchAll(/<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)].flatMap((cell) => {
-        const value = /<v>([\s\S]*?)<\/v>/.exec(cell[2] ?? '')?.[1];
-        return value === undefined ? [] : [/t="s"/.test(cell[1]!) ? shared[Number(value)]! : decode(value)];
-      });
-      for (let index = 0; index < values.length - 1; index++) if (/^V\d{5}$/.test(values[index]!)) pairs.set(values[index]!, values[index + 1]!.trim());
-    }
-  }
-  return pairs;
-}
 
 async function run() {
   config({ path: resolve(ROOT, '.env'), quiet: true });

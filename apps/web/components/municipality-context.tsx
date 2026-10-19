@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import { contextDistributionSchema, percent, type IncomeBandPopulation, type MunicipalityContext } from '@observatorio/contracts';
+import { contextDistributionSchema, percent, type IncomeBandPopulation, type MunicipalityContext, type UrbanSurroundings } from '@observatorio/contracts';
 import { bandName, bandRange, residentsShare } from '../lib/income-bands';
+import { UrbanSurroundingsTable } from './urban-surroundings';
 
 type Distribution = MunicipalityContext['race'];
 const MINIMUM_WAGE = 1212;
@@ -54,7 +55,7 @@ function IncomeBandsTable({ data }: { data: IncomeBandPopulation }) {
 const DIMENSION_LABEL = { age: 'Idade', education: 'Escolaridade declarada', gender: 'Gênero', maritalStatus: 'Estado civil' } as const;
 
 /** Contexto do município: o que descreve o território (IBGE) separado do que descreve o eleitorado (TSE). Nada é atribuído a eleitores individualmente. */
-export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands }: { item: MunicipalityContext; round: '1' | '2'; sourcesHref: string; incomeBands?: IncomeBandPopulation | null }) {
+export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands, urbanSurroundings }: { item: MunicipalityContext; round: '1' | '2'; sourcesHref: string; incomeBands?: IncomeBandPopulation | null; urbanSurroundings?: UrbanSurroundings | null }) {
   const turnout = item.turnout[round];
   const resultsEligible = item.resultsEligible[round];
   const difference = resultsEligible === null ? null : item.electorate.eligible - resultsEligible;
@@ -112,6 +113,10 @@ export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands
       <DistributionTable title="Classes de rendimento domiciliar per capita" data={item.incomeClasses} unit="Moradores" />
       {incomeBands && <IncomeBandsTable data={incomeBands} />}
     </details>
+
+    {urbanSurroundings && <details className="context-section"><summary>Entorno dos domicílios (IBGE)</summary>
+      <UrbanSurroundingsTable data={urbanSurroundings} population={item.population.total} />
+    </details>}
 
     <details className="context-section"><summary>Cor ou raça e alfabetização (IBGE)</summary>
       <p className="query-note">O cadastro do TSE de 2022 não informa cor ou raça dos eleitores; estes dados descrevem a população do município.</p>

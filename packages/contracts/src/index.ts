@@ -125,6 +125,7 @@ export const catalogSchema = z.object({
   incomeBandsDatasets: z.array(z.lazy(() => incomeBandsDatasetSchema)).default([]),
   tractDemographyDatasets: z.array(z.lazy(() => tractDemographyDatasetSchema)).default([]),
   turnoutProfilesDatasets: z.array(z.lazy(() => turnoutProfilesDatasetSchema)).default([]),
+  urbanSurroundingsDatasets: z.array(z.lazy(() => urbanSurroundingsDatasetSchema)).default([]),
 });
 const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
@@ -244,12 +245,88 @@ export const mapDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('maps'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),
 });
+/**
+ * Entorno dos domicílios (Censo 2022, agregados por setor e por município): moradores em domicílios particulares permanentes
+ * ocupados dos setores escolhidos para a pesquisa do entorno (V05200, base) por característica da face de quadra, nas variáveis
+ * V05201–V05234, nesta ordem (dicionário de 07/05/2025). As categorias de cada característica somam a base; "não declarado"
+ * inclui faces em que o item não foi avaliado (sem calçada, para rampa e obstáculo) e "saltado", faces não percorridas.
+ */
+export const URBAN_CHARACTERISTICS = [
+  { key: 'circulation', dictionary: 'CIRCULAÇÃO DA VIA', categories: ['CAMINHÃO, ÔNIBUS', 'CARROS DE PASSEIO OU VAN', 'PEDESTRES, BICICLETAS E MOTOCICLETAS', 'AQUAVIA', 'SALTADO'] },
+  { key: 'paving', dictionary: 'VIA PAVIMENTADA', categories: ['SIM', 'NÃO', 'NÃO DECLARADO'] },
+  { key: 'drain', dictionary: 'BUEIRO', categories: ['SIM', 'NÃO', 'NÃO DECLARADO'] },
+  { key: 'lighting', dictionary: 'ILUMINAÇÃO PÚBLICA', categories: ['SIM', 'NÃO', 'NÃO DECLARADO'] },
+  { key: 'bus-stop', dictionary: 'PONTO DE ÔNIBUS', categories: ['SIM', 'NÃO', 'NÃO DECLARADO'] },
+  { key: 'bike', dictionary: 'VIA SINALIZADA PARA BICICLETA', categories: ['SIM', 'NÃO', 'NÃO DECLARADO'] },
+  { key: 'sidewalk', dictionary: 'CALÇADA', categories: ['SIM', 'NÃO', 'NÃO DECLARADO'] },
+  { key: 'obstacle', dictionary: 'OBSTÁCULO NA CALÇADA', categories: ['SIM', 'NÃO', 'NÃO DECLARADO'] },
+  { key: 'ramp', dictionary: 'RAMPA PARA CADEIRANTE', categories: ['SIM', 'NÃO', 'NÃO DECLARADO'] },
+  { key: 'trees', dictionary: 'ARBORIZAÇÃO', categories: ['SEM ÁRVORES', 'DE 1 A 2 ÁRVORES', 'DE 3 A 4 ÁRVORES', '5 OU MAIS ÁRVORES', 'SALTADO'] },
+] as const;
+export type UrbanCharacteristic = typeof URBAN_CHARACTERISTICS[number]['key'];
+/** 35 contagens: base e, em seguida, as categorias de cada característica na ordem de `URBAN_CHARACTERISTICS`. */
+export const URBAN_COUNTS = 1 + URBAN_CHARACTERISTICS.reduce((sum, item) => sum + item.categories.length, 0);
+/** Posição (0 = base) de uma categoria no vetor de contagens. */
+export function urbanIndex(characteristic: UrbanCharacteristic, category: string) {
+  let offset = 1;
+  for (const item of URBAN_CHARACTERISTICS) {
+    const position = (item.categories as readonly string[]).indexOf(category);
+    if (item.key === characteristic) { if (position < 0) throw new Error(`Categoria ${category} fora de ${characteristic}.`); return offset + position; }
+    offset += item.categories.length;
+  }
+  throw new Error(`Característica desconhecida: ${characteristic}.`);
+}
+/** Características cujas categorias não somam a base (vazio = vetor coerente). */
+export function urbanIdentityErrors(counts: readonly number[]) {
+  let offset = 1;
+  return URBAN_CHARACTERISTICS.flatMap((item) => {
+    const sum = counts.slice(offset, offset += item.categories.length).reduce((total, value) => total + value, 0);
+    return sum === counts[0] ? [] : [item.key];
+  });
+}
+/** Indicadores do entorno exibidos: moradores em face com o item (categorias somadas) ÷ base; a escolha pode mudar sem reimportar. */
+export const URBAN_INDICATORS = {
+  'urban-sidewalk': { characteristic: 'sidewalk', categories: ['SIM'], label: 'Moradores em face de quadra com calçada' },
+  'urban-ramp': { characteristic: 'ramp', categories: ['SIM'], label: 'Moradores em face de quadra com rampa para cadeirante' },
+  'urban-obstacle': { characteristic: 'obstacle', categories: ['SIM'], label: 'Moradores em face de quadra com obstáculo na calçada' },
+  'urban-lighting': { characteristic: 'lighting', categories: ['SIM'], label: 'Moradores em face de quadra com iluminação pública' },
+  'urban-paving': { characteristic: 'paving', categories: ['SIM'], label: 'Moradores em face de quadra com via pavimentada' },
+  'urban-drain': { characteristic: 'drain', categories: ['SIM'], label: 'Moradores em face de quadra com bueiro' },
+  'urban-bus-stop': { characteristic: 'bus-stop', categories: ['SIM'], label: 'Moradores em face de quadra com ponto de ônibus' },
+  'urban-trees': { characteristic: 'trees', categories: ['DE 1 A 2 ÁRVORES', 'DE 3 A 4 ÁRVORES', '5 OU MAIS ÁRVORES'], label: 'Moradores em face de quadra com ao menos uma árvore' },
+} as const satisfies Record<string, { characteristic: UrbanCharacteristic; categories: readonly string[]; label: string }>;
+export type UrbanIndicator = keyof typeof URBAN_INDICATORS;
+/** Numerador (categorias do indicador) e denominador (base) de um vetor de contagens. */
+export function urbanIndicatorCounts(counts: readonly number[], indicator: UrbanIndicator) {
+  const definition = URBAN_INDICATORS[indicator];
+  return { numerator: definition.categories.reduce((sum, category) => sum + counts[urbanIndex(definition.characteristic, category)]!, 0), denominator: counts[0]! };
+}
+const urbanCountsSchema = z.array(nonnegative).length(URBAN_COUNTS).refine((counts) => urbanIdentityErrors(counts).length === 0, 'Categorias do entorno não somam a base.');
+/** Município (arquivo municipal do IBGE, inclui setores omitidos): setores pesquisados, setores omitidos ("X") e as contagens. */
+export const urbanSurroundingsSchema = z.object({ tracts: nonnegative, suppressedTracts: nonnegative, counts: urbanCountsSchema });
+export type UrbanSurroundings = z.infer<typeof urbanSurroundingsSchema>;
+export const urbanSurroundingsDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
+  id: z.string(), kind: z.literal('urban-surroundings'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(), notes: z.array(z.string()),
+  totals: z.object({ municipalities: nonnegative, tracts: nonnegative, suppressedTracts: nonnegative, residents: nonnegative, associatedTracts: nonnegative, associatedSurveyed: nonnegative, associatedSuppressed: nonnegative }),
+});
+
+const URBAN_SOURCE = 'IBGE, Censo 2022 — características urbanísticas do entorno dos domicílios';
 /** Indicadores do mapa: cada um com fonte, tipo de dado, numerador e denominador explícitos. */
 export const MAP_INDICATORS = {
   'income-upto-half-mw': { label: 'Moradores com rendimento domiciliar per capita de até ½ salário mínimo (inclui sem rendimento)', source: 'IBGE, Censo 2022 — SIDRA 10296', kind: 'amostra', family: 'ibge' },
   'college-18': { label: 'Pessoas de 18 anos ou mais com superior completo', source: 'IBGE, Censo 2022 — SIDRA 10061', kind: 'amostra', family: 'ibge' },
   'literacy-15': { label: 'Pessoas de 15 anos ou mais alfabetizadas', source: 'IBGE, Censo 2022 — SIDRA 9542', kind: 'universo', family: 'ibge' },
   abstention: { label: 'Abstenção (abstenções ÷ eleitores aptos)', source: 'TSE, resultados de 2022 reconciliados, do cargo escolhido', kind: 'resultados', family: 'tse' },
+  // Entorno dos domicílios: denominador = moradores dos setores com a pesquisa (V05200); fora dela não é ausência do item.
+  'urban-sidewalk': { label: 'Moradores em face de quadra com calçada (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
+  'urban-ramp': { label: 'Moradores em face de quadra com rampa para cadeirante (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
+  'urban-obstacle': { label: 'Moradores em face de quadra com obstáculo na calçada (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
+  'urban-lighting': { label: 'Moradores em face de quadra com iluminação pública (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
+  'urban-paving': { label: 'Moradores em face de quadra com via pavimentada (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
+  'urban-drain': { label: 'Moradores em face de quadra com bueiro (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
+  'urban-bus-stop': { label: 'Moradores em face de quadra com ponto de ônibus (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
+  'urban-trees': { label: 'Moradores em face de quadra com ao menos uma árvore (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
 } as const;
 export type MapIndicator = keyof typeof MAP_INDICATORS;
 export const MAP_INDICATOR_KEYS = Object.keys(MAP_INDICATORS) as [MapIndicator, ...MapIndicator[]];
@@ -315,16 +392,20 @@ export const placeTractSchema = z.object({
   sharedCoordinate: nonnegative,
   // Setor do Censo 2022 (universo): pessoas residentes (V0001) e mediana do rendimento do responsável com rendimento (V06006),
   // na faixa fixa de `INCOME_BANDS`; `null` quando o IBGE omite o valor. Situação urbana/rural da malha.
-  tract: z.object({ code: z.string().regex(/^\d{15}$/), situation: z.string().nullable(), residents: sourceCount, incomeMedian: z.number().nonnegative().nullable(), incomeBand: z.number().int().min(1).max(5).nullable() }).nullable(),
+  tract: z.object({ code: z.string().regex(/^\d{15}$/), situation: z.string().nullable(), residents: sourceCount, incomeMedian: z.number().nonnegative().nullable(), incomeBand: z.number().int().min(1).max(5).nullable(),
+    // Entorno do setor (publicação `2022/context/urban-surroundings`): pesquisado, omitido pelo IBGE ("X") ou fora da pesquisa.
+    urban: z.object({ status: z.enum(['surveyed', 'suppressed', 'outside']), counts: urbanCountsSchema.nullable() }).optional() }).nullable(),
 }).superRefine((item, ctx) => {
   if ((item.status === 'associated') !== (item.tract !== null)) ctx.addIssue({ code: 'custom', message: 'Setor só existe para local associado.' });
+  if (item.tract?.urban && (item.tract.urban.status === 'surveyed') !== (item.tract.urban.counts !== null)) ctx.addIssue({ code: 'custom', message: 'Contagens do entorno só para setor pesquisado.' });
   if (item.tract && item.tract.incomeBand !== (item.tract.incomeMedian === null ? null : incomeBandOf(item.tract.incomeMedian))) ctx.addIssue({ code: 'custom', message: 'Faixa de renda diverge da mediana do setor.' });
 });
 export type PlaceTract = z.infer<typeof placeTractSchema>;
 export const placeTractsSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('awaiting-import'), batchId: z.null(), summary: z.null(), items: z.array(z.never()).length(0) }),
   // `summary`: locais e eleitores (cadastro de locais) do município em cada situação; soma = todos os locais da lista.
-  z.object({ status: z.literal('published'), batchId: z.string(), summary: z.record(z.enum(TRACT_STATUSES), statusCountSchema), items: z.array(placeTractSchema) })
+  // `urbanBatchId`: publicação do entorno juntada aos setores; `null` sem publicação do entorno (setores sem `urban`).
+  z.object({ status: z.literal('published'), batchId: z.string(), summary: z.record(z.enum(TRACT_STATUSES), statusCountSchema), items: z.array(placeTractSchema), urbanBatchId: z.string().nullable().optional() })
     .refine((data) => Object.values(data.summary).reduce((sum, item) => sum + item.places, 0) === data.items.length, 'Resumo da associação não soma os locais.'),
 ]);
 export type PlaceTracts = z.infer<typeof placeTractsSchema>;
@@ -523,7 +604,7 @@ export const turnoutProfilesDatasetSchema = z.object({
 export type TurnoutProfilesDataset = z.infer<typeof turnoutProfilesDatasetSchema>;
 export const contextResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('awaiting-import'), dataset: z.null(), item: z.null() }),
-  z.object({ status: z.literal('published'), dataset: contextDatasetSchema, item: municipalityContextSchema, incomeBands: incomeBandPopulationSchema.nullable().optional() }),
+  z.object({ status: z.literal('published'), dataset: contextDatasetSchema, item: municipalityContextSchema, incomeBands: incomeBandPopulationSchema.nullable().optional(), urbanSurroundings: urbanSurroundingsSchema.nullable().optional() }),
 ]);
 export type ContextResponse = z.infer<typeof contextResponseSchema>;
 

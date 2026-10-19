@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { TRACT_STATUSES, type PlaceTract, type PlaceTracts } from '@observatorio/contracts';
 import { bandName } from '../lib/income-bands';
 import { TRACT_STATUS_LABELS, TRACT_STATUS_REASONS } from '../lib/tracts';
+import { TractUrban } from './urban-surroundings';
 
 const number = (value: number) => value.toLocaleString('pt-BR');
 const reais = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -22,6 +23,7 @@ export function PlaceTractDetails({ item }: { item: PlaceTract | undefined }) {
         <div><dt>Rendimento mediano do responsável pelo domicílio (com rendimento)</dt><dd>{tract.incomeMedian === null || tract.incomeBand === null ? 'Indisponível: omitido pelo IBGE ou não se aplica' : `${reais(tract.incomeMedian)} · ${bandName(tract.incomeBand)}`}</dd></div>
       </dl>
       : <p>{TRACT_STATUS_REASONS[item.status as keyof typeof TRACT_STATUS_REASONS]}</p>}
+    {tract?.urban && <TractUrban urban={tract.urban} />}
     {item && item.latitude !== null && item.longitude !== null && <p>Coordenada do local no cadastro do TSE: latitude {degrees(item.latitude)}, longitude {degrees(item.longitude)}.</p>}
     {item && item.sharedCoordinate > 0 && <p>{item.sharedCoordinate === 1 ? 'Outro local' : `Outros ${number(item.sharedCoordinate)} locais`} de nome diferente {item.sharedCoordinate === 1 ? 'está' : 'estão'} na mesma coordenada exata: indício de ponto padrão, não de localização precisa.</p>}
     <p>O setor descreve o entorno do prédio de votação, não os eleitores que votam nele. <Link href="/metodologia#perfis">Como a associação é feita</Link>.</p>

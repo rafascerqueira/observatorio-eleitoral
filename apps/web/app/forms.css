@@ -199,6 +199,9 @@
 .tract-facts div { display: grid; gap: 0; }
 .tract-facts dt { color: var(--muted); font-size: 12px; }
 .tract-facts dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tract-urban { margin: 10px 0; }
+.tract-urban caption { text-align: left; padding-bottom: 6px; color: var(--muted); }
+.tract-urban th { white-space: normal; }
 /* Filtros aplicados: chips; remover é um link GET. */
 .applied-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
 .applied-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }

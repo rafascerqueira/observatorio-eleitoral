@@ -236,4 +236,21 @@ if (catalog.tractsDatasets?.length) {
   assert.ok(!page.includes('Não há associação socioeconômica validada'));
   assert.ok(!(await html('/metodologia')).includes('O método geográfico ainda não foi definido'));
 }
+// Entorno dos domicílios (Censo 2022): valores lidos diretamente dos arquivos do IBGE em 19/10/2026, em auditoria independente.
+if (catalog.urbanSurroundingsDatasets?.length) {
+  const [urban] = catalog.urbanSurroundingsDatasets;
+  assert.equal(urban.importerVersion, 'urban-surroundings-2022-v1');
+  assert.deepEqual([urban.totals.municipalities, urban.totals.tracts, urban.totals.suppressedTracts, urban.totals.residents], [5570, 340965, 1418, 174153633]);
+  const sidewalk = await json('/elections/map/values?indicator=urban-sidewalk');
+  assert.deepEqual([sum(sidewalk.items, 'numerator'), sum(sidewalk.items, 'denominator')], [146376090, 174153633], 'Calçada, Brasil = arquivo municipal do IBGE');
+  const spCity = (await json('/elections/municipalities/71072/context?uf=SP')).urbanSurroundings;
+  assert.equal(spCity.counts[0], 11304202); assert.equal(spCity.counts[21], 10163450);
+  const objetivo = (await json('/elections/municipalities/71072/place-tracts?uf=SP')).items.find((item) => item.zone === 1 && item.code === '1015');
+  assert.equal(objetivo.tract.urban.status, 'surveyed'); assert.equal(objetivo.tract.urban.counts[0], 293);
+  for (const [path, texts] of [['/municipios/71072?uf=SP&round=1', ['Entorno dos domicílios (IBGE)', 'Moradores por característica da face de quadra', 'Entorno do setor']], ['/fontes', ['Entorno dos domicílios (IBGE)', 'agregados_setores_entorno_moradores.zip']],
+    ['/mapa?indicator=urban-ramp&uf=SE', ['Moradores em face de quadra com rampa para cadeirante', 'setores com a pesquisa do entorno', 'não indica ausência da infraestrutura']], ['/metodologia', ['Entorno dos domicílios', 'nunca os arquivos em percentual']]]) {
+    const page = await html(path);
+    for (const text of texts) assert.ok(page.includes(text), `${path}: ${text}`);
+  }
+}
 console.log(`Smoke do contexto municipal aprovado: ${requests} requisições.`);

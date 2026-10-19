@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022, placeGroupBandOf, placeGroupsQuerySchema, turnoutProfilesQuerySchema, mapQuerySchema, mapPageQuerySchema, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES } from '../src';
+import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022, placeGroupBandOf, placeGroupsQuerySchema, turnoutProfilesQuerySchema, mapQuerySchema, mapPageQuerySchema, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, URBAN_COUNTS, URBAN_INDICATORS, MAP_INDICATORS, CENSUS_MAP_INDICATORS, urbanIndex, urbanIdentityErrors, urbanIndicatorCounts, urbanSurroundingsSchema } from '../src';
 
 test('aplica defaults e limita a paginação sem coerção de entradas vazias', () => {
   const defaults = municipalityQuerySchema.parse({});
@@ -87,4 +87,18 @@ test('associação local → setor: UF obrigatória, setor só para local associ
   for (const items of [[{ ...item, tract: { ...item.tract, incomeBand: 2 } }], [{ ...item, status: 'ambiguous' }], [{ ...item, tract: null }], [item, item], [{ ...item, tract: { ...item.tract, code: '3550308' } }]]) {
     assert.equal(placeTractsSchema.safeParse({ status: 'published', batchId: 'x', summary, items }).success, false, JSON.stringify(items));
   }
+});
+
+test('entorno: 35 contagens na ordem do dicionário, categorias somando a base e indicadores no mapa do Censo', () => {
+  assert.equal(URBAN_COUNTS, 35);
+  assert.deepEqual([urbanIndex('circulation', 'CAMINHÃO, ÔNIBUS'), urbanIndex('sidewalk', 'SIM'), urbanIndex('ramp', 'SIM'), urbanIndex('trees', 'SALTADO')], [1, 21, 27, 34]);
+  assert.throws(() => urbanIndex('sidewalk', 'SALTADO')); assert.throws(() => urbanIndex('trees', 'SIM'));
+  const coherent = new Array<number>(35).fill(0); coherent[0] = 10; for (const offset of [1, 6, 9, 12, 15, 18, 21, 24, 27, 30]) coherent[offset] = 10;
+  assert.deepEqual(urbanIdentityErrors(coherent), []);
+  const broken = [...coherent]; broken[28] = 1;
+  assert.deepEqual(urbanIdentityErrors(broken), ['ramp']);
+  assert.equal(urbanSurroundingsSchema.safeParse({ tracts: 1, suppressedTracts: 0, counts: broken }).success, false);
+  assert.equal(urbanSurroundingsSchema.safeParse({ tracts: 1, suppressedTracts: 0, counts: coherent.slice(1) }).success, false);
+  assert.deepEqual(urbanIndicatorCounts(coherent, 'urban-trees'), { numerator: 0, denominator: 10 }, 'Sem árvores fica fora do numerador');
+  for (const key of Object.keys(URBAN_INDICATORS)) { assert.equal(MAP_INDICATORS[key as keyof typeof MAP_INDICATORS].kind, 'entorno', key); assert.ok(CENSUS_MAP_INDICATORS.includes(key as never), key); }
 });
