@@ -22,7 +22,7 @@ As rotas são públicas e de leitura. A consulta prioriza a versão nacional pub
 | `GET /elections/catalog` | Publicações, importações em andamento, cobertura por UF/situação e cargos ainda não importados. |
 | `GET /elections/imports/:id/coverage` | Cobertura por município: `page`, `pageSize`; status, motivo, registros e conflitos. |
 | `GET /elections/imports/:id/report` | Relatório JSON concluído; `404` enquanto não existir ou versão desconhecida. |
-| `GET /elections/sources/:sha256/:file` | ZIP original preservado, com integridade verificada, em fluxo. `404` para arquivo desconhecido; `503` para ausência/corrupção de original registrado. |
+| `GET /elections/sources/:sha256/:file` | Original ZIP, JSON, XLSX ou GeoPackage (`.gpkg`), com registro, tamanho e SHA-256 verificados, em fluxo. `404` para arquivo desconhecido; `503` para ausência/corrupção de original registrado. |
 
 ## Filtros da consulta
 
@@ -122,3 +122,5 @@ As consultas nacionais e estaduais de locais e seções usam UF, localidade, ano
 Os códigos retornados são strings numéricas de cinco dígitos (`02550`, por exemplo); preserve os zeros ao construir URLs. O catálogo inclui `failureReason` em tentativas interrompidas/rejeitadas. Seus diagnósticos não devem ser confundidos com a cobertura da versão publicada.
 
 O frontend oferece proxy em fluxo em `/arquivos/sources/:sha256/:file` e `/arquivos/imports/:id/report`, evitando expor endereços internos de contêineres. Não permite URLs externas arbitrárias nem caminhos locais fornecidos pelo visitante. Os arquivos servidos são registrados no banco e montados somente para leitura.
+
+Revisão de 18/10/2026: ano/cargo da publicação precisam coincidir com o pedido, inclusive em grupos e mapas. Sem publicação do ano, não há retorno de números de outro ano. Contratos do contexto recusam somas incompatíveis ou diferenças declaradas incorretamente; isso é indisponibilidade técnica/inconsistência, não ausência na fonte. `undistributed` é uma diferença já conferida no original, sem presunção de causa; `roundingDifference` só explica arredondamento auditado da amostra. Novas versões derivadas registram `inputs` (pares de escopo/ID); a API verifica as dependências transitivas registradas e recusa versões desatualizadas com `503`. Ausência de `inputs` no legado não é interpretada como proveniência verificada.

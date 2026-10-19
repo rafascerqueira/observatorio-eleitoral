@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { reusePublished, publicationId, publishedInputs, preparePublication } from './publication';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { config } from 'dotenv';
@@ -17,7 +17,7 @@ import { municipalityCode } from './territory';
  * outro município ou na divisa de dois setores ficam sem associação, contados e declarados.
  */
 // v2: aceita coordenadas sem zero inicial (".85"); a v1 as descartava e deixava sem associação locais perto do Equador.
-const VERSION = 'polling-place-tracts-2022-v2';
+const VERSION = 'polling-place-tracts-2022-v3';
 const SCOPE = '2022/places/tracts';
 export const IBGE = 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios';
 const STATUSES = ['associated', 'no-coordinate', 'conflicting-coordinates', 'relocated', 'outside-tracts', 'other-municipality', 'ambiguous'] as const;
@@ -104,6 +104,7 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
+    const inputs = await publishedInputs(client, ['2022/president/BR']);
     const lock = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [`observatorio:${SCOPE}`]);
     if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
     await client.query(await readFile(resolve(__dirname, 'schema.sql'), 'utf8'));
@@ -114,6 +115,11 @@ async function run() {
     const ibgeOf = new Map<string, string>();
     for await (const row of rows(correspondence.path, correspondence.entry)) ibgeOf.set(`${row.SG_UF}/${municipalityCode(row.CD_MUNICIPIO_TSE!)}`, row.CD_MUNICIPIO_IBGE!);
     const locais = await sourceFile({ file: 'eleitorado_local_votacao_2022.zip', entry: 'eleitorado_local_votacao_2022.csv', directory: 'eleitorado_locais_votacao' });
+    const gpkg = await preservedDownload('br_setores_cd2022', `${IBGE}/malha_com_atributos/setores/gpkg/BR/BR_setores_CD2022.gpkg`, 'setores', 'BR_setores_CD2022.gpkg (malha de setores com atributos)', [], 'gpkg');
+    const income = await preservedDownload('agregados_setores_renda_responsavel', `${IBGE}_Rendimento_do_Responsavel/Agregados_por_setores_renda_responsavel_BR_20260508_csv.zip`, 'setores', 'Agregados_por_setores_renda_responsavel_BR_20260508_csv.zip', [], 'zip');
+    const basic = await preservedDownload('agregados_setores_basico', `${IBGE}/Agregados_por_Setor_csv/Agregados_por_setores_basico_BR_20260520.zip`, 'setores', 'Agregados_por_setores_basico_BR_20260520.zip', [], 'zip');
+    const id = publicationId(VERSION, [correspondence.sha256, locais.sha256, gpkg.source.sha256, income.source.sha256, basic.source.sha256], inputs);
+    if (await reusePublished(client, { id, scope: SCOPE, inputs })) { console.log(`Já publicado: ${id}.`); return; }
     const places = new Map<string, Place>(); let localRows = 0; const generated = new Set<string>();
     for await (const row of rows(locais.path, locais.entry)) {
       localRows++;
@@ -141,9 +147,6 @@ async function run() {
     console.log(`${places.size.toLocaleString('pt-BR')} locais no cadastro do TSE; ${resultPlaces.rows.length.toLocaleString('pt-BR')} com votos publicados; ${withoutLocal.length} destes sem linha no cadastro de locais.`);
 
     // 2. Malha de setores e agregados do IBGE, preservados.
-    const gpkg = await preservedDownload('br_setores_cd2022', `${IBGE}/malha_com_atributos/setores/gpkg/BR/BR_setores_CD2022.gpkg`, 'setores', 'BR_setores_CD2022.gpkg (malha de setores com atributos)', [], 'gpkg');
-    const income = await preservedDownload('agregados_setores_renda_responsavel', `${IBGE}_Rendimento_do_Responsavel/Agregados_por_setores_renda_responsavel_BR_20260508_csv.zip`, 'setores', 'Agregados_por_setores_renda_responsavel_BR_20260508_csv.zip', [], 'zip');
-    const basic = await preservedDownload('agregados_setores_basico', `${IBGE}/Agregados_por_Setor_csv/Agregados_por_setores_basico_BR_20260520.zip`, 'setores', 'Agregados_por_setores_basico_BR_20260520.zip', [], 'zip');
     const loaded = await loadTracts(client, gpkg.path);
     const tractCount = loaded.tracts;
     console.log(`${loaded.rows.toLocaleString('pt-BR')} linhas na malha; ${tractCount.toLocaleString('pt-BR')} setores (${loaded.multipart} com partes descontínuas, unidas).`);
@@ -158,9 +161,6 @@ async function run() {
       await client.query(`INSERT INTO places SELECT x.uf, x.code, x.zone, x.local, x.ibge, x.name, x.latitude, x.longitude, x.electors, x.coordinates, x.relocated,
         CASE WHEN x.latitude IS NULL THEN NULL ELSE ST_SetSRID(ST_MakePoint(x.longitude, x.latitude), 4674) END FROM jsonb_to_recordset($1::jsonb) AS x(uf text, code text, zone integer, local text, ibge text, name text, latitude double precision, longitude double precision, electors integer, coordinates integer, relocated boolean)`, [JSON.stringify(chunk)]);
     }
-    const id = createHash('sha256').update(JSON.stringify({ version: VERSION, hashes: [correspondence.sha256, locais.sha256, gpkg.source.sha256, income.source.sha256, basic.source.sha256] })).digest('hex');
-    const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
-    if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}.`); return; }
     await client.query('BEGIN');
     try {
       await client.query('INSERT INTO import_batches(id,scope,metadata) VALUES($1,$2,$3) ON CONFLICT(id) DO NOTHING', [id, SCOPE, { pending: true }]);
@@ -196,7 +196,7 @@ async function run() {
       const tse = (file: Awaited<ReturnType<typeof sourceFile>>, generatedAt: string[], rowsRead: number, rowsSelected: number) => { const { path: _path, ...metadata } = file; return { ...metadata, generatedAt, rowsRead, rowsSelected }; };
       const sources = [tse(correspondence, [], 5571, 5570), tse(locais, [...generated], localRows, places.size), { ...gpkg.source, rowsRead: loaded.rows, rowsSelected: tractCount },
         { ...income.source, rowsRead: incomeValues.size, rowsSelected: incomeValues.size }, { ...basic.source, rowsRead: basicValues.size, rowsSelected: basicValues.size }];
-      const dataset = tractsDatasetSchema.parse({ id, kind: 'polling-place-tracts', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, sources, coverage,
+      const dataset = tractsDatasetSchema.parse({ id, kind: 'polling-place-tracts', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources, coverage,
         scope: 'Locais de votação de 2022 (cadastro do TSE, 1º turno, sem exterior) associados ao setor censitário do Censo 2022 que contém a coordenada informada pelo TSE.',
         method: 'v1 — setor que contém o ponto (PostGIS ST_Intersects, SIRGAS 2000). Associado só quando há uma única coordenada para o local, um único setor contendo o ponto e esse setor pertence ao município esperado pelo código IBGE oficial. A coordenada do TSE indica onde fica o local, não onde moram os eleitores.',
         notes: [`${withoutLocal.length} locais com votos publicados não aparecem no cadastro de locais do TSE (chave: código original do local, o do dia da eleição).`,
@@ -204,14 +204,12 @@ async function run() {
           'Locais com alguma seção realocada depois de 2022 no cadastro do TSE não são associados: a coordenada pode ser do prédio novo.', 'Locais de nomes diferentes na mesma coordenada exata são contados (indício de ponto padrão); continuam associados, com o aviso.',
           'Coordenadas do TSE tratadas como SIRGAS 2000 (diferença para WGS 84 desprezível nesta escala).', 'A geometria dos setores não é guardada no banco; o GeoPackage preservado permite refazer a associação.'] });
       await client.query('UPDATE import_batches SET metadata=$2 WHERE id=$1', [id, dataset]);
-      await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
-      await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
-      await client.query('COMMIT');
-      for (const source of sources) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes ?? 0]);
       const totals = coverage.reduce((sum, item) => ({ places: sum.places + item.places, electors: sum.electors + item.electors, associated: sum.associated + item.byStatus.associated!.places, associatedElectors: sum.associatedElectors + item.byStatus.associated!.electors }), { places: 0, electors: 0, associated: 0, associatedElectors: 0 });
       const report = { dataset, totals, withoutLocal, elapsedSeconds: Math.round((performance.now() - started) / 1000), peakRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) };
-      await mkdir(resolve(ROOT, 'data/audit'), { recursive: true });
-      await writeFile(resolve(ROOT, 'data/audit', `${id}.json`), JSON.stringify(report, null, 2));
+      for (const source of sources) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes ?? 0]);
+      await preparePublication(client, { id, scope: SCOPE, inputs, report: report });
+      await client.query('COMMIT');
+
       console.log(JSON.stringify({ published: id, scope: SCOPE, totals, elapsedSeconds: report.elapsedSeconds }, null, 2));
     } catch (error) { await client.query('ROLLBACK'); throw error; }
   } finally { client.release(); await pool.end(); }

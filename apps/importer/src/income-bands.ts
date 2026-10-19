@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { reusePublished, publicationId, publishedInputs, preparePublication } from './publication';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
@@ -13,7 +13,7 @@ import { preservedDownload, sidraValue } from './sidra';
  * os moradores em domicílios particulares permanentes ocupados (V06002) entram na faixa da mediana do setor (V06006). Inclui
  * todos os setores, com ou sem local de votação. Cada município confere com o V06002 do arquivo municipal do IBGE.
  */
-const VERSION = 'income-bands-2022-v1';
+const VERSION = 'income-bands-2022-v2';
 const SCOPE = '2022/context/income-bands';
 const IBGE = 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Rendimento_do_Responsavel';
 const empty = (): IncomeBandPopulation => ({ total: 0, bands: INCOME_BANDS.map((band) => ({ index: band.index, residents: 0, tracts: 0 })), noData: { residents: 0, tracts: 0 }, undisclosed: { tracts: 0 } });
@@ -39,6 +39,9 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
+    const lock = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [`observatorio:${SCOPE}`]);
+    if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
+    const inputs = await publishedInputs(client, ['2022/context/municipal']);
     await client.query(await readFile(resolve(__dirname, 'migrations/012-income-bands.sql'), 'utf8'));
     // UF de cada município pelo contexto municipal publicado (código IBGE validado contra a correspondência TSE–IBGE).
     const context = await client.query<{ ibge_code: string; uf: string }>("SELECT c.ibge_code, c.uf FROM municipality_context c JOIN import_batches b ON b.id=c.batch_id AND b.published AND b.scope='2022/context/municipal'");
@@ -78,11 +81,10 @@ async function run() {
       for (const band of item.bands) { totals.bands[band.index - 1]!.residents += band.residents; totals.bands[band.index - 1]!.tracts += band.tracts; }
     }
     const sources = [{ ...tracts.source, rowsRead: read, rowsSelected: read }, { ...municipal.source, rowsRead: municipalRows, rowsSelected: municipalRows }, { ...dictionary.source, rowsRead: 0, rowsSelected: 0 }];
-    const id = createHash('sha256').update(JSON.stringify({ version: VERSION, hashes: sources.map((source) => source.sha256) })).digest('hex');
-    const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
+    const id = publicationId(VERSION, sources.map((source) => source.sha256), inputs);
     for (const source of sources) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes ?? 0]);
-    if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}.`); return; }
-    const dataset = incomeBandsDatasetSchema.parse({ id, kind: 'income-bands', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, sources,
+    if (await reusePublished(client, { id, scope: SCOPE, inputs })) { console.log(`Já publicado: ${id}.`); return; }
+    const dataset = incomeBandsDatasetSchema.parse({ id, kind: 'income-bands', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources,
       scope: 'Moradores em domicílios particulares permanentes ocupados (V06002, universo do Censo 2022) de todos os setores censitários, somados pela faixa fixa da renda mediana do responsável com rendimento no setor (V06006), em salários mínimos de 2022.',
       totals: { municipalities: byMunicipality.size, tracts: read, ...totals },
       notes: [`Soma dos setores igual ao V06002 do arquivo municipal do IBGE nos ${byMunicipality.size.toLocaleString('pt-BR')} municípios.`,
@@ -97,12 +99,10 @@ async function run() {
       await client.query('INSERT INTO municipality_income_bands SELECT $1, x.code, x.uf, x.result FROM jsonb_to_recordset($2::jsonb) AS x(code text, uf text, result jsonb)', [id, JSON.stringify(list)]);
       const stored = await client.query<{ n: number; total: string }>("SELECT count(*)::integer AS n, sum((result->>'total')::bigint)::text AS total FROM municipality_income_bands WHERE batch_id=$1", [id]);
       if (stored.rows[0]!.n !== list.length || Number(stored.rows[0]!.total) !== totals.total) throw new Error('Faixas gravadas não conferem.');
-      await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
-      await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
+      await preparePublication(client, { id, scope: SCOPE, inputs, report: { dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000) } });
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
-    await mkdir(resolve(ROOT, 'data/audit'), { recursive: true });
-    await writeFile(resolve(ROOT, 'data/audit', `${id}.json`), JSON.stringify({ dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000) }, null, 2));
+
     console.log(JSON.stringify({ published: id, scope: SCOPE, totals: dataset.totals, elapsedSeconds: Math.round((performance.now() - started) / 1000) }, null, 2));
   } finally { client.release(); await pool.end(); }
 }

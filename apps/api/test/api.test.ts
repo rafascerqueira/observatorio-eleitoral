@@ -279,3 +279,28 @@ test('grupos de locais (métrica E): indicador obrigatório, cargo estadual exig
   const empty = await (await fetch(`${base}/elections/places/groups?indicator=income-median`)).json();
   assert.equal(empty.status, 'awaiting-import'); assert.deepEqual(empty.groups, []); assert.equal(empty.coverage.votesInGroups, 0);
 });
+
+test('publicação presidencial de 2022 nunca atende a ano diferente, inclusive grupos, raios e mapas por UF', async () => {
+  published = true; national = true;
+  try {
+    for (const path of ['map/candidates', 'map/candidates?uf=SP', 'places/groups?indicator=college', 'places/groups?indicator=income-median&radius=250', 'places/groups?indicator=women&uf=SP', 'municipalities', 'national', 'state?uf=SP']) {
+      queries.length = 0;
+      const response = await fetch(`${base}/elections/${path}${path.includes('?') ? '&' : '?'}year=2026`);
+      assert.equal(response.status, 200, path);
+      const data = await response.json();
+      assert.equal(data.status, 'awaiting-import', path);
+      assert.equal(data.groups?.length ?? data.items?.length ?? 0, 0, path);
+      assert.ok(!queries.some(({ sql }) => /FROM (place_groups|place_group_sensitivity|municipality_results)/.test(sql)), 'Sem leitura de resultados de outro ano');
+    }
+    assert.equal((await fetch(`${base}/elections/national?year=2022`)).status, 200, 'A publicação correta continua disponível');
+  } finally { published = false; national = false; }
+});
+
+test('contexto inconsistente não é publicado como ausência na fonte', async () => {
+  published = true; contextPublished = true;
+  const previous = contextItem.race.total;
+  try {
+    contextItem.race.total = 11;
+    assert.equal((await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).status, 503);
+  } finally { contextItem.race.total = previous; published = false; contextPublished = false; }
+});

@@ -2,8 +2,14 @@
   "name": "observatorio-eleitoral",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=24.21.0 <25", "npm": ">=11" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.21.0 <25",
+    "npm": ">=11"
+  },
   "packageManager": "npm@12.2.0",
   "scripts": {
     "dev": "npm run build -w @observatorio/contracts && node scripts/dev.mjs",
@@ -34,7 +40,18 @@
     "smoke:context": "node scripts/smoke-context.mjs",
     "db:up": "docker compose up -d --wait db",
     "db:stop": "docker compose stop db",
-    "compose:up": "docker compose --profile app up --build -d --wait"
+    "compose:up": "docker compose --profile app up --build -d --wait",
+    "check:data": "node scripts/check-data.mjs",
+    "check:ui": "node scripts/check-ui.mjs",
+    "check:regressions": "node scripts/check-regressions.mjs",
+    "check:publication": "tsx scripts/check-publication.ts",
+    "check:reimports": "node scripts/check-reimports.mjs"
   },
-  "devDependencies": { "typescript": "5.9.3", "tsx": "4.23.15", "@types/node": "^24.0.0" }
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "axe-core": "4.14.0",
+    "puppeteer-core": "25.14.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
 }

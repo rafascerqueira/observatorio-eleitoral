@@ -58,7 +58,7 @@ for (const text of ['Contexto de São Paulo / SP', 'Estimativa da amostra', 'Cad
 assert.ok((await html('/municipios/97012?uf=DF&round=1')).includes('não traz esta UF'));
 assert.ok((await html('/fontes')).includes('Contexto municipal: Censo 2022'));
 // Mapa: malhas do IBGE ligadas pelo código; valores somando numeradores e denominadores (nunca média de percentuais).
-assert.equal(catalog.mapDatasets.length, 1); assert.equal(catalog.mapDatasets[0].importerVersion, 'maps-ibge-2022-v2');
+assert.equal(catalog.mapDatasets.length, 1); assert.equal(catalog.mapDatasets[0].importerVersion, 'maps-ibge-2022-v3');
 const brGeometry = await json('/elections/map/geometry');
 assert.equal(Object.values(brGeometry.topology.objects)[0].geometries.length, 27);
 assert.equal(Object.values((await json('/elections/map/geometry?uf=MG')).topology.objects)[0].geometries.length, 853);
@@ -76,10 +76,10 @@ const mapPage = await html('/mapa');
 assert.equal((mapPage.match(/<figure class="choropleth"/g) ?? []).length, 2);
 for (const text of ['Moradores com rendimento domiciliar per capita de até ½ salário mínimo', 'Abstenção na Presidência — 1º turno', 'Quintis', 'não demonstram relação de causa', 'Tabela dos mapas']) assert.ok(mapPage.includes(text), text);
 assert.ok((await html('/mapa?uf=PE')).includes('Fernando de Noronha'));
-// Fase 3: locais → setores (v2) e grupos de locais (métrica E).
+// Fase 3: locais → setores (v3, mesma associação da v2 com proveniência) e grupos de locais (métrica E).
 if (catalog.tractsDatasets?.length) {
   const [tracts] = catalog.tractsDatasets;
-  assert.equal(tracts.importerVersion, 'polling-place-tracts-2022-v2');
+  assert.equal(tracts.importerVersion, 'polling-place-tracts-2022-v3');
   assert.equal(sum(tracts.coverage, 'electors'), 155756933, 'Locais somam o cadastro doméstico');
   const associated = tracts.coverage.reduce((total, item) => total + item.byStatus.associated.electors, 0);
   assert.ok(associated / 155756933 > 0.9, 'Mais de 90% dos eleitores em locais associados');

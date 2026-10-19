@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { reusePublished, publicationId, publishedInputs, preparePublication } from './publication';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
@@ -13,7 +13,7 @@ import { tseCategory, tseOrder } from './context-model';
  * Perfil do eleitorado por local de votação (decisão 4 de Rafael): o arquivo do TSE por seção, somado por local, guardado
  * como contagens por dimensão na ordem de `tseOrder`. É cadastro (base própria do TSE), não comparecimento nem voto.
  */
-const VERSION = 'place-profiles-2022-v1';
+const VERSION = 'place-profiles-2022-v2';
 const SCOPE = '2022/places/profiles';
 const DIMENSIONS = [['gender', 'DS_GENERO'], ['age', 'DS_FAIXA_ETARIA'], ['education', 'DS_GRAU_ESCOLARIDADE'], ['maritalStatus', 'DS_ESTADO_CIVIL']] as const;
 type Profile = { eligible: number; counts: Record<string, number[]> };
@@ -25,14 +25,18 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
+    const inputs = await publishedInputs(client, ['2022/context/municipal', '2022/president/BR']);
     const lock = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [`observatorio:${SCOPE}`]);
     if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
     await client.query(await readFile(resolve(__dirname, 'schema.sql'), 'utf8'));
     await client.query(await readFile(resolve(__dirname, 'migrations/010-place-profiles.sql'), 'utf8'));
+    const files = [];
+    for (const uf of STATES) files.push({ uf, file: await sourceFile({ file: `perfil_eleitor_secao_2022_${uf}.zip`, entry: `perfil_eleitor_secao_2022_${uf}.csv`, directory: 'perfil_eleitor_secao' }) });
+    const id = publicationId(VERSION, files.map(({ file }) => file.sha256), inputs);
+    if (await reusePublished(client, { id, scope: SCOPE, inputs })) { console.log(`Já publicado: ${id}.`); return; }
     const order = Object.fromEntries(DIMENSIONS.map(([dimension]) => [dimension, tseOrder(dimension).map((item) => item.key)]));
     const profiles = new Map<string, Profile>(); const sources = []; let total = 0;
-    for (const uf of STATES) {
-      const file = await sourceFile({ file: `perfil_eleitor_secao_2022_${uf}.zip`, entry: `perfil_eleitor_secao_2022_${uf}.csv`, directory: 'perfil_eleitor_secao' });
+    for (const { uf, file } of files) {
       const generated = new Set<string>(); let read = 0;
       for await (const row of rows(file.path, file.entry)) {
         read++;
@@ -62,15 +66,14 @@ async function run() {
     const resultPlaces = await client.query<{ key: string }>(`SELECT DISTINCT p.uf || '/' || p.municipality_code || '/' || p.zone || '/' || p.code AS key FROM national_place_results p
       JOIN import_batches b ON b.id=p.batch_id AND b.published AND b.scope='2022/president/BR' WHERE p.round=1 AND p.uf<>'ZZ'`);
     const withoutProfile = resultPlaces.rows.filter((row) => !profiles.has(row.key)).length;
-    const id = createHash('sha256').update(JSON.stringify({ version: VERSION, hashes: sources.map((source) => source.sha256) })).digest('hex');
-    const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
-    if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}.`); return; }
-    const dataset = placeProfilesDatasetSchema.parse({ id, kind: 'place-profiles', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, sources, order,
+    if (id !== publicationId(VERSION, sources.map((source) => source.sha256), inputs)) throw new Error('Fontes do perfil mudaram durante a leitura; publicação bloqueada.');
+    const dataset = placeProfilesDatasetSchema.parse({ id, kind: 'place-profiles', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources, order,
       scope: 'Perfil do eleitorado de 2022 por local de votação: arquivo do TSE por seção, somado por município, zona e local (cadastro; base própria do TSE).',
       totals: { places: profiles.size, eligible: total, contextEligible: contextTotal, resultPlaces: resultPlaces.rows.length, resultPlacesWithoutProfile: withoutProfile },
       notes: [`Total do arquivo por seção: ${total.toLocaleString('pt-BR')} eleitores; perfil do eleitorado por município (outra geração do TSE): ${contextTotal.toLocaleString('pt-BR')}. A diferença não foi ajustada.`,
         `${withoutProfile} locais com votos publicados não aparecem no perfil por seção.`, 'Cor/raça, identidade de gênero e quilombola: não coletados em 2022 (fonte "#NE"); não guardados.'] });
     for (const source of sources) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes]);
+    const report = { dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000), peakRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) };
     await client.query('BEGIN');
     try {
       await client.query('INSERT INTO import_batches(id,scope,metadata) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET metadata=EXCLUDED.metadata', [id, SCOPE, dataset]);
@@ -81,13 +84,10 @@ async function run() {
       }
       const stored = await client.query<{ n: number; eligible: string }>('SELECT count(*)::integer AS n, sum(eligible)::text AS eligible FROM polling_place_profiles WHERE batch_id=$1', [id]);
       if (stored.rows[0]!.n !== list.length || Number(stored.rows[0]!.eligible) !== total) throw new Error('Perfis gravados não conferem.');
-      await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
-      await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
+      await preparePublication(client, { id, scope: SCOPE, inputs, report: report });
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
-    const report = { dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000), peakRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) };
-    await mkdir(resolve(ROOT, 'data/audit'), { recursive: true });
-    await writeFile(resolve(ROOT, 'data/audit', `${id}.json`), JSON.stringify(report, null, 2));
+
     console.log(JSON.stringify({ published: id, scope: SCOPE, totals: dataset.totals, elapsedSeconds: report.elapsedSeconds }, null, 2));
   } finally { client.release(); await pool.end(); }
 }

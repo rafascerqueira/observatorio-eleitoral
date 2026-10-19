@@ -154,3 +154,19 @@ h3 { font-size: 16px; line-height: 1.4; margin: 0 0 8px; }
   .prose { padding-block: 35px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+
+/* Comparação municipal: uma linha por município, detalhe nativo e navegação GET. */
+.municipality-overview > table { min-width: 780px; }
+.municipality-overview > table > tbody > tr > th { min-width: 160px; }
+.municipality-overview > table > tbody > tr > td { vertical-align: top; }
+.municipality-overview .cell-count { display: block; }
+.municipality-overview caption { text-align: left; padding: 12px 0; }
+.municipality-overview caption .source-note { display: block; font-weight: 400; max-width: calc(100vw - 40px); }
+.municipality-votes { min-width: 200px; max-width: 520px; }
+.municipality-votes > summary { cursor: pointer; padding: 8px 0; min-height: 44px; font-weight: 600; }
+.municipality-votes[open] { min-width: min(460px, 80vw); }
+.municipality-votes table { margin: 12px 0; width: 100%; }
+.municipality-votes caption { white-space: normal; font-size: .9rem; }
+.municipality-vote-totals { display: grid; gap: 8px; padding: 12px 0; }
+.municipality-vote-totals > div { display: flex; gap: 16px; justify-content: space-between; }
+.municipality-vote-totals dd { margin: 0; font-variant-numeric: tabular-nums; }

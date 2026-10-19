@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { reusePublished, publicationId, publishedInputs, preparePublication } from './publication';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
@@ -9,13 +9,13 @@ import { assertEqual } from './model';
 import { ROOT, sourceFile } from './sources';
 import { sidraMetadata, sidraQuery, sidraValue, type PreservedSource, type SidraRow } from './sidra';
 import { municipalityCode } from './territory';
-import { distribution, populationByAge, tseCategory, tseOrder } from './context-model';
+import { distribution, populationByAge, requiredSidraValue, tseCategory, tseOrder, uniqueSidraValues } from './context-model';
 
 /**
  * Contexto municipal de 2022: Censo 2022 (SIDRA) por código IBGE, ligado ao município do TSE pela tabela oficial de
  * correspondência; perfis do TSE (cadastro e comparecimento) como base própria, declarada (decisão de Rafael, 17/10/2026).
  */
-const VERSION = 'municipal-context-2022-v1';
+const VERSION = 'municipal-context-2022-v3';
 const SCOPE = '2022/context/municipal';
 type Uf = typeof STATES[number];
 type Link = { uf: Uf; code: string; tseName: string; ibgeCode: string; ibgeName: string; ufIbge: string };
@@ -31,6 +31,7 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
+    const inputs = await publishedInputs(client, ['2022/president/BR']);
     const lock = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [`observatorio:${SCOPE}`]);
     if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
     await client.query(await readFile(resolve(__dirname, 'schema.sql'), 'utf8'));
@@ -93,12 +94,14 @@ async function run() {
     // 4. Cadastro do TSE (perfil do eleitorado) e comparecimento por perfil, agregados por município.
     const profileFile = await sourceFile(tseSpec('perfil_eleitorado_2022.zip', 'perfil_eleitorado_2022_<UF>.csv (27 UFs; ZZ e BRASIL não usados)', 'perfil_eleitorado'));
     const turnoutFile = await sourceFile(tseSpec('perfil_comparecimento_abstencao_2022.zip', 'perfil_comparecimento_abstencao_2022_<UF>.csv (26 UFs; sem DF na fonte)', 'perfil_comparecimento_abstencao'));
+    const id = publicationId(VERSION, [correspondence.sha256, profileFile.sha256, turnoutFile.sha256, ...sources.map((source) => source.sha256)], inputs);
+    if (await reusePublished(client, { id, scope: SCOPE, inputs })) { console.log(`Já publicado: ${id}. Nenhuma duplicação.`); return; }
     type Tally = Map<string, number>;
     const electorate = new Map<string, { eligible: number; dims: Record<Dimension, Tally> }>();
-    const generatedProfile = new Set<string>(); let profileRows = 0;
+    const generatedProfile = new Set<string>(); let profileRows = 0, selectedProfileRows = 0;
     for (const entry of entries(profileFile.path).filter((name) => name.endsWith('.csv') && !name.includes('BRASIL'))) {
       for await (const row of rows(profileFile.path, entry)) {
-        profileRows++; if (row.SG_UF === 'ZZ') continue;
+        profileRows++; if (row.SG_UF === 'ZZ') continue; selectedProfileRows++;
         generatedProfile.add(`${row.DT_GERACAO} ${row.HH_GERACAO} (America/Sao_Paulo)`);
         const id = key(row.SG_UF!, row.CD_MUNICIPIO!); const value = count(row, 'QT_ELEITORES');
         const item = electorate.get(id) ?? { eligible: 0, dims: { gender: new Map(), age: new Map(), education: new Map(), maritalStatus: new Map() } };
@@ -110,10 +113,10 @@ async function run() {
     const missingProfile = [...links.keys()].filter((item) => !electorate.has(item));
     if (missingProfile.length) throw new Error(`Municípios sem perfil do eleitorado: ${missingProfile.slice(0, 10).join(', ')}`);
     type TurnoutTally = { eligible: number; turnout: number; abstentions: number; dims: Record<Dimension, Map<string, [number, number, number]>> };
-    const turnout = new Map<string, TurnoutTally>(); const turnoutUfs = new Set<string>(); const generatedTurnout = new Set<string>(); let turnoutRows = 0;
+    const turnout = new Map<string, TurnoutTally>(); const turnoutUfs = new Set<string>(); const generatedTurnout = new Set<string>(); let turnoutRows = 0, selectedTurnoutRows = 0;
     for (const entry of entries(turnoutFile.path).filter((name) => name.endsWith('.csv') && !name.includes('BRASIL'))) {
       for await (const row of rows(turnoutFile.path, entry)) {
-        turnoutRows++; if (row.SG_UF === 'ZZ') continue;
+        turnoutRows++; if (row.SG_UF === 'ZZ') continue; selectedTurnoutRows++;
         generatedTurnout.add(`${row.DT_GERACAO} ${row.HH_GERACAO} (America/Sao_Paulo)`);
         if (!['1', '2'].includes(row.NR_TURNO ?? '')) throw new Error(`Turno não auditado no comparecimento: ${row.NR_TURNO}`);
         const eligible = count(row, 'QT_APTOS'), present = count(row, 'QT_COMPARECIMENTO'), absent = count(row, 'QT_ABSTENCAO');
@@ -141,16 +144,19 @@ async function run() {
     for (const link of [...links.values()].sort((a, b) => a.uf.localeCompare(b.uf) || a.code.localeCompare(b.code))) {
       const label = `${link.uf}/${link.code} (IBGE ${link.ibgeCode})`;
       const data = census.get(link.ibgeCode)!;
-      const values = (name: string, column: string) => new Map((data[name] ?? []).map((row) => [row[column]!, sidraValue(row.V)] as const));
+      const values = (name: string, column: string) => uniqueSidraValues(data[name] ?? [], column, sidraValue);
       const ages = populationByAge(values('age', 'D6N'), label);
       const race = values('race', 'D4N'); const literacy = values('literacy', 'D4N'); const education = values('education', 'D4N'); const income = values('income', 'D6N');
-      const incomeValue = new Map((data.incomeValue ?? []).map((row) => [row.D2C!, sidraValue(row.V)] as const));
-      const categories = (map: Map<string, number | null>, names: string[], keys: string[]) => names.map((name, index) => { if (!map.has(name)) throw new Error(`${label}: categoria ${name} ausente.`); return { key: keys[index]!, label: name, value: map.get(name)! }; });
+      const incomeValue = uniqueSidraValues(data.incomeValue ?? [], 'D2C', sidraValue);
+      const categories = (map: Map<string, number | null>, names: string[], keys: string[]) => {
+        if ([...map.keys()].some((name) => name !== 'Total' && !names.includes(name))) throw new Error(`${label}: categoria nova na fonte; publicação bloqueada.`);
+        return names.map((name, index) => { if (!map.has(name)) throw new Error(`${label}: categoria ${name} ausente.`); return { key: keys[index]!, label: name, value: map.get(name)! }; });
+      };
       const raceNames = ['Branca', 'Preta', 'Amarela', 'Parda', 'Indígena'];
       const educationNames = ['Sem instrução e fundamental incompleto', 'Fundamental completo e médio incompleto', 'Médio completo e superior incompleto', 'Superior completo'];
       const incomeNames = ['Sem rendimento', 'Até 1/4 de salário mínimo', 'Mais de 1/4 a 1/2 salário mínimo', 'Mais de 1/2 a 1 salário mínimo', 'Mais de 1 a 2 salários mínimos', 'Mais de 2 a 3 salários mínimos',
         'Mais de 3 a 5 salários mínimos', 'Mais de 5 a 10 salários mínimos', 'Mais de 10 a 15 salários mínimos', 'Mais de 15 a 20 salários mínimos', 'Mais de 20 salários mínimos'];
-      const raceTotal = race.get('Total') ?? null;
+      const raceTotal = requiredSidraValue(race, 'Total');
       if (raceTotal !== ages.population.total) throw new Error(`${label}: população por cor ou raça (${raceTotal}) diferente da população por idade (${ages.population.total}).`);
       ufSums.set(link.ufIbge, (ufSums.get(link.ufIbge) ?? 0) + (ages.population.total ?? 0));
       const profile = electorate.get(key(link.uf, link.code))!;
@@ -169,11 +175,11 @@ async function run() {
         code: link.code, name: link.tseName, uf: link.uf, ibgeCode: link.ibgeCode, ibgeName: link.ibgeName,
         population: ages.population, populationByAge: ages.populationByAge,
         race: distribution('universo', 'IBGE, Censo 2022 — SIDRA 9605', raceTotal, categories(race, raceNames, ['white', 'black', 'asian', 'brown', 'indigenous']), `${label}: cor ou raça`, 'partial'),
-        literacy15: distribution('universo', 'IBGE, Censo 2022 — SIDRA 9542 (15 anos ou mais)', literacy.get('Total') ?? null, categories(literacy, ['Alfabetizadas', 'Não alfabetizadas'], ['literate', 'illiterate']), `${label}: alfabetização`),
-        education18: distribution('amostra', 'IBGE, Censo 2022 — SIDRA 10061 (18 anos ou mais; estimativa da amostra)', education.get('Total') ?? null, categories(education, educationNames, ['none-fundamental-incomplete', 'fundamental-complete', 'high-school-complete', 'college-complete']), `${label}: instrução`, 'rounding'),
-        incomeClasses: distribution('amostra', 'IBGE, Censo 2022 — SIDRA 10296 (rendimento domiciliar per capita; salário mínimo de R$ 1.212,00; estimativa da amostra)', income.get('Total') ?? null,
+        literacy15: distribution('universo', 'IBGE, Censo 2022 — SIDRA 9542 (15 anos ou mais)', requiredSidraValue(literacy, 'Total'), categories(literacy, ['Alfabetizadas', 'Não alfabetizadas'], ['literate', 'illiterate']), `${label}: alfabetização`),
+        education18: distribution('amostra', 'IBGE, Censo 2022 — SIDRA 10061 (18 anos ou mais; estimativa da amostra)', requiredSidraValue(education, 'Total'), categories(education, educationNames, ['none-fundamental-incomplete', 'fundamental-complete', 'high-school-complete', 'college-complete']), `${label}: instrução`, 'rounding'),
+        incomeClasses: distribution('amostra', 'IBGE, Censo 2022 — SIDRA 10296 (rendimento domiciliar per capita; salário mínimo de R$ 1.212,00; estimativa da amostra)', requiredSidraValue(income, 'Total'),
           categories(income, incomeNames, ['none', 'upto-1/4', '1/4-1/2', '1/2-1', '1-2', '2-3', '3-5', '5-10', '10-15', '15-20', '20+']), `${label}: rendimento`, 'rounding'),
-        incomePerCapita: { mean: incomeValue.get('13431') ?? null, median: incomeValue.get('13534') ?? null, source: 'IBGE, Censo 2022 — SIDRA 10295 (rendimento domiciliar per capita nominal, R$; estimativa da amostra)' },
+        incomePerCapita: { mean: requiredSidraValue(incomeValue, '13431'), median: requiredSidraValue(incomeValue, '13534'), source: 'IBGE, Censo 2022 — SIDRA 10295 (rendimento domiciliar per capita nominal, R$; estimativa da amostra)' },
         electorate: { eligible: profile.eligible, ...Object.fromEntries(DIMENSIONS.map(([dimension]) => [dimension, tseDistribution(dimension, profile.dims[dimension])])) },
         resultsEligible: resultsEligible.get(key(link.uf, link.code))!,
         turnout: { '1': turnoutRound('1'), '2': turnoutRound('2') },
@@ -185,21 +191,23 @@ async function run() {
 
     // 6. Publicação atômica, idempotente pelos originais.
     const tseSources = [correspondence, profileFile, turnoutFile].map(({ path: _path, ...metadata }, index) => ({ ...metadata, generatedAt: [[...generatedLinks], [...generatedProfile], [...generatedTurnout]][index]!,
-      rowsRead: [correspondenceRows, profileRows, turnoutRows][index]!, rowsSelected: [links.size, profileRows, turnoutRows][index]! }));
+      rowsRead: [correspondenceRows, profileRows, turnoutRows][index]!, rowsSelected: [links.size, selectedProfileRows, selectedTurnoutRows][index]! }));
     const allSources = [...tseSources, ...sources];
-    const id = createHash('sha256').update(JSON.stringify({ version: VERSION, scope: SCOPE, hashes: allSources.map((source) => source.sha256) })).digest('hex');
-    const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
-    if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}. Nenhuma duplicação.`); return; }
-    const dataset = contextDatasetSchema.parse({ id, kind: 'municipal-context', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, sources: allSources, validation: 'checked',
+    if (id !== publicationId(VERSION, allSources.map((source) => source.sha256), inputs)) throw new Error('Fontes do contexto mudaram durante a leitura; publicação bloqueada.');
+    const dataset = contextDatasetSchema.parse({ id, kind: 'municipal-context', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources: allSources, validation: 'checked',
       scope: 'Contexto municipal de 2022: Censo 2022 (IBGE, SIDRA) ligado aos municípios do TSE pela correspondência oficial de códigos; perfil do eleitorado e comparecimento por perfil do TSE como base própria, que não fecha com os resultados.',
       coverage: { expected: links.size, published: items.length, withoutTurnout },
       notes: [`Correspondência TSE–IBGE: ${correspondenceRows} linhas; ${extra} sem município publicado em 2022 (criação posterior).`,
+        `Perfil do eleitorado: ${profileRows} linhas lidas e ${selectedProfileRows} selecionadas; ${profileRows - selectedProfileRows} linhas do exterior (ZZ) lidas e excluídas do contexto municipal.`,
         `Perfil do eleitorado: ${electorateTotal.toLocaleString('pt-BR')} aptos nos municípios (sem exterior); difere dos resultados por município.`,
         'Comparecimento por perfil: a fonte não traz o DF nem o exterior; para o DF, "não disponível".',
         'Cor/raça, identidade de gênero e quilombola do eleitorado de 2022: 100% "não informado" na fonte; não publicados.',
         'Rendimento e instrução são estimativas da amostra do Censo, com erro amostral maior em municípios pequenos; as classes são arredondadas célula a célula e podem diferir do total em poucas pessoas (registrado por município, nunca ajustado).',
         `Cor ou raça (SIDRA 9605): em ${items.filter((item) => item.race.undistributed).length} municípios o total supera a soma das cinco categorias publicadas; a diferença aparece como não discriminada na fonte, sem ser redistribuída.`] });
     for (const source of allSources) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes]);
+    const differences = items.map((item) => item.electorate.eligible - (item.resultsEligible['1'] ?? 0));
+    const report = { dataset, electorateTotal, electorateVsResults: { municipalitiesWithDifference: differences.filter(Boolean).length, maxAbsoluteDifference: Math.max(...differences.map(Math.abs)) },
+      elapsedSeconds: Math.round((performance.now() - started) / 1000), peakRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) };
     await client.query('BEGIN');
     try {
       await client.query('INSERT INTO import_batches(id,scope,metadata) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET metadata=EXCLUDED.metadata', [id, SCOPE, dataset]);
@@ -211,15 +219,10 @@ async function run() {
       await client.query(await readFile(resolve(__dirname, 'migrations/008-map-indicators.sql'), 'utf8'));
       const stored = await client.query<{ count: number; eligible: string }>("SELECT count(*)::integer AS count, sum((result->'electorate'->>'eligible')::bigint)::text AS eligible FROM municipality_context WHERE batch_id=$1", [id]);
       assertEqual(stored.rows[0]!.count, items.length, 'Municípios gravados'); assertEqual(Number(stored.rows[0]!.eligible), electorateTotal, 'Eleitorado gravado');
-      await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
-      await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
+      await preparePublication(client, { id, scope: SCOPE, inputs, report: report });
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
-    const differences = items.map((item) => item.electorate.eligible - (item.resultsEligible['1'] ?? 0));
-    const report = { dataset, electorateTotal, electorateVsResults: { municipalitiesWithDifference: differences.filter(Boolean).length, maxAbsoluteDifference: Math.max(...differences.map(Math.abs)) },
-      elapsedSeconds: Math.round((performance.now() - started) / 1000), peakRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) };
-    await mkdir(resolve(ROOT, 'data/audit'), { recursive: true });
-    await writeFile(resolve(ROOT, 'data/audit', `${id}.json`), JSON.stringify(report, null, 2));
+
     console.log(JSON.stringify({ published: id, scope: SCOPE, coverage: dataset.coverage, electorateTotal, elapsedSeconds: report.elapsedSeconds, peakRssMiB: report.peakRssMiB }, null, 2));
   } finally { client.release(); await pool.end(); }
 }

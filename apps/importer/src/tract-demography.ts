@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
+import { reusePublished, publicationId, publishedInputs, preparePublication } from './publication';
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
@@ -16,7 +16,7 @@ import { IBGE } from './sectors';
  * cortes de `PLACE_GROUP_CUTS`) pela parcela calculada entre os seus moradores de 15 anos ou mais — o agregado por setor
  * agrupa 15 a 19 anos, então a base é 15+ e a faixa jovem é 15 a 24. Descreve o território, não o eleitorado.
  */
-const VERSION = 'tract-demography-2022-v1';
+const VERSION = 'tract-demography-2022-v2';
 const SCOPE = '2022/context/tract-demography';
 const SEX_AGE = { male: ['V01009', 'V01010', 'V01011', 'V01012', 'V01013', 'V01014', 'V01015', 'V01016', 'V01017', 'V01018', 'V01019'], female: ['V01020', 'V01021', 'V01022', 'V01023', 'V01024', 'V01025', 'V01026', 'V01027', 'V01028', 'V01029', 'V01030'],
   age: ['V01031', 'V01032', 'V01033', 'V01034', 'V01035', 'V01036', 'V01037', 'V01038', 'V01039', 'V01040', 'V01041'] };
@@ -57,6 +57,9 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
+    const lock = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [`observatorio:${SCOPE}`]);
+    if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
+    const inputs = await publishedInputs(client, ['2022/context/municipal']);
     await client.query(await readFile(resolve(__dirname, 'migrations/016-tract-demography.sql'), 'utf8'));
     const context = await client.query<{ ibge_code: string; uf: string; population: number | null }>(`SELECT c.ibge_code, c.uf, (c.result->'population'->>'total')::bigint AS population FROM municipality_context c
       JOIN import_batches b ON b.id=c.batch_id AND b.published AND b.scope='2022/context/municipal'`);
@@ -113,13 +116,12 @@ async function run() {
     if (byMunicipality.size !== contextOf.size) throw new Error(`Municípios: ${byMunicipality.size} nos setores, ${contextOf.size} no contexto.`);
 
     const sources = [{ ...tracts.source, rowsRead: read, rowsSelected: read }, { ...dictionary.source, rowsRead: 0, rowsSelected: 0 }];
-    const id = createHash('sha256').update(JSON.stringify({ version: VERSION, hashes: sources.map((source) => source.sha256) })).digest('hex');
-    const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
+    const id = publicationId(VERSION, sources.map((source) => source.sha256), inputs);
     for (const source of sources) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes ?? 0]);
-    if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}.`); return; }
+    if (await reusePublished(client, { id, scope: SCOPE, inputs })) { console.log(`Já publicado: ${id}.`); return; }
     const residents = [...byMunicipality.values()].reduce((sum, item) => sum + item.residents, 0);
     const undisclosed = [...byMunicipality.values()].reduce((sum, item) => sum + item.undisclosed, 0);
-    const dataset = tractDemographyDatasetSchema.parse({ id, kind: 'tract-demography', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, sources,
+    const dataset = tractDemographyDatasetSchema.parse({ id, kind: 'tract-demography', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources,
       scope: 'Moradores de 15 anos ou mais de todos os setores censitários (Censo 2022, universo, agregados de demografia), somados pela faixa do setor em mulheres, 15 a 24 anos e 60 anos ou mais entre os moradores de 15+, nos mesmos cortes de /perfis.',
       totals: { municipalities: byMunicipality.size, tracts: read, residents, undisclosedTracts: undisclosed },
       notes: [`Rótulos de ${Object.keys(LABELS).length} variáveis conferidos no dicionário do IBGE. Em cada setor sem célula omitida, sexo e faixas etárias somam os moradores; com células omitidas, a soma do divulgado não passa do total.`,
@@ -134,12 +136,10 @@ async function run() {
       await client.query('DELETE FROM municipality_tract_demography WHERE batch_id=$1', [id]);
       const list = [...byMunicipality].map(([code, item]) => ({ code, uf: contextOf.get(code)!.uf, result: tractDemographySchema.parse({ residents: item.residents, indicators: item.indicators }) }));
       await client.query('INSERT INTO municipality_tract_demography SELECT $1, x.code, x.uf, x.result FROM jsonb_to_recordset($2::jsonb) AS x(code text, uf text, result jsonb)', [id, JSON.stringify(list)]);
-      await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
-      await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
+      await preparePublication(client, { id, scope: SCOPE, inputs, report: { dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000) } });
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
-    await mkdir(resolve(ROOT, 'data/audit'), { recursive: true });
-    await writeFile(resolve(ROOT, 'data/audit', `${id}.json`), JSON.stringify({ dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000) }, null, 2));
+
     console.log(JSON.stringify({ published: id, scope: SCOPE, totals: dataset.totals, elapsedSeconds: Math.round((performance.now() - started) / 1000) }, null, 2));
   } finally { client.release(); await pool.end(); }
 }

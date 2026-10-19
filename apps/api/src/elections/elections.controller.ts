@@ -1,11 +1,15 @@
-import { BadRequestException, Controller, Get, Inject, NotFoundException, Param, Query, StreamableFile, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Inject, NotFoundException, Param, Query, Res, ServiceUnavailableException } from '@nestjs/common';
+import type { ServerResponse } from 'node:http';
+import { pipeline } from 'node:stream/promises';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
+import { checkDependencies } from './dependencies';
 import { nationalSummary } from './national-summary';
+import { originalFileSchema, originalMediaType } from '@observatorio/contracts';
 
 const INCOME_BANDS_SCOPE = '2022/context/income-bands';
 const TURNOUT_PROFILES_SCOPE = '2022/context/turnout-profiles';
@@ -141,8 +145,7 @@ export class ElectionsController {
   }
 
   /**
-   * Métrica E: locais agrupados em quintis ponderados pelos eleitores aptos (cada grupo reúne ~1/5 do eleitorado dos locais
-   * com dado), segundo o perfil dos eleitores do local (TSE) ou o entorno (IBGE); votos e válidos somados por grupo.
+   * Métrica E: locais agrupados em faixas fixas, com votos e denominadores somados por faixa, segundo o perfil dos eleitores do local (TSE) ou o entorno (IBGE); votos e válidos somados por grupo.
    * Descreve grupos de locais, não eleitores: nenhum voto é atribuído a uma pessoa ou grupo social.
    */
   @Get('places/groups')
@@ -161,11 +164,12 @@ export class ElectionsController {
     // Com raio: a sensibilidade da associação (`import:tract-sensitivity`), publicação própria que não substitui a métrica E.
     const registry = await this.database.query<{ registry: string | null }>(`SELECT to_regclass('public.${radius ? 'place_group_sensitivity' : 'place_groups'}')::text AS registry`);
     const row = !registry.rows[0]?.registry ? { rows: [] } : radius
-      ? await this.database.query<{ result: unknown }>(`SELECT g.result FROM place_group_sensitivity g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope=$6
+      ? await this.database.query<{ result: unknown; metadata: { inputs?: unknown } }>(`SELECT g.result, b.metadata FROM place_group_sensitivity g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope=$6
         WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.radius=$5`, [dataset.id, office, uf ?? 'BR', Number(round), Number(radius), TRACT_SENSITIVITY_SCOPE])
-      : await this.database.query<{ result: unknown }>(`SELECT g.result FROM place_groups g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope='2022/places/groups'
+      : await this.database.query<{ result: unknown; metadata: { inputs?: unknown } }>(`SELECT g.result, b.metadata FROM place_groups g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope='2022/places/groups'
       WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.indicator=$5`, [dataset.id, office, uf ?? 'BR', Number(round), indicator]);
     if (!row.rows[0]) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
+    await checkDependencies(this.database, row.rows[0].metadata);
     // Faixas fixas: moradores do território nas mesmas faixas, de todos os setores (publicações próprias, opcionais) — renda
     // (domicílios particulares permanentes ocupados) ou o equivalente censitário de gênero e idade (moradores de 15+).
     const bands = (row.rows[0].result as { method?: string }).method === 'bands';
@@ -178,8 +182,9 @@ export class ElectionsController {
   private async tractDemography(uf: string | null, indicator: TractDemographyIndicator) {
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.municipality_tract_demography')::text AS registry");
     if (!registry.rows[0]?.registry) return null;
-    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_tract_demography m JOIN import_batches b ON b.id=m.batch_id AND b.published AND b.scope=$1
-      WHERE ($2::text IS NULL OR m.uf=$2)`, [TRACT_DEMOGRAPHY_SCOPE, uf]);
+    const batch = await this.checkedPublication(TRACT_DEMOGRAPHY_SCOPE);
+    if (!batch) return null;
+    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_tract_demography m WHERE m.batch_id=$1 AND ($2::text IS NULL OR m.uf=$2)`, [batch.id, uf]);
     if (!rows.rows.length) return null;
     const total = { total: 0, bands: INCOME_BANDS.map((band) => ({ index: band.index, residents: 0, tracts: 0 })), noData: { residents: 0, tracts: 0 }, undisclosed: { tracts: 0 }, coverage: { residents: 0, total: 0 } };
     for (const row of rows.rows) {
@@ -194,8 +199,9 @@ export class ElectionsController {
   private async incomeBands(filter: { uf: string | null } | { ibgeCode: string }) {
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.municipality_income_bands')::text AS registry");
     if (!registry.rows[0]?.registry) return null;
-    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_income_bands m JOIN import_batches b ON b.id=m.batch_id AND b.published AND b.scope=$1
-      WHERE ${'ibgeCode' in filter ? 'm.ibge_code=$2' : '($2::text IS NULL OR m.uf=$2)'}`, [INCOME_BANDS_SCOPE, 'ibgeCode' in filter ? filter.ibgeCode : filter.uf]);
+    const batch = await this.checkedPublication(INCOME_BANDS_SCOPE);
+    if (!batch) return null;
+    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_income_bands m WHERE m.batch_id=$1 AND ${'ibgeCode' in filter ? 'm.ibge_code=$2' : '($2::text IS NULL OR m.uf=$2)'}`, [batch.id, 'ibgeCode' in filter ? filter.ibgeCode : filter.uf]);
     if (!rows.rows.length) return null;
     const total = { total: 0, bands: INCOME_BANDS.map((band) => ({ index: band.index, residents: 0, tracts: 0 })), noData: { residents: 0, tracts: 0 }, undisclosed: { tracts: 0 } };
     for (const row of rows.rows) {
@@ -219,9 +225,10 @@ export class ElectionsController {
     await this.database.check();
     const categories = { gender: [...TSE_PROFILE_LABELS.gender], age: AGE_GROUPS.map(({ key, label }) => ({ key, label })), education: [...TSE_PROFILE_LABELS.education] };
     const base = { round, uf: uf ?? null, ufs: [], missingUfs: [], categories, cells: [], resultsEligible: null };
-    const batch = await this.database.query<{ id: string; metadata: { missingUfs: string[]; cellFormat?: string; order?: unknown } }>('SELECT id, metadata FROM import_batches WHERE published AND scope=$1 LIMIT 1', [TURNOUT_PROFILES_SCOPE]);
+    const batch = await this.database.query<{ id: string; metadata: { missingUfs: string[]; cellFormat?: string; order?: unknown; inputs?: unknown } }>('SELECT id, metadata FROM import_batches WHERE published AND scope=$1 LIMIT 1', [TURNOUT_PROFILES_SCOPE]);
     if (!batch.rows[0] || year !== '2022') return turnoutProfilesSchema.parse({ ...base, status: 'awaiting-import' });
     const { id, metadata } = batch.rows[0];
+    await checkDependencies(this.database, metadata);
     const missingUfs = metadata.missingUfs;
     if (uf && missingUfs.includes(uf)) return turnoutProfilesSchema.parse({ ...base, missingUfs, status: 'not-in-source' });
     type Cell = { gender: string; age: string; education: string; maritalStatus?: string; optional: boolean; eligible: number; turnout: number; abstentions: number };
@@ -272,6 +279,7 @@ export class ElectionsController {
     await this.database.check();
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.map_geometries')::text AS registry");
     const row = registry.rows[0]?.registry ? await this.database.query<{ batch_id: string; topology: unknown }>("SELECT g.batch_id, g.topology FROM map_geometries g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope='2022/maps/ibge' WHERE g.level=$1 AND g.uf=$2", [level, uf]) : { rows: [] };
+    if (row.rows[0]) await this.checkedPublication('2022/maps/ibge');
     return mapGeometrySchema.parse(row.rows[0] ? { status: 'published', level, uf, batchId: row.rows[0].batch_id, topology: row.rows[0].topology } : { status: 'awaiting-import', level, uf, batchId: null, topology: null });
   }
 
@@ -288,19 +296,19 @@ export class ElectionsController {
     let rows: Array<{ id: string; code: string; uf: string; name: string; numerator: string | null; denominator: string | null }>;
     if (MAP_INDICATORS[indicator].family === 'ibge') {
       // Indicadores derivados na importação (tabela `municipality_indicators`), sem ler o JSON de contexto inteiro.
-      const batch = await this.database.query<{ id: string }>("SELECT id FROM import_batches WHERE published AND scope='2022/context/municipal' LIMIT 1");
-      if (!batch.rows[0]) return empty;
+      const batch = await this.checkedPublication('2022/context/municipal');
+      if (!batch) return empty;
       const unit = await this.database.query<typeof rows[number]>(`SELECT ibge_code AS id, code, uf, name, numerator::text, denominator::text FROM municipality_indicators
-        WHERE batch_id=$1 AND indicator=$2 AND ($3::text IS NULL OR uf=$3)`, [batch.rows[0].id, indicator, uf ?? null]);
+        WHERE batch_id=$1 AND indicator=$2 AND ($3::text IS NULL OR uf=$3)`, [batch.id, indicator, uf ?? null]);
       rows = unit.rows;
     } else {
       const dataset = await this.publishedDataset(year, 'president');
       if (!dataset || dataset.level !== 'national') return empty;
-      const context = await this.database.query<{ id: string }>("SELECT id FROM import_batches WHERE published AND scope='2022/context/municipal' LIMIT 1");
-      if (!context.rows[0]) return empty;
+      const context = await this.checkedPublication('2022/context/municipal');
+      if (!context) return empty;
       const unit = await this.database.query<typeof rows[number]>(`SELECT c.ibge_code AS id, m.code, m.uf, m.result->>'name' AS name, m.result->'totals'->>'abstentions' AS numerator, m.result->'totals'->>'eligible' AS denominator
         FROM municipality_results m JOIN municipality_context c ON c.batch_id=$4 AND c.uf=m.uf AND c.code=m.code
-        WHERE m.batch_id=$1 AND m.round=$2::integer AND m.office='president' AND m.uf<>'ZZ' AND ($3::text IS NULL OR m.uf=$3)`, [dataset.id, round, uf ?? null, context.rows[0].id]);
+        WHERE m.batch_id=$1 AND m.round=$2::integer AND m.office='president' AND m.uf<>'ZZ' AND ($3::text IS NULL OR m.uf=$3)`, [dataset.id, round, uf ?? null, context.id]);
       rows = unit.rows;
     }
     const value = (numerator: number | null, denominator: number | null) => numerator === null || denominator === null || denominator === 0 ? null : numerator / denominator * 100;
@@ -330,9 +338,9 @@ export class ElectionsController {
     const dataset = await this.publishedDataset(year, office, uf);
     if (!dataset || !['national', 'state'].includes(dataset.level)) return candidateMapSchema.parse({ ...base, status: 'awaiting-import' });
     if (!roundHeld(dataset, round)) return candidateMapSchema.parse({ ...base, status: 'round-not-held' });
-    const context = await this.database.query<{ id: string }>("SELECT id FROM import_batches WHERE published AND scope='2022/context/municipal' LIMIT 1");
-    if (!context.rows[0]) return candidateMapSchema.parse({ ...base, status: 'awaiting-import' });
-    const params = [dataset.id, Number(round), office, uf ?? null, context.rows[0].id];
+    const context = await this.checkedPublication('2022/context/municipal');
+    if (!context) return candidateMapSchema.parse({ ...base, status: 'awaiting-import' });
+    const params = [dataset.id, Number(round), office, uf ?? null, context.id];
     const scope = `FROM municipality_results m JOIN municipality_context x ON x.batch_id=$5 AND x.uf=m.uf AND x.code=m.code
       WHERE m.batch_id=$1 AND m.round=$2 AND m.office=$3 AND m.uf<>'ZZ' AND ($4::text IS NULL OR m.uf=$4)`;
     const unit = level === 'uf' ? `m.uf` : `m.code`;
@@ -373,6 +381,7 @@ export class ElectionsController {
     const batch = registry.rows[0]?.registry ? await this.database.query<{ metadata: unknown }>("SELECT metadata FROM import_batches WHERE published AND scope='2022/context/municipal' LIMIT 1") : { rows: [] };
     if (!batch.rows[0] || parsed.data.year !== '2022') return contextResponseSchema.parse({ status: 'awaiting-import', dataset: null, item: null });
     const dataset = contextDatasetSchema.parse(batch.rows[0].metadata);
+    await checkDependencies(this.database, dataset);
     const item = await this.database.query<{ result: unknown }>('SELECT result FROM municipality_context WHERE batch_id=$1 AND uf=$2 AND code=$3', [dataset.id, parsed.data.uf, code.padStart(5, '0')]);
     if (!item.rows[0]) throw new NotFoundException('Município sem contexto publicado.');
     const incomeBands = await this.incomeBands({ ibgeCode: (item.rows[0].result as { ibgeCode: string }).ibgeCode });
@@ -483,7 +492,7 @@ export class ElectionsController {
   }
 
   @Get('imports/:id/report')
-  async report(@Param('id') id: string) {
+  async report(@Param('id') id: string, @Res() response: ServerResponse) {
     if (!/^[a-f0-9]{64}$/.test(id)) throw new NotFoundException();
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_batches')::text AS registry");
     if (!registry.rows[0]?.registry) throw new NotFoundException();
@@ -492,13 +501,13 @@ export class ElectionsController {
     const path = resolve(process.env.AUDIT_DIRECTORY ?? resolve(__dirname, '../../../../data/audit'), `${id}.json`);
     const info = await stat(path).catch(() => null);
     if (!info?.isFile()) throw new NotFoundException('Relatório ainda não concluído.');
-    return new StreamableFile(createReadStream(path), { type: 'application/json', disposition: `attachment; filename="report-${id}.json"`, length: info.size });
+    await this.streamFile(response, path, 'application/json', `report-${id}.json`, info.size);
   }
 
   private verifiedOriginals = new Set<string>();
   @Get('sources/:sha256/:file')
-  async original(@Param('sha256') sha256: string, @Param('file') file: string) {
-    if (!/^[a-f0-9]{64}$/.test(sha256) || !/^[a-zA-Z0-9_]+\.(zip|json|xlsx)$/.test(file)) throw new NotFoundException();
+  async original(@Param('sha256') sha256: string, @Param('file') file: string, @Res() response: ServerResponse) {
+    if (!/^[a-f0-9]{64}$/.test(sha256) || !originalFileSchema.safeParse(file).success) throw new NotFoundException();
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.original_sources')::text AS registry");
     if (!registry.rows[0]?.registry) throw new NotFoundException();
     const record = await this.database.query<{ size_bytes: string }>('SELECT size_bytes FROM original_sources WHERE sha256=$1 AND file=$2', [sha256, file]);
@@ -506,14 +515,42 @@ export class ElectionsController {
     const path = resolve(process.env.ORIGINALS_DIRECTORY ?? resolve(__dirname, '../../../../data/originals'), sha256, file);
     const info = await stat(path).catch(() => null);
     if (!info?.isFile() || info.size !== Number(record.rows[0]!.size_bytes)) throw new ServiceUnavailableException('Original preservado indisponível.');
-    const cacheKey = `${path}/${info.size}/${info.mtimeMs}`;
+    const cacheKey = `${path}/${info.size}/${info.mtimeMs}/${info.ctimeMs}`;
     if (!this.verifiedOriginals.has(cacheKey)) {
       const hash = createHash('sha256');
-      for await (const chunk of createReadStream(path)) hash.update(chunk);
+      const stream = createReadStream(path);
+      const cancel = () => stream.destroy();
+      response.once('close', cancel);
+      try { for await (const chunk of stream) { if (response.destroyed) return; hash.update(chunk); } }
+      catch (error) { if (response.destroyed) return; throw error; }
+      finally { response.off('close', cancel); }
+      if (response.destroyed) return;
       if (hash.digest('hex') !== sha256) throw new ServiceUnavailableException('Integridade do original divergente.');
       this.verifiedOriginals.add(cacheKey);
     }
-    return new StreamableFile(createReadStream(path), { type: file.endsWith('.json') ? 'application/json' : file.endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/zip', disposition: `attachment; filename="${file}"`, length: info.size });
+    await this.streamFile(response, path, originalMediaType(file), file, info.size);
+  }
+
+  /** Resposta nativa em fluxo: não depende da identidade de classe CJS/ESM de StreamableFile no runner tsx. */
+  private async streamFile(response: ServerResponse, path: string, type: string, file: string, length: number) {
+    response.setHeader('Content-Type', type);
+    response.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+    response.setHeader('Content-Length', length);
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    // pipeline fecha o arquivo inclusive se o visitante interromper o download.
+    try { await pipeline(createReadStream(path), response); }
+    catch (error) {
+      if (response.destroyed && (error as NodeJS.ErrnoException).code === 'ERR_STREAM_PREMATURE_CLOSE') return;
+      throw error;
+    }
+  }
+
+  private async checkedPublication(scope: string) {
+    const rows = await this.database.query<{ id: string; metadata: { inputs?: unknown } }>('SELECT id, metadata FROM import_batches WHERE published AND scope=$1 LIMIT 1', [scope]);
+    const batch = rows.rows[0];
+    if (batch) await checkDependencies(this.database, batch.metadata);
+    return batch ?? null;
   }
 
   /** Presidência: versão nacional, ou o piloto enquanto ela não existir. Cargos estaduais: uma publicação por UF. */
@@ -525,10 +562,12 @@ export class ElectionsController {
       const result = await this.database.query<{ metadata: unknown }>('SELECT metadata FROM import_batches WHERE published AND scope=$1 LIMIT 1', [`${year}/${office}/${uf}`]);
       if (!result.rows[0]) return null;
       const dataset = datasetSchema.parse(result.rows[0].metadata);
-      return dataset.level === 'state' && dataset.office === office && dataset.uf === uf ? dataset : null;
+      return String(dataset.year) === year && dataset.level === 'state' && dataset.office === office && dataset.uf === uf ? dataset : null;
     }
     const dataset = await this.database.query<{ metadata: unknown }>("SELECT metadata FROM import_batches WHERE published AND scope IN ('2022/president/BR','2022/president/SP/71072') ORDER BY CASE WHEN scope='2022/president/BR' THEN 0 ELSE 1 END LIMIT 1");
-    return dataset.rows[0] ? datasetSchema.parse(dataset.rows[0].metadata) : null;
+    if (!dataset.rows[0]) return null;
+    const published = datasetSchema.parse(dataset.rows[0].metadata);
+    return String(published.year) === year && published.office === office ? published : null;
   }
 
   private async exteriorDataset() {

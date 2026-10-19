@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { canonicalInputs, reusePublished, publicationId, preparePublication } from './publication';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool, type PoolClient } from 'pg';
@@ -19,7 +19,7 @@ import { ROOT } from './sources';
  * v4 (decisão de Rafael): todos os indicadores em faixas fixas (`PLACE_GROUP_CUTS`), iguais em todos os recortes — quintis
  * davam sempre ~1/5 dos eleitores por grupo e limites que mudavam a cada recorte, sem definição estável.
  */
-const VERSION = 'place-groups-2022-v4';
+const VERSION = 'place-groups-2022-v5';
 const SCOPE = '2022/places/groups';
 type Input = { id: string; scope: string; metadata: { rounds?: Array<'1' | '2'>; level?: string; office?: string; uf?: string } };
 
@@ -71,6 +71,8 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
+    const lock = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [`observatorio:${SCOPE}`]);
+    if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
     await client.query(await readFile(resolve(__dirname, 'migrations/011-place-groups.sql'), 'utf8'));
     const published = (await client.query<Input>("SELECT id, scope, metadata FROM import_batches WHERE published AND (scope='2022/president/BR' OR scope LIKE '2022/governor/%' OR scope LIKE '2022/senator/%' OR scope IN ('2022/places/profiles','2022/places/tracts'))")).rows;
     const profiles = published.find((row) => row.scope === '2022/places/profiles'); const tracts = published.find((row) => row.scope === '2022/places/tracts');
@@ -87,9 +89,10 @@ async function run() {
       const rounds = batch.metadata.rounds ?? ['1', '2'];
       for (const round of rounds) for (const uf of territory === 'BR' ? [null, ...STATES] : [territory]) recortes.push({ results: batch.id, office, uf, round });
     }
-    const id = createHash('sha256').update(JSON.stringify({ version: VERSION, inputs: published.map((row) => row.id).sort() })).digest('hex');
-    const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
-    if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}.`); return; }
+    if (!recortes.length) throw new Error('Nenhum recorte eleitoral publicado; importação bloqueada.');
+    const inputs = canonicalInputs(published);
+    const id = publicationId(VERSION, [], inputs);
+    if (await reusePublished(client, { id, scope: SCOPE, inputs })) { console.log(`Já publicado: ${id}.`); return; }
     await client.query('BEGIN');
     try {
       await client.query('INSERT INTO import_batches(id,scope,metadata) VALUES($1,$2,$3) ON CONFLICT(id) DO NOTHING', [id, SCOPE, { kind: 'place-groups', pending: true }]);
@@ -100,14 +103,12 @@ async function run() {
         await client.query('INSERT INTO place_groups VALUES($1,$2,$3,$4,$5,$6,$7)', [id, recorte.results, recorte.office, recorte.uf ?? 'BR', Number(recorte.round), indicator, result]);
         if (++done % 50 === 0) console.log(`${done} recortes calculados.`);
       }
-      const dataset = { kind: 'place-groups', id, importerVersion: VERSION, importedAt: new Date().toISOString(), inputs: published.map((row) => ({ id: row.id, scope: row.scope })), recortes: done,
+      const dataset = { kind: 'place-groups', id, importerVersion: VERSION, inputs, importedAt: new Date().toISOString(), recortes: done,
         scope: 'Métrica E: locais agrupados pelo perfil declarado dos seus eleitores (TSE: superior completo, até fundamental incompleto, eleitoras, 16 a 24 anos e 60 anos ou mais) ou pelo rendimento mediano do responsável no setor do local (IBGE; salários mínimos de 2022), sempre em cinco faixas fixas iguais em todos os recortes, com votos somados por grupo.' };
       await client.query('UPDATE import_batches SET metadata=$2 WHERE id=$1', [id, dataset]);
-      await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
-      await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
+      await preparePublication(client, { id, scope: SCOPE, inputs, report: { dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000) } });
       await client.query('COMMIT');
-      await mkdir(resolve(ROOT, 'data/audit'), { recursive: true });
-      await writeFile(resolve(ROOT, 'data/audit', `${id}.json`), JSON.stringify({ dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000) }, null, 2));
+
       console.log(JSON.stringify({ published: id, scope: SCOPE, recortes: done, elapsedSeconds: Math.round((performance.now() - started) / 1000) }));
     } catch (error) { await client.query('ROLLBACK'); throw error; }
   } finally { client.release(); await pool.end(); }

@@ -83,7 +83,9 @@ assert.doesNotMatch(stalePage, /Página anterior|Próxima página/);
 for (const path of ['/?uf=SP&search=Sao%20Paulo', '/?search=Recife']) {
   const html = await (await request(web, path)).text();
   assert.match(html, /Resultados por município/);
-  assert.match(html, /Abrir locais de votação/);
+  assert.match(html, /class="table-scroll municipality-overview"/);
+  assert.match(html, /Ver votos e detalhes/);
+  assert.match(html, /href="\/municipios\/\d{5}\?[^"\n]*uf=[A-Z]{2}/, 'O detalhe municipal continua acessível pelo código e UF');
   assert.doesNotMatch(html, /Consolidado de 5\.570/);
 }
 const unavailable = await (await request(api, '/elections/national?year=2026')).json();

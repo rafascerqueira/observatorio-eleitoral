@@ -35,3 +35,18 @@ Primeira revisão em navegador real, pendente desde o marco 1. A extensão Claud
 - Usabilidade da página de UF com muitos municípios: a página de uma UF lista 25 municípios por página, cada um com seu quadro, o que a torna longa (≈ 22 mil px em SE). Não é falha de acessibilidade, mas é ponto de usabilidade a discutir.
 
 As ferramentas e scripts usados (auditoria axe, contraste sobre gradiente, teclado, estrutura e refluxo) não estão no repositório; podem ser incorporados como verificação reproduzível se for decidido adicionar `puppeteer-core`, `axe-core` e `pngjs` como dependências de desenvolvimento.
+
+
+## Continuidade e roteiro incorporado — 18/10/2026
+
+O roteiro está agora no repositório (`npm run check:ui`), com binários locais e perfis temporários. O relatório diferencia navegador e método de bloquear os scripts da página: CDP no Chrome; CSP em proxy local de teste no Firefox instalado, cujo protocolo não implementa o comando correspondente. Controle positivo confere a não execução dos scripts e outro confere que o axe detecta um botão sem nome em página de teste. Efeitos, resultados e limites em `docs/correcoes-verificacao-2026-10-18.md` e `plan.md` §27.
+
+Roteiro manual ainda não executado com leitor de tela real: abrir um perfil de teste local com Orca ou NVDA; localizar o formulário por seu nome; alterar cargo/UF/turno sem envio automático; escolher município com as setas e ouvir nome/UF; enviar e conferir os anúncios de ocupado/concluído uma única vez; chegar à tabela municipal pelos cabeçalhos; abrir o detalhe e identificar candidatura, contagem e denominador; distinguir a diferença do Censo de uma falha técnica; voltar e paginar mantendo os filtros. Repetir com zoom de texto e preferências reais de alto contraste. As ações só consultam dados, mas mudam foco e preferências do perfil de teste; restaurá-las ao concluir. Registrar tecnologia, versão, percurso e resultado de cada etapa.
+
+Safari real e dispositivos reais também continuam exigindo verificação própria. Emular cores/movimento e obter axe sem violações não certifica esses ambientes nem substitui o roteiro humano.
+
+### Conferência após as reimportações — 19/10/2026
+
+Executado `check:ui` com `UI_ONLY='Controle positivo|Acessibilidade'` após a auditoria integral e os smokes das nove versões. Chrome 151.0.7922.71 e Firefox 158.0: controle positivo do axe aprovado e 30 avaliações por navegador (10 páginas × 1280/375/320 px), sem violações automáticas e sem rolagem horizontal fora das tabelas. Relatório/capturas em `data/analysis/reimports-2026-10-18/final-ui/`. API em desenvolvimento e web compilada, ambas locais; serviços/navegadores encerrados após o teste.
+
+Rodada de regressão dos dados/fontes, sem alteração nova de interface. Envios com/sem JavaScript, teclado, preferências e demais cenários da revisão anterior não foram repetidos aqui. Leitor de tela humano, Safari real e dispositivos reais continuam pendentes; os testes automáticos não certificam toda a acessibilidade.

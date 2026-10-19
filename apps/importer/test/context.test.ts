@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { distribution, populationByAge, TSE_AGE_BANDS, tseCategory, tseOrder } from '../src/context-model';
 import { sidraValue } from '../src/sidra';
+import { requiredSidraValue, uniqueSidraValues } from '../src/context-model';
+
+test('células duplicadas não desaparecem silenciosamente ao converter a consulta SIDRA em mapa', () => {
+  assert.throws(() => uniqueSidraValues([{ V: '1', D4N: 'A' }, { V: '1', D4N: 'A' }], 'D4N', sidraValue), /duplicada/);
+  assert.throws(() => uniqueSidraValues([{ V: '1' }], 'D4N', sidraValue), /ausente/);
+  assert.equal(uniqueSidraValues([{ V: 'X', D4N: 'A' }], 'D4N', sidraValue).get('A'), null);
+  assert.throws(() => requiredSidraValue(new Map(), 'Total'), /obrigatória ausente/);
+  assert.equal(requiredSidraValue(new Map([['Total', null]]), 'Total'), null, 'Supressão presente não é linha estruturalmente ausente');
+});
 import { AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS } from '@observatorio/contracts';
 
 test('valores da SIDRA seguem as convenções do IBGE: "-" é zero; X, .. e ... nunca viram zero', () => {
@@ -51,6 +60,31 @@ test('categorias do TSE: rótulos auditados, "não informado" e "inválido" expl
   assert.throws(() => tseCategory('gender', 'OUTRO'), /não auditada/);
   assert.throws(() => tseCategory('age', '15 anos'), /não auditada/, 'Idade abaixo de 16 não existe no eleitorado');
   assert.deepEqual(tseOrder('gender').map((item) => item.key), ['female', 'male', 'not-informed']);
+});
+
+test('busca preparada preserva todas as categorias, normalização, isolamento por dimensão e objetos retornados', () => {
+  for (const { key, label } of TSE_AGE_BANDS) {
+    for (const value of [label, `  ${label.toUpperCase().replaceAll(' ', '   ')}  `]) assert.deepEqual(tseCategory('age', value), { key, label });
+  }
+  const sources = {
+    gender: ['FEMININO', 'MASCULINO'],
+    education: ['ANALFABETO', 'LÊ E ESCREVE', 'ENSINO FUNDAMENTAL INCOMPLETO', 'ENSINO FUNDAMENTAL COMPLETO', 'ENSINO MÉDIO INCOMPLETO', 'ENSINO MÉDIO COMPLETO', 'SUPERIOR INCOMPLETO', 'SUPERIOR COMPLETO'],
+    maritalStatus: ['SOLTEIRO', 'CASADO', 'SEPARADO JUDICIALMENTE', 'DIVORCIADO', 'VIÚVO'],
+  };
+  for (const dimension of ['gender', 'education', 'maritalStatus'] as const) {
+    const expected = tseOrder(dimension).filter((item) => item.key !== 'not-informed');
+    sources[dimension].forEach((source, index) => {
+      assert.deepEqual(tseCategory(dimension, source), expected[index]);
+      assert.deepEqual(tseCategory(dimension, `  ${source.toLowerCase().normalize('NFD').replaceAll(' ', '   ')}  `), expected[index]);
+    });
+    assert.equal(tseCategory(dimension, 'Não informado').key, 'not-informed');
+    assert.throws(() => tseCategory(dimension, 'Inválido'), /não auditada/);
+    assert.throws(() => tseCategory(dimension, 'categoria nova'), /não auditada/);
+  }
+  assert.throws(() => tseCategory('age', 'FEMININO'), /não auditada/);
+  assert.throws(() => tseCategory('gender', '25 a 29 anos'), /não auditada/);
+  const changed = tseCategory('age', '25 a 29 anos'); changed.key = 'alterado';
+  assert.equal(tseCategory('age', '25 a 29 anos').key, 'a25-29', 'Consumidor não modifica a tabela interna');
 });
 
 test('distribuição confere a soma das categorias, salvo quando há supressão', () => {

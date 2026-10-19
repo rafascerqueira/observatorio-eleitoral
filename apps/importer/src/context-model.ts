@@ -1,8 +1,24 @@
 import type { z } from 'zod';
-import type { contextDistributionSchema } from '@observatorio/contracts';
+import { contextDistributionSchema } from '@observatorio/contracts';
 import { assertEqual } from './model';
 
 type Distribution = z.infer<typeof contextDistributionSchema>;
+
+/** Uma categoria por célula consultada; Map não pode esconder duplicatas ou linhas novas da fonte. */
+export function uniqueSidraValues(rows: Array<Record<string, string>>, column: string, parse: (value: string | undefined) => number | null) {
+  const result = new Map<string, number | null>();
+  for (const row of rows) {
+    const name = row[column];
+    if (!name || result.has(name)) throw new Error(`Categoria SIDRA ausente ou duplicada: ${name}. Publicação bloqueada.`);
+    result.set(name, parse(row.V));
+  }
+  return result;
+}
+/** Linha ausente é falha estrutural; linha presente com sentinela nula é ausência declarada da fonte. */
+export function requiredSidraValue(values: Map<string, number | null>, key: string) {
+  if (!values.has(key)) throw new Error(`Célula SIDRA obrigatória ausente: ${key}. Publicação bloqueada.`);
+  return values.get(key)!;
+}
 type Category = { key: string; label: string };
 
 /** Faixas etárias do perfil do eleitorado do TSE, na ordem da fonte; idades de 16 a 20 são simples. */
@@ -25,6 +41,12 @@ const TSE_CATEGORIES: Record<'gender' | 'education' | 'maritalStatus', Array<Cat
 };
 const NOT_INFORMED: Category = { key: 'not-informed', label: 'Não informado na fonte' };
 const INVALID_AGE: Category = { key: 'invalid', label: 'Idade inválida na fonte' };
+// Os rótulos auditados são finitos. Normalizar cada faixa em cada linha repetia o mesmo trabalho milhões de vezes.
+const TSE_LOOKUP = {
+  age: new Map(TSE_AGE_BANDS.map(({ key, label }) => [fold(label), { key, label }])),
+  ...Object.fromEntries(Object.entries(TSE_CATEGORIES).map(([dimension, categories]) =>
+    [dimension, new Map(categories.map(({ key, label, source }) => [source, { key, label }]))])),
+} as Record<'gender' | 'age' | 'education' | 'maritalStatus', Map<string, Category>>;
 
 /** Categoria do TSE pelo rótulo da fonte; rótulo não auditado bloqueia em vez de ser descartado. */
 export function tseCategory(dimension: 'gender' | 'age' | 'education' | 'maritalStatus', label: string): Category {
@@ -33,12 +55,9 @@ export function tseCategory(dimension: 'gender' | 'age' | 'education' | 'marital
   if (dimension === 'age') {
     // "Inválido" (comparecimento) e "Inválida" (perfil do eleitorado): mesma categoria da fonte, grafias diferentes; nunca redistribuída.
     if (value === 'INVALIDO' || value === 'INVALIDA') return INVALID_AGE;
-    const band = TSE_AGE_BANDS.find((item) => fold(item.label) === value);
-    if (band) return { key: band.key, label: band.label };
-  } else {
-    const item = TSE_CATEGORIES[dimension].find((category) => category.source === value);
-    if (item) return { key: item.key, label: item.label };
   }
+  const item = TSE_LOOKUP[dimension].get(value);
+  if (item) return { key: item.key, label: item.label };
   throw new Error(`Categoria do TSE não auditada (${dimension}): ${label}. Importação bloqueada.`);
 }
 /** Ordem de exibição: a da fonte, com "não informado"/"inválido" ao final. */
@@ -53,19 +72,19 @@ export function tseOrder(dimension: 'gender' | 'age' | 'education' | 'maritalSta
  * Com supressão (`null`), não há como conferir.
  */
 export function distribution(kind: Distribution['kind'], source: string, total: number | null, categories: Distribution['categories'], label: string, mode: 'exact' | 'rounding' | 'partial' = 'exact'): Distribution {
-  if (total === null || categories.some((item) => item.value === null)) return { kind, source, total, categories };
+  if (total === null || categories.some((item) => item.value === null)) return contextDistributionSchema.parse({ kind, source, total, categories });
   const sum = categories.reduce((value, item) => value + item.value!, 0);
   if (mode === 'exact') assertEqual(sum, total, `${label}: soma das categorias`);
   if (mode === 'rounding') {
     const limit = Math.ceil((categories.length + 1) / 2);
     if (Math.abs(sum - total) > limit) throw new Error(`${label}: soma das categorias ${sum}, total ${total}; diferença acima do arredondamento (${limit}). Publicação bloqueada.`);
-    return { kind, source, total, categories, ...(sum !== total ? { roundingDifference: sum - total } : {}) };
+    return contextDistributionSchema.parse({ kind, source, total, categories, ...(sum !== total ? { roundingDifference: sum - total } : {}) });
   }
   if (mode === 'partial') {
     if (sum > total) throw new Error(`${label}: categorias (${sum}) acima do total (${total}). Publicação bloqueada.`);
-    return { kind, source, total, categories, ...(sum !== total ? { undistributed: total - sum } : {}) };
+    return contextDistributionSchema.parse({ kind, source, total, categories, ...(sum !== total ? { undistributed: total - sum } : {}) });
   }
-  return { kind, source, total, categories };
+  return contextDistributionSchema.parse({ kind, source, total, categories });
 }
 
 type AgeValues = Map<string, number | null>; // nome da categoria da SIDRA 9514 → valor

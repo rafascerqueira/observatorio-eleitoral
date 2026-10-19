@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { reusePublished, publicationId, publishedInputs, preparePublication } from './publication';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
@@ -19,7 +19,7 @@ import { municipalityCode } from './territory';
  * por obrigatoriedade (`AGE_GROUPS`, que não misturam voto facultativo e obrigatório). Cada município e turno confere, em totais
  * e em cada marginal (gênero, faixa etária, escolaridade e estado civil), com o contexto municipal publicado.
  */
-const VERSION = 'turnout-profiles-2022-v2';
+const VERSION = 'turnout-profiles-2022-v3';
 const SCOPE = '2022/context/turnout-profiles';
 const DIMENSIONS = ['gender', 'age', 'education', 'maritalStatus'] as const;
 type Dimension = typeof DIMENSIONS[number];
@@ -62,13 +62,13 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
+    const inputs = await publishedInputs(client, ['2022/context/municipal', '2022/president/BR']);
     const lock = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [`observatorio:${SCOPE}`]);
     if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
     await client.query(await readFile(resolve(__dirname, 'migrations/015-turnout-profile-cells.sql'), 'utf8'));
     const { path: _path, ...metadata } = file;
-    const id = createHash('sha256').update(JSON.stringify({ version: VERSION, hashes: [metadata.sha256] })).digest('hex');
-    const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
-    if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}.`); return; }
+    const id = publicationId(VERSION, [metadata.sha256], inputs);
+    if (await reusePublished(client, { id, scope: SCOPE, inputs })) { console.log(`Já publicado: ${id}.`); return; }
 
     // Contexto municipal publicado (marginais da mesma fonte) e aptos dos resultados da Presidência, por município e turno.
     const context = await client.query<{ uf: string; code: string; name: string; turnout: Record<'1' | '2', TurnoutRound | null> }>(`SELECT c.uf, c.code, c.result->>'name' AS name, c.result->'turnout' AS turnout
@@ -142,7 +142,7 @@ async function run() {
 
       const sources = [{ ...metadata, generatedAt: [...generated], rowsRead: read, rowsSelected: read }];
       const roundTotals = (['1', '2'] as const).map((round) => ({ round, eligible: totals[round][0]!, turnout: totals[round][1]!, abstentions: totals[round][2]!, resultsEligible: totals[round][3]! }));
-      const dataset = turnoutProfilesDatasetSchema.parse({ id, kind: 'turnout-profiles', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, sources, missingUfs,
+      const dataset = turnoutProfilesDatasetSchema.parse({ id, kind: 'turnout-profiles', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources, missingUfs,
         cellFormat: 'int4-groups-v2', order: TURNOUT_CELL_ORDER, municipalities, totals: roundTotals,
         scope: 'Comparecimento e abstenção por perfil do eleitorado de 2022 (TSE), cruzados por gênero, faixa etária, escolaridade e estado civil, por UF e por município, em cada turno: contagens da fonte, base própria que não fecha com os resultados.',
         notes: ['A fonte não traz o Distrito Federal nem o exterior: "Brasil" é a soma das 26 UFs presentes.',
@@ -152,12 +152,10 @@ async function run() {
           ...roundTotals.map((total) => `${total.round}º turno: ${total.eligible.toLocaleString('pt-BR')} aptos no perfil; ${total.resultsEligible.toLocaleString('pt-BR')} nos resultados das mesmas UFs (diferença não ajustada).`)] });
       await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [metadata.sha256, metadata.file, metadata.sizeBytes ?? 0]);
       await client.query('UPDATE import_batches SET metadata=$2 WHERE id=$1', [id, dataset]);
-      await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
-      await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
-      await client.query('COMMIT');
       const report = { dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000), peakRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) };
-      await mkdir(resolve(ROOT, 'data/audit'), { recursive: true });
-      await writeFile(resolve(ROOT, 'data/audit', `${id}.json`), JSON.stringify(report, null, 2));
+      await preparePublication(client, { id, scope: SCOPE, inputs, report: report });
+      await client.query('COMMIT');
+
       console.log(JSON.stringify({ published: id, scope: SCOPE, municipalities, totals: roundTotals, elapsedSeconds: report.elapsedSeconds }, null, 2));
     } catch (error) { await client.query('ROLLBACK'); throw error; }
   } finally { client.release(); await pool.end(); }

@@ -12,6 +12,7 @@ import { NonValidVotesTable } from '../components/non-valid-votes';
 import { RoundNote, roundBadge } from '../components/round-note';
 import { ResultsTransition } from '../components/results-transition';
 import { AppliedFilters } from '../components/applied-filters';
+import { MunicipalityResults } from '../components/municipality-results';
 import { MunicipalitySearch } from '../components/municipality-search';
 
 export const dynamic = 'force-dynamic';
@@ -90,6 +91,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
     return `/?${params}`;
   }
 
+
+  const municipalPagination = (position: string) => municipalData && municipalData.pagination.total > 0 && <nav className="pagination" aria-label={`Paginação ${position} dos municípios`}>
+    {filters.page > 1 && <Link href={`${pageHref(filters.page - 1)}#resultados-consulta`} rel="prev">Página anterior</Link>}
+    <span>Página {number(filters.page)} de {number(Math.ceil(municipalData.pagination.total / filters.pageSize))}</span>
+    {filters.page * filters.pageSize < municipalData.pagination.total && <Link href={`${pageHref(filters.page + 1)}#resultados-consulta`} rel="next">Próxima página</Link>}
+  </nav>;
+
   return (
     <>
       <section className="hero" aria-labelledby="titulo">
@@ -136,7 +144,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
           {stateData.dataset.exclusions?.map((item) => <p className="notice" key={item.electionCode}>Não incluída: {item.description}. {item.reason} <Link href="/fontes">Ver registro da exclusão</Link>.</p>)}
         </section> : stateResult?.kind === 'unavailable' && <p className="notice" role="status">O resultado consolidado de {UF_NAMES[stateView]} não pôde ser consultado agora. Os resultados municipais abaixo não foram somados nesta página.</p>)}
         {stateData && items.length > 0 && <h3 className="municipal-heading">Municípios de {UF_NAMES[stateView!]}</h3>}
-        {items.map((item) => <section className="municipality-summary" key={item.code} aria-label={`Participação em ${item.name}`}>
+        {national && items.map((item) => <section className="municipality-summary" key={item.code} aria-label={`Participação em ${item.name}`}>
           <div className="section-heading"><h3>{item.name}{item.uf ? ` / ${item.uf}` : ''}</h3>{item.uf && <Link prefetch={false} href={placesLink(item.code, item.uf)} className="text-link">Abrir locais de votação ↗</Link>}</div>
           {totalsGrid(item.totals)}
           {!national && <NonValidVotesTable items={item.nonValidVotes} context={`${item.name} / ${item.uf}`} />}
@@ -146,6 +154,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
           </details>}
           <p className="query-note">{nationalData ? `${number(nationalData.summary.municipalities)} municípios · 27 UFs${nationalData.includesExterior ? ` · ${number(nationalData.summary.exteriorCities)} localidades no exterior` : ''}` : `${item.zones} ${item.zones === 1 ? 'zona' : 'zonas'}`} · {number(item.sections)} seções principais · {number(item.pollingPlaces)} locais identificados por {national ? 'UF, município ou localidade, ' : ''}zona e número. Abstenção ÷ aptos; brancos e nulos ÷ total de votos no cargo.</p>
         </section>)}
+        {municipalData && municipalData.items.length > 0 && <>
+          {municipalPagination('acima')}
+          <MunicipalityResults items={municipalData.items} href={placesLink} />
+        </>}
+        {(national || !municipalData?.items.length) && <>
         <div className="table-scroll" role="region" aria-label={national ? 'Tabela do resultado presidencial no Brasil' : 'Tabela de resultados por município'} tabIndex={0}>
           <table className={national ? 'national-table' : undefined}>
             <caption className="sr-only">{national ? `Votos por candidatura no Brasil, ${nationalData?.includesExterior ? 'incluindo' : 'sem'} exterior.` : `Votos por candidatura para ${officeLabel} no recorte municipal selecionado.`} Percentuais sobre os votos válidos.</caption>
@@ -158,8 +171,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
             </td></tr>}</tbody>
           </table>
         </div>
+        </>}
         <div className="table-footer"><span role="status" aria-live="polite" aria-atomic="true">{nationalData ? `Consolidado de ${number(nationalData.summary.municipalities)} municípios · sem paginação` : municipalData ? `${municipalData.pagination.total} município(s) encontrado(s) · página ${filters.page}` : roundNotHeld ? 'Turno não realizado para este cargo na UF' : 'Consulta sem resultados publicados'}</span><span>% da candidatura = votos ÷ votos válidos × 100. Totais de participação aparecem uma única vez.</span></div>
-        {municipalData && (filters.page > 1 || filters.page * filters.pageSize < municipalData.pagination.total) && <nav className="pagination" aria-label="Paginação de municípios">{filters.page > 1 && <Link href={pageHref(filters.page - 1)}>Página anterior</Link>}{filters.page * filters.pageSize < municipalData.pagination.total && <Link href={pageHref(filters.page + 1)}>Próxima página</Link>}</nav>}
+        {municipalPagination('abaixo')}
         {published && <p className="dataset-note">Fonte: TSE · {data.dataset.level === 'state' ? `Versão ${officeLabel} ${data.dataset.uf}` : 'Versão doméstica'} {data.dataset.id.slice(0, 12)}{nationalData?.exteriorDataset ? ` · Versão exterior ${nationalData.exteriorDataset.id.slice(0, 12)}` : ''} · Votos por seção reconciliados por zona com os arquivos de apuração e votação nominal, de gerações distintas. <Link href="/fontes">Arquivos, datas e checksums</Link>.</p>}
         </ResultsTransition>
       </section>

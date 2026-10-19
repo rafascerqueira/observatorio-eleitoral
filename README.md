@@ -132,7 +132,19 @@ curl http://127.0.0.1:3001/health/ready
 curl 'http://127.0.0.1:3001/elections/municipalities?year=2022&round=1&uf=SP&page=1&pageSize=25'
 ```
 
-Smoke tests e testes HTTP não substituem revisão em navegador. A primeira revisão visual e de acessibilidade (Firefox headless, axe-core, contraste medido sobre gradientes, teclado e refluxo) está em [acessibilidade](docs/acessibilidade.md); leitor de tela real e outros navegadores continuam pendentes.
+Verificações adicionais, sem importar dados:
+
+| Comando | Exige | Verifica e efeitos |
+| --- | --- | --- |
+| `npm run check:data` | banco e originais locais publicados | Transação somente de leitura: contratos dos 5.570 contextos, 163 respostas SIDRA com checksum e células originais, comparadores eleitorais, contador de seleção versus CSV do exterior, dependências e relatórios. Não grava no banco nem em `data/`. |
+| `npm run check:publication` | banco local | Publicação, falha de disco e reexecução com entrada substituída/lote antigo em tabelas TEMP isoladas; rollback da troca simulada e IDs/flags públicos intactos; temporários removidos. |
+| `npm run check:reimports -- snapshot baseline.json` / `verify baseline.json comparacao.json` | banco antes/depois das nove versões derivadas de 2022 | IDs/fontes, conteúdo SHA-256 das 11 tabelas, preservação das versões anteriores e entradas atuais. SELECT em transação READ ONLY; cria somente os JSONs informados, sem sobrescrever. Uso e artefatos em [reimportações](docs/reimportacoes-2026-10-18.md). |
+| `npm run check:regressions` | web/API/banco e dados publicados | Isolamento por ano, bytes dos relatórios, GeoPackage e diferença do Censo. Só GET; cancela os downloads grandes após o primeiro bloco. |
+| `npm run check:ui` | web/API/banco, Chrome e Firefox instalados | Navegadores reais, envio dos seis formulários com/sem JavaScript, axe, teclado, refluxo, paginação e preferências de movimento/cores. Grava capturas e relatório em `data/analysis/ui-checks/<data>/`. |
+
+As ferramentas `puppeteer-core` e `axe-core` estão fixadas no lockfile; `npm ci` não baixa navegadores. O roteiro procura Chrome no cache do Puppeteer e Firefox em `/usr/bin/firefox`. Para outro caminho, use `UI_BROWSER=chrome` (ou `firefox`) e `UI_EXECUTABLE_PATH=/caminho/do/navegador`. Os serviços podem ser configurados com `UI_WEB_URL`/`UI_API_URL` (somente loopback). `UI_ONLY=Envio` (expressão regular sobre os nomes dos cenários) permite repetir casos específicos, sem declarar a execução da suíte completa. No Chrome o teste sem JS desativa a execução por CDP; no Firefox instalado, usa proxy local temporário com CSP que bloqueia todos os scripts da página, pois o comando BiDi equivalente não é suportado. Há controle positivo de não execução nos dois. Não execute importações pesadas em paralelo com smokes ou testes de interface, pois competem pelo banco e podem causar timeouts.
+
+Testes HTTP não substituem revisão em navegador. A primeira avaliação está em [acessibilidade](docs/acessibilidade.md); a matriz de regressões e limites da revisão de 18/10 está em [correções e verificação](docs/correcoes-verificacao-2026-10-18.md). Leitor de tela humano e Safari real exigem verificação própria.
 
 ## Estrutura
 

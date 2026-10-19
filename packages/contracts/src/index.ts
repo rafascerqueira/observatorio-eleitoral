@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+/** Formatos dos originais preservados; API e proxy usam a mesma lista. */
+export const ORIGINAL_MEDIA_TYPES = { zip: 'application/zip', json: 'application/json', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', gpkg: 'application/geopackage+sqlite3' } as const;
+export const originalFileSchema = z.string().regex(/^[a-zA-Z0-9_]+\.(zip|json|xlsx|gpkg)$/);
+export function originalMediaType(file: string) { return ORIGINAL_MEDIA_TYPES[file.split('.').at(-1) as keyof typeof ORIGINAL_MEDIA_TYPES]; }
+
+export const publicationInputsSchema = z.array(z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), scope: z.string().min(1) }));
+
 export const STATES = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'] as const;
 export const TERRITORIES = [...STATES, 'ZZ'] as const;
 export const OFFICES = ['president', 'governor', 'senator'] as const;
@@ -113,8 +120,8 @@ export const catalogSchema = z.object({
   mapDatasets: z.array(z.lazy(() => mapDatasetSchema)).default([]),
   tractsDatasets: z.array(z.lazy(() => tractsDatasetSchema)).default([]),
   placeProfilesDatasets: z.array(z.lazy(() => placeProfilesDatasetSchema)).default([]),
-  placeGroupsImport: z.object({ id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string() }).nullable().default(null),
-  tractSensitivityImport: z.object({ id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string(), method: z.string(), notes: z.array(z.string()), national: z.record(z.enum(TRACT_SENSITIVITY_RADII), tractAgreementSchema) }).nullable().default(null),
+  placeGroupsImport: z.object({ inputs: publicationInputsSchema.optional(), id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string() }).nullable().default(null),
+  tractSensitivityImport: z.object({ inputs: publicationInputsSchema.optional(), id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string(), method: z.string(), notes: z.array(z.string()), national: z.record(z.enum(TRACT_SENSITIVITY_RADII), tractAgreementSchema) }).nullable().default(null),
   incomeBandsDatasets: z.array(z.lazy(() => incomeBandsDatasetSchema)).default([]),
   tractDemographyDatasets: z.array(z.lazy(() => tractDemographyDatasetSchema)).default([]),
   turnoutProfilesDatasets: z.array(z.lazy(() => turnoutProfilesDatasetSchema)).default([]),
@@ -191,6 +198,21 @@ export const contextDistributionSchema = z.object({
   undistributed: nonnegative.optional(),
   // Estimativas da amostra arredondadas célula a célula: soma das categorias − total, dentro do limite do arredondamento.
   roundingDifference: z.number().int().optional(),
+}).superRefine((data, ctx) => {
+  const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
+  if (new Set(data.categories.map((item) => item.key)).size !== data.categories.length) fail('Categorias duplicadas na distribuição.');
+  if (data.undistributed !== undefined && data.roundingDifference !== undefined) fail('Diferença não discriminada e arredondamento não podem explicar a mesma distribuição.');
+  if (data.roundingDifference !== undefined && data.kind !== 'amostra') fail('Arredondamento só é admitido na amostra.');
+  const limit = data.kind === 'amostra' ? Math.ceil((data.categories.length + 1) / 2) : 0;
+  const known = data.categories.reduce((sum, item) => sum + (item.value ?? 0), 0);
+  if (data.total === null || data.categories.some((item) => item.value === null)) {
+    if (data.undistributed !== undefined || data.roundingDifference !== undefined) fail('Células indisponíveis não permitem deduzir a diferença.');
+    if (data.total !== null && known > data.total + limit) fail('Contagens divulgadas ultrapassam o total.');
+    return;
+  }
+  if (data.roundingDifference !== undefined) {
+    if (known - data.total !== data.roundingDifference || Math.abs(data.roundingDifference) > limit) fail('Diferença de arredondamento inconsistente.');
+  } else if (known + (data.undistributed ?? 0) !== data.total) fail('Categorias e diferença declarada não somam o total.');
 });
 export const TURNOUT_DIMENSIONS = ['gender', 'age', 'education', 'maritalStatus'] as const;
 const turnoutCountsSchema = z.object({ eligible: nonnegative, turnout: nonnegative, abstentions: nonnegative });
@@ -212,12 +234,14 @@ export const municipalityContextSchema = z.object({
 });
 export type MunicipalityContext = z.infer<typeof municipalityContextSchema>;
 export const contextDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('municipal-context'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(),
   sources: z.array(sourceSchema), scope: z.string(), validation: z.literal('checked'),
   coverage: z.object({ expected: nonnegative, published: nonnegative, withoutTurnout: z.array(z.enum(TERRITORIES)) }),
   notes: z.array(z.string()),
 });
 export const mapDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('maps'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),
 });
 /** Indicadores do mapa: cada um com fonte, tipo de dado, numerador e denominador explícitos. */
@@ -254,11 +278,13 @@ export const mapGeometrySchema = z.object({ status: z.enum(['published', 'awaiti
 export const TRACT_STATUSES = ['associated', 'no-coordinate', 'conflicting-coordinates', 'relocated', 'outside-tracts', 'other-municipality', 'ambiguous'] as const;
 const statusCountSchema = z.object({ places: nonnegative, electors: nonnegative });
 export const tractsDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('polling-place-tracts'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
   scope: z.string(), method: z.string(), notes: z.array(z.string()),
   coverage: z.array(z.object({ uf: z.enum(STATES), places: nonnegative, electors: nonnegative, sharedCoordinate: nonnegative, byStatus: z.record(z.enum(TRACT_STATUSES), statusCountSchema) })),
 });
 export const placeProfilesDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('place-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),
   // Ordem das categorias de cada dimensão nos vetores de contagem guardados por local.
   order: z.record(z.enum(TURNOUT_DIMENSIONS), z.array(z.string())),
@@ -317,10 +343,12 @@ export type IncomeBandPopulation = z.infer<typeof incomeBandPopulationSchema>;
 /** Por município: para cada indicador de demografia, moradores de 15+ por faixa do setor (mesmo formato das faixas de renda). */
 export const tractDemographySchema = z.object({ residents: nonnegative, indicators: z.object({ women: incomeBandPopulationSchema, 'age-16-24': incomeBandPopulationSchema, 'age-60-plus': incomeBandPopulationSchema }) });
 export const tractDemographyDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('tract-demography'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
   scope: z.string(), notes: z.array(z.string()), totals: z.object({ municipalities: nonnegative, tracts: nonnegative, residents: nonnegative, undisclosedTracts: nonnegative }),
 });
 export const incomeBandsDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('income-bands'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
   scope: z.string(), notes: z.array(z.string()), totals: z.object({ municipalities: nonnegative, tracts: nonnegative }).and(incomeBandPopulationSchema),
 });
@@ -439,6 +467,7 @@ export const turnoutProfilesSchema = z.object({
 });
 export type TurnoutProfiles = z.infer<typeof turnoutProfilesSchema>;
 export const turnoutProfilesDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('turnout-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
   scope: z.string(), notes: z.array(z.string()), missingUfs: z.array(z.enum(STATES)),
   totals: z.array(z.object({ round: z.enum(['1', '2']), eligible: nonnegative, turnout: nonnegative, abstentions: nonnegative, resultsEligible: nonnegative })),

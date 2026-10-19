@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { percent, type IncomeBandPopulation, type MunicipalityContext } from '@observatorio/contracts';
+import { contextDistributionSchema, percent, type IncomeBandPopulation, type MunicipalityContext } from '@observatorio/contracts';
 import { bandName, bandRange, residentsShare } from '../lib/income-bands';
 
 type Distribution = MunicipalityContext['race'];
@@ -15,14 +15,20 @@ function Kind({ kind }: { kind: Distribution['kind'] }) {
 }
 
 /** Distribuição de uma fonte: contagem e percentual sobre o total da própria fonte. */
-function DistributionTable({ title, data, unit }: { title: string; data: Distribution; unit: string }) {
+export function DistributionTable({ title, data, unit }: { title: string; data: Distribution; unit: string }) {
+  if (!contextDistributionSchema.safeParse(data).success) return <p className="notice" role="status">{title}: não foi possível validar as contagens. Falha técnica ou inconsistência nos dados; esta distribuição não será exibida. Tente novamente ou consulte as fontes.</p>;
+  const unavailable = data.total === null || data.categories.some((item) => item.value === null);
   return <div className="table-scroll context-table" role="region" aria-label={title} tabIndex={0}>
     <table>
       <caption><span className="context-caption">{title}</span> <Kind kind={data.kind} /> <span className="source-note">{data.source}</span></caption>
       <thead><tr><th scope="col">Categoria</th><th scope="col">{unit}</th><th scope="col">% do total</th></tr></thead>
       <tbody>{data.categories.map((item) => <tr key={item.key}><th scope="row">{item.label}</th><td>{number(item.value)}</td><td>{rate(share(item.value, data.total))}</td></tr>)}
-        <tr className="total-row"><th scope="row">Total</th><td>{number(data.total)}</td><td>{data.total === null ? 'Indisponível' : '100,0%'}</td></tr></tbody>
+        {data.undistributed !== undefined && data.undistributed > 0 && <tr><th scope="row">Diferença não discriminada nas categorias da fonte</th><td>{number(data.undistributed)}</td><td>{rate(share(data.undistributed, data.total))}</td></tr>}
+        <tr className="total-row"><th scope="row">Total</th><td>{number(data.total)}</td><td>{rate(share(data.total, data.total))}</td></tr></tbody>
     </table>
+    {data.undistributed !== undefined && data.undistributed > 0 && <p className="query-note">O total divulgado pela fonte supera a soma das categorias em {number(data.undistributed)} pessoas. Essa diferença foi preservada e não foi redistribuída. A causa não está informada nos dados consultados; não se presume omissão, falta de resposta ou erro da fonte.</p>}
+    {data.roundingDifference !== undefined && data.roundingDifference !== 0 && <p className="query-note">Estimativas da amostra arredondadas por célula: a soma das categorias {data.roundingDifference > 0 ? 'supera' : 'fica abaixo de'} o total em {number(Math.abs(data.roundingDifference))} pessoa(s), dentro do limite de arredondamento conferido. As contagens e os percentuais não foram ajustados.</p>}
+    {unavailable && <p className="query-note">Há contagens indisponíveis no arquivo consultado. Sem informação adicional da fonte, não distinguimos supressão de ausência; nenhum valor foi convertido em zero ou deduzido por diferença.</p>}
   </div>;
 }
 

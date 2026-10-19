@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { reusePublished, publicationId, publishedInputs, preparePublication } from './publication';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
@@ -14,7 +14,7 @@ import { preservedDownload, type PreservedSource } from './sidra';
  * mais, a menos ou repetido. Geometrias são só desenho; nenhuma medida é calculada a partir delas.
  */
 // v2: municípios na qualidade mínima (v1 usava a intermediária, ~3× maior e sem ganho visível a 600 px).
-const VERSION = 'maps-ibge-2022-v2';
+const VERSION = 'maps-ibge-2022-v3';
 const SCOPE = '2022/maps/ibge';
 type Topology = { type: 'Topology'; objects: Record<string, { type: string; geometries: Array<{ properties?: { codarea?: string } }> }> };
 const API = 'https://servicodados.ibge.gov.br/api/v3/malhas';
@@ -35,6 +35,9 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
+    const lock = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [`observatorio:${SCOPE}`]);
+    if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
+    const inputs = await publishedInputs(client, ['2022/president/BR']);
     await client.query(await readFile(resolve(__dirname, 'schema.sql'), 'utf8'));
     await client.query(await readFile(resolve(__dirname, 'migrations/007-map-geometries.sql'), 'utf8'));
     // Municípios publicados (Presidência nacional) com o código IBGE da correspondência oficial.
@@ -63,10 +66,9 @@ async function run() {
     }
     const { path: _path, ...correspondenceSource } = correspondence;
     const allSources = [{ ...correspondenceSource, generatedAt: [], rowsRead: 5571, rowsSelected: 5570 }, ...sources];
-    const id = createHash('sha256').update(JSON.stringify({ version: VERSION, hashes: allSources.map((source) => source.sha256) })).digest('hex');
-    const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
-    if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}.`); return; }
-    const dataset = mapDatasetSchema.parse({ id, kind: 'maps', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, sources: allSources,
+    const id = publicationId(VERSION, allSources.map((source) => source.sha256), inputs);
+    if (await reusePublished(client, { id, scope: SCOPE, inputs })) { console.log(`Já publicado: ${id}.`); return; }
+    const dataset = mapDatasetSchema.parse({ id, kind: 'maps', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources: allSources,
       scope: 'Malhas do IBGE (2022): Brasil por UF (qualidade mínima) e UFs por município (qualidade mínima), ligadas aos municípios do TSE pelo código IBGE da correspondência oficial.' });
     for (const source of allSources) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes]);
     await client.query('BEGIN');
@@ -74,12 +76,10 @@ async function run() {
       await client.query('INSERT INTO import_batches(id,scope,metadata) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET metadata=EXCLUDED.metadata', [id, SCOPE, dataset]);
       await client.query('DELETE FROM map_geometries WHERE batch_id=$1', [id]);
       for (const item of topologies) await client.query('INSERT INTO map_geometries VALUES($1,$2,$3,$4)', [id, item.level, item.uf, item.topology]);
-      await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
-      await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
+      await preparePublication(client, { id, scope: SCOPE, inputs, report: { dataset, topologies: topologies.map((item) => ({ level: item.level, uf: item.uf })) } });
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
-    await mkdir(resolve(ROOT, 'data/audit'), { recursive: true });
-    await writeFile(resolve(ROOT, 'data/audit', `${id}.json`), JSON.stringify({ dataset, topologies: topologies.map((item) => ({ level: item.level, uf: item.uf })) }, null, 2));
+
     console.log(JSON.stringify({ published: id, scope: SCOPE, topologies: topologies.length }));
   } finally { client.release(); await pool.end(); }
 }
