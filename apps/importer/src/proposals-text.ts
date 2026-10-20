@@ -5,8 +5,21 @@ import { searchText } from '@observatorio/contracts';
  * normalização proposta e medidas por página. Nada daqui entra numa publicação; a busca publicada continua com `searchText`.
  */
 
-/** Página do `-bbox-layout` na ordem de leitura do Poppler: palavras com espaço, linhas com "\n", blocos e fluxos com linha em branco. */
-export type BboxPage = { text: string; flows: number; blocks: number; lines: number; words: number };
+/**
+ * Página do `-bbox-layout` remontada como o modo padrão do Poppler (ordem de leitura) a escreve: palavras vizinhas separadas por
+ * espaço só quando a distância entre elas chega a `WORD_SPACE` da altura da linha, cada linha seguida de "\n" e cada fluxo de
+ * mais um "\n". A diferença é o hífen de fim de linha, que o modo padrão descarta e aqui fica; `defaultModeText` refaz o descarte,
+ * para conferir a remontagem contra o próprio modo padrão.
+ */
+export type BboxPage = { text: string; flowLines: string[][]; flows: number; blocks: number; lines: number; words: number; gaps: WordGaps };
+/** Distâncias entre palavras vizinhas, em altura da linha: quantas viraram espaço, quantas foram juntadas e as mais próximas do limiar. */
+export type WordGaps = { joined: number; spaced: number; maxJoined: number | null; minSpaced: number | null };
+/**
+ * Distância mínima entre palavras, em fração da altura da linha, para haver espaço. O Poppler parte palavras em ligaduras e no
+ * kerning sem espaço visível (nº 22: "ﬁ" | "m", com a segunda começando antes do fim da primeira), e o modo padrão as junta;
+ * nas páginas de 2022 nenhuma distância cai entre 0,03 e 0,05 da altura (auditoria de 20/10/2026).
+ */
+export const WORD_SPACE = 0.04;
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 const decode = (text: string) => text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, name: string) => {
   if (name.startsWith('#')) return String.fromCodePoint(/^#x/i.test(name) ? parseInt(name.slice(2), 16) : Number(name.slice(1)));
@@ -16,16 +29,23 @@ const decode = (text: string) => text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (
 });
 const LEVELS = ['page', 'flow', 'block', 'line', 'word'] as const;
 type Level = typeof LEVELS[number];
+type Box = { xMin: number; yMin: number; xMax: number; yMax: number };
+type Line = { box: Box; words: Array<{ box: Box; text: string }> };
+function box(name: Level, attributes: string): Box {
+  const [xMin, yMin, xMax, yMax] = (['xMin', 'yMin', 'xMax', 'yMax'] as const).map((key) => Number(new RegExp(`\\b${key}="(-?\\d+(?:\\.\\d+)?)"`).exec(attributes)?.[1] ?? Number.NaN));
+  if (![xMin, yMin, xMax, yMax].every(Number.isFinite)) throw new Error(`-bbox-layout com <${name}> sem coordenadas.`);
+  return { xMin: xMin!, yMin: yMin!, xMax: xMax!, yMax: yMax! };
+}
 
-/** Leitor restrito: só page/flow/block/line/word, nessa hierarquia; texto fora de palavra dentro de uma página bloqueia. */
+/** Leitor restrito: só page/flow/block/line/word, nessa hierarquia, linhas e palavras com coordenadas; texto fora de palavra dentro de uma página bloqueia. */
 export function bboxPages(xhtml: string): BboxPage[] {
-  const pages: string[][][][][] = [];
+  const pages: Line[][][][] = [];
   const stack: Level[] = [];
-  const tag = /<(\/?)([a-zA-Z]+)\b[^>]*?(\/?)>|([^<]+)/g;
+  const tag = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>|([^<]+)/g;
   for (const match of xhtml.matchAll(tag)) {
-    const [, closing, rawName, selfClosing, text] = match;
+    const [, closing, rawName, attributes, selfClosing, text] = match;
     if (text !== undefined) {
-      if (stack.at(-1) === 'word') { const line = pages.at(-1)!.at(-1)!.at(-1)!.at(-1)!; line[line.length - 1] += decode(text); }
+      if (stack.at(-1) === 'word') { const words = pages.at(-1)!.at(-1)!.at(-1)!.at(-1)!.words; words[words.length - 1]!.text += decode(text); }
       else if (stack.length && text.trim()) throw new Error('-bbox-layout com texto fora de palavra.');
       continue;
     }
@@ -40,18 +60,33 @@ export function bboxPages(xhtml: string): BboxPage[] {
     if (name === 'page') pages.push([]);
     else if (name === 'flow') pages.at(-1)!.push([]);
     else if (name === 'block') pages.at(-1)!.at(-1)!.push([]);
-    else if (name === 'line') pages.at(-1)!.at(-1)!.at(-1)!.push([]);
-    else pages.at(-1)!.at(-1)!.at(-1)!.at(-1)!.push('');
+    else if (name === 'line') pages.at(-1)!.at(-1)!.at(-1)!.push({ box: box(name, attributes!), words: [] });
+    else pages.at(-1)!.at(-1)!.at(-1)!.at(-1)!.words.push({ box: box(name, attributes!), text: '' });
     if (!selfClosing) stack.push(name);
   }
   if (stack.length) throw new Error('-bbox-layout incompleto.');
-  return pages.map((flows) => ({
-    text: flows.map((blocks) => blocks.map((lines) => lines.map((words) => words.join(' ')).join('\n')).join('\n\n')).join('\n\n'),
-    flows: flows.length, blocks: flows.reduce((sum, blocks) => sum + blocks.length, 0),
-    lines: flows.reduce((sum, blocks) => sum + blocks.reduce((total, lines) => total + lines.length, 0), 0),
-    words: flows.reduce((sum, blocks) => sum + blocks.reduce((total, lines) => total + lines.reduce((count, words) => count + words.length, 0), 0), 0),
-  }));
+  return pages.map((flows) => {
+    const gaps: WordGaps = { joined: 0, spaced: 0, maxJoined: null, minSpaced: null };
+    const lineText = ({ box: line, words }: Line) => words.map((word, index) => {
+      if (!index) return word.text;
+      const gap = word.box.xMin - words[index - 1]!.box.xMax, height = line.yMax - line.yMin;
+      const ratio = height > 0 ? gap / height : gap > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+      if (ratio >= WORD_SPACE) { gaps.spaced++; gaps.minSpaced = Math.min(gaps.minSpaced ?? ratio, ratio); return ` ${word.text}`; }
+      gaps.joined++; gaps.maxJoined = Math.max(gaps.maxJoined ?? ratio, ratio); return word.text;
+    }).join('');
+    const flowLines = flows.map((blocks) => blocks.flatMap((lines) => lines.map(lineText)));
+    return {
+      text: flowLines.map((lines) => `${lines.map((line) => `${line}\n`).join('')}\n`).join(''), flowLines, gaps,
+      flows: flows.length, blocks: flows.reduce((sum, blocks) => sum + blocks.length, 0),
+      lines: flows.reduce((sum, blocks) => sum + blocks.reduce((total, lines) => total + lines.length, 0), 0),
+      words: flows.reduce((sum, blocks) => sum + blocks.reduce((total, lines) => total + lines.reduce((count, line) => count + line.words.length, 0), 0), 0),
+    };
+  });
 }
+
+/** O que o modo padrão do Poppler escreve das mesmas linhas: linha terminada em "-" seguida de outra no mesmo fluxo perde o hífen e a quebra. */
+export const defaultModeText = (page: Pick<BboxPage, 'flowLines'>) => page.flowLines.map((lines) =>
+  `${lines.map((line, index) => line.endsWith('-') && index < lines.length - 1 ? line.slice(0, -1) : `${line}\n`).join('')}\n`).join('');
 
 /** Marcador do hífen de fim de linha na normalização proposta: hífen que pode ou não pertencer à palavra. */
 export const HYPHEN_MARKER = '­';
@@ -61,18 +96,26 @@ const REPLACEMENTS: Record<string, string> = {
 };
 const INVISIBLE = /[­​-‍⁠﻿]/;
 const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+/**
+ * Se o hífen de fim de linha entre `before` e `after` é reunido: com uma quebra, entre letras ou dígitos; depois de linha em branco
+ * (fim de fluxo no texto do PDF, de bloco no OCR), só entre letras. No OCR do nº 12, "aprimora-" e "deter-" fecham a página e
+ * são seguidos, depois de uma linha em branco, do número da página.
+ */
+const joinsAtLineEnd = (before: string, gap: string, after: string) =>
+  (gap.match(/\n/g) ?? []).length > 1 ? /\p{L}/u.test(before) && /\p{L}/u.test(after) : LETTER_OR_DIGIT.test(before) && LETTER_OR_DIGIT.test(after);
 
 /**
  * Normalização proposta para a v2 (protótipo, só para a auditoria): a de `searchNormalize` mais ligaduras em letras, invisíveis
- * removidos sem virar espaço, hífens e aspas Unicode nos equivalentes ASCII e hífen de fim de linha (entre letras ou dígitos)
- * guardado como `HYPHEN_MARKER` em vez de descartado.
+ * removidos sem virar espaço, hífens e aspas Unicode nos equivalentes ASCII e hífen de fim de linha (`joinsAtLineEnd`) guardado
+ * como `HYPHEN_MARKER` em vez de descartado.
  */
 export function proposedNormalize(text: string): string {
   const out: string[] = [];
-  const lineBreakHyphen = /[-­‐‑][ \t]*\r?\n\s*/y, space = /\s+/y;
+  const lineBreakHyphen = /[-­‐‑][ \t]*(\r?\n\s*)/y, space = /\s+/y;
   for (let index = 0; index < text.length;) {
     lineBreakHyphen.lastIndex = index;
-    if (index > 0 && LETTER_OR_DIGIT.test(text[index - 1]!) && lineBreakHyphen.test(text) && LETTER_OR_DIGIT.test(text[lineBreakHyphen.lastIndex] ?? '')) {
+    const join = index > 0 ? lineBreakHyphen.exec(text) : null;
+    if (join && joinsAtLineEnd(text[index - 1]!, join[1]!, text[lineBreakHyphen.lastIndex] ?? '')) {
       out.push(HYPHEN_MARKER); index = lineBreakHyphen.lastIndex; continue;
     }
     if (INVISIBLE.test(text[index]!)) { index++; continue; }
@@ -90,12 +133,15 @@ export const tokens = (normalized: string) => normalized.split(' ').map((token) 
 /** Grafias que a busca proposta encontra para uma palavra com marcador: sem o hífen e com ele (combinações mistas não contadas). */
 export const findableForms = (token: string) => token.includes(HYPHEN_MARKER) ? [token.replaceAll(HYPHEN_MARKER, ''), token.replaceAll(HYPHEN_MARKER, '-')] : [token];
 export const bigrams = (words: readonly string[]) => words.slice(1).map((word, index) => `${words[index]} ${word}`);
+/** Busca proposta (protótipo, só para a auditoria): o termo normalizado com o marcador opcional entre caracteres e o "-" casando "-" ou o marcador. */
+export const proposedSearchPattern = (term: string, flags = 'u') =>
+  new RegExp([...term].map((char) => char === '-' ? `[-${HYPHEN_MARKER}]` : char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join(`${HYPHEN_MARKER}?`), flags);
 
-/** Hífen + quebra de linha entre letras ou dígitos, como a normalização proposta os reúne. */
+/** Hífen + quebra de linha que a normalização proposta reúne (`joinsAtLineEnd`). */
 const LINE_BREAK_JOIN = /([\p{L}\p{N}]+)[-­‐‑][ \t]*(\r?\n\s*)([\p{L}\p{N}]+)/gu;
 export type HyphenJoin = { left: string; right: string; digits: boolean; blankLine: boolean };
 export function hyphenJoins(text: string): HyphenJoin[] {
-  return [...text.matchAll(LINE_BREAK_JOIN)].map(([, left, gap, right]) => ({
+  return [...text.matchAll(LINE_BREAK_JOIN)].filter(([, left, gap, right]) => joinsAtLineEnd(left!.at(-1)!, gap!, right![0]!)).map(([, left, gap, right]) => ({
     left: searchText(left!), right: searchText(right!), digits: /\p{N}/u.test(left!.at(-1)!) || /\p{N}/u.test(right![0]!), blankLine: (gap!.match(/\n/g) ?? []).length > 1,
   }));
 }

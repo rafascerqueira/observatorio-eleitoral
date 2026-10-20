@@ -1,26 +1,26 @@
 # Contexto do projeto — Mente Eleitoral
 
-Criado em 12/10/2026 e revisado em **19/10/2026**. Fonte de verdade sobre finalidade, princípios, decisões e continuidade do projeto. O resumo abaixo descreve o estado vigente; os registros a partir do §12 preservam o estado de cada marco, inclusive pendências depois resolvidas. Nome definido: **Mente Eleitoral**, identidade 03A (petróleo e terracota), conforme §37. Licença continua sem decisão.
+Criado em 12/10/2026 e revisado em **20/10/2026**. Fonte de verdade sobre finalidade, princípios, decisões e continuidade do projeto. O resumo abaixo descreve o estado vigente; os registros a partir do §12 preservam o estado de cada marco, inclusive pendências depois resolvidas. Nome definido: **Mente Eleitoral**, identidade 03A (petróleo e terracota), conforme §37. Licença continua sem decisão.
 
 ## Estado atual
 
-Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`, enviado para `upstream/main` em 19/10; a revisão documental posterior está registrada no §30. A fase A do [plano de melhorias](docs/plano-postgis-propostas.md) foi implementada, verificada e consolidada no commit local `d66540c` em 19/10, sem push (§33). A fase C (entorno dos domicílios) foi importada, publicada no banco local, verificada e consolidada em commit local na mesma data, sem push (§34). Próximas: fase B e depois D, só com novo aviso de Rafael.
+Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. Próximo: decisões de Rafael sobre a `proposals-2022-v2` da busca nas propostas, com a auditoria do §47; D3 depende de definir a revisão humana; E sem decisão.
 
-| Frente | Situação em 19/10/2026 |
+| Frente | Situação em 20/10/2026 |
 | --- | --- |
 | Resultados eleitorais | Presidência 2022 nacional e exterior; Governador e Senador nas 27 UFs, com turnos e categorias não válidas auditados. Deputados fora do escopo; 2026 e suplementar de RR não importados. |
 | IBGE e perfis TSE | Contexto municipal, mapas, associação local → setor, perfil por local, faixas de renda, participação por perfil, demografia, grupos, sensibilidade e entorno dos domicílios (§34) publicados no banco local. Nove versões atuais e ordem de importação no [README](README.md); IDs e auditorias em [reimportações](docs/reimportacoes-2026-10-18.md). |
-| Interface | Busca com sugestões, listagem municipal compacta/paginada, detalhe de todas as candidaturas, formulários GET sem JS, participação por município/estado civil e mapas por candidatura concluídos. Fase A (§33): setor censitário em cada local e quadro do município por situação; em `/mapa`, abstenção do cargo ou candidatura à escolha, dispersão e exportação CSV. Fase C (§34): entorno dos domicílios no painel do município, no cartão do local e em oito indicadores de `/mapa`. |
+| Interface | Busca com sugestões, listagem municipal compacta/paginada, detalhe de todas as candidaturas, formulários GET sem JS, participação por município/estado civil e mapas por candidatura concluídos. Fase A (§33): setor censitário em cada local e quadro do município por situação; em `/mapa`, abstenção do cargo ou candidatura à escolha, dispersão e exportação CSV. Fase C (§34): entorno dos domicílios no painel do município, no cartão do local e em oito indicadores de `/mapa`. Fase B3 (§41): setores e locais em `/municipios/[code]/setores`. Fase D2 (§43): busca literal nas propostas da Presidência em `/propostas`. |
 | Identidade | **Mente Eleitoral**, com a identidade 03A (petróleo/terracota), símbolo M/conexões e frase “Um olhar único sobre votação e população”. Marca aplicada ao site, ícones, banner inicial, compartilhamento e README (§37). |
 | Robustez e rastreabilidade | Isolamento por ano/cargo; downloads de relatórios/originais, inclusive GeoPackage; distinção entre falha técnica e ausência na fonte; dependências versionadas e publicação bloqueada por divergência. |
-| Última verificação da aplicação | 86 testes, typecheck/build, nove smokes, 31 regressões HTTP e 60 avaliações automáticas em Chrome/Firefox aprovados em 19/10; nove reexecuções idempotentes e duas comparações integrais das 11 tabelas, com dados anteriores preservados (§28). Fase A (§33): 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox, com os envios dos formulários com e sem JavaScript. Fase C (§34): 106 testes, typecheck/build, nove smokes, 31 regressões e `check:ui` completo nos dois navegadores, com novo cenário de acessibilidade de detalhes abertos. |
+| Última verificação da aplicação | 86 testes, typecheck/build, nove smokes, 31 regressões HTTP e 60 avaliações automáticas em Chrome/Firefox aprovados em 19/10; nove reexecuções idempotentes e duas comparações integrais das 11 tabelas, com dados anteriores preservados (§28). Fase A (§33): 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox, com os envios dos formulários com e sem JavaScript. Fase C (§34): 106 testes, typecheck/build, nove smokes, 31 regressões e `check:ui` completo nos dois navegadores, com novo cenário de acessibilidade de detalhes abertos. D2 (§43): typecheck, testes, build, nove smokes, `check:data`, `check:regressions`, `check:publication` e `check:ui` com `/propostas`. Revisão e auditoria de 20/10 (§§44–47): typecheck e testes (123 no §47); no §47, também os nove smokes; sem `check:ui`. |
 | Operação | npm workspaces, Node 24.21.0, Next.js/NestJS, PostgreSQL/PostGIS e `pg_trgm`. Acesso por `pg`, sem Prisma. API/web temporárias encerradas no fim da verificação; banco preservado. |
 
 ### Pendências vigentes
 
 - **Antes de declarar acessibilidade completa:** leitor de tela humano, Safari e dispositivos reais, zoom de texto/alto contraste do sistema. Chrome/Firefox e verificações automáticas já foram realizados; não substituem esses ensaios.
 - **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
-- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Ordem definida por Rafael em 19/10: fase B do [plano de melhorias](docs/plano-postgis-propostas.md) e depois a D, cada uma só com novo aviso dele; a E segue sem decisão. As decisões da seção 10 do plano para B e D continuam valendo.
+- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 depende de definir a revisão humana e a E segue sem decisão. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) estão pendentes; a auditoria do §47 dá a evidência das quatro primeiras.
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
 - **Manutenção registrada, sem execução autorizada nesta etapa:** limpeza de armazenamento; renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
 
@@ -603,3 +603,39 @@ Pendente:
 - correções sem reimportação, ainda não feitas: `SITE_URL` vazio e o README dizendo "sem push".
 
 Os commits desta sessão (§§44–46) foram feitos no branch `ccr-7d7c3c6c-8vzdyn`, a partir de `443c0d1` do `main`.
+
+## 47. Auditoria do texto das propostas nos PDFs reais e correções sem reimportação — 20/10/2026
+
+Rafael pediu, no Claude Code local, para seguir com as próximas etapas da revisão feita remotamente (§§44–46).
+
+- **Auditoria** (`npm run audit:proposals-text`, só leitura, banco no ar): relatório final em `data/analysis/propostas-texto-2026-10-20T23-03-39.700Z/`; as execuções anteriores do dia ficam como histórico. O `-layout` reproduz as 388 páginas nativas da v1 publicada (`cce780ce…`, mesmo ZIP).
+- **Falha da remontagem, corrigida no script:** a primeira execução punha espaço entre todas as palavras do `-bbox-layout`, e o Poppler parte palavras na ligadura (nº 22: "ﬁ" e "m"). O espaço passou a depender da distância entre palavras (`WORD_SPACE`, 0,04 da altura da linha), com a estrutura do modo padrão. A remontagem é conferida contra o modo padrão do `pdftotext`: 438 de 438 páginas idênticas.
+- **Outras mudanças no script:**
+  - amostra para conferência visual por documento;
+  - simulação da busca com a semântica de cada versão (`search`), procurando no texto `-raw` o que só a v1 encontra;
+  - opção `-- --termos=`;
+  - depois de linha em branco, junção de hífen só entre letras: no OCR do nº 12, o hífen do fim da página vinha seguido do número da página;
+  - o script da raiz não repassava argumentos (o `-- --sem-imagens` documentado falhava no npm); agora repassa.
+- **Achados** (detalhes na seção 19 do [plano de melhorias](docs/plano-postgis-propostas.md)):
+  - ligaduras só no documento do nº 22 (334): nele, a v1 não acha "inflação" nenhuma vez e a proposta acha 8; "eficiência" passa de 12 para 39;
+  - colunas misturadas no `-layout`, sobretudo nos nº 22, 30 e 14;
+  - 461 hífens de fim de linha, 23 deles em palavras compostas confirmadas;
+  - nenhuma página ilegível;
+  - tudo o que só a v1 encontra (151 pares termo × página, nos nº 30, 14, 22 e 90) é palavra colada entre colunas e não existe no texto `-raw`.
+- **Recomendações revistas:** extração e hífen como propostos, com a regra de espaço, a conferência contra o modo padrão (bloqueante) e a regra da linha em branco. Para páginas ilegíveis, medir e bloquear a publicação, em vez de OCR com páginas suspeitas (sem migração 021 nem mudança na interface).
+- **`SITE_URL`** (fora da v2): `apps/web/lib/site-url.ts`. Vazia ou ausente vale o padrão local; inválida ou sem http(s) interrompe com mensagem própria. Dockerfile e Compose passam o valor como argumento de build, mantido na imagem.
+- **Documentação:** README e "Estado atual" deste arquivo sem o "sem push" desatualizado e com as fases concluídas.
+
+Verificação:
+- typecheck e 123 testes (12 nos contratos, 30 na API, 41 no importador e 40 na web), entre eles os 7 da auditoria, revistos, e 1 novo na web;
+- `next build` com `SITE_URL` vazia, com `https://exemplo.org/mente` e com valor inválido (falha com a mensagem própria), conferindo a `og:image` da página estática `/metodologia`; recompilado depois com o `.env`;
+- imagem Docker da web com e sem `--build-arg SITE_URL`: a variável chega à execução e à `og:image` da página estática; imagens de teste removidas, as de Rafael intactas;
+- nove smokes contra API/web compiladas nas portas 3101/3100, encerradas ao final.
+
+Não rodados: `check:data`, `check:regressions`, `check:publication` e `check:ui`. Não houve mudança de dados, rotas ou interface, além das metas de compartilhamento.
+
+A pedido de Rafael, em dois commits locais no `main`, sem push: correção do `SITE_URL` com o README; auditoria com a documentação.
+
+Pendente:
+- decisões 1–5 da seção 19 (Rafael);
+- depois delas, implementação da v2, carga e validação.

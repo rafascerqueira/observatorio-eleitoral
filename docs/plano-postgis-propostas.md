@@ -301,7 +301,7 @@ Conferência do OCR por amostra (imagem da página × texto gravado): nº 12, p.
 - Falha encontrada na verificação e corrigida: com a publicação no banco, o catálogo respondia 500, porque o escopo `2022/proposals/` caía na lista de publicações eleitorais; agora fica em `proposalsDatasets`, com teste.
 - Verificação: typecheck, testes (API com o catálogo e a busca; web com ausência ≠ não propõe, aviso do OCR só para documentos com OCR e trecho do PDF tratado como texto), build; `smoke:context` (113 requisições, com o bloco das propostas e o ZIP original), os demais oito smokes, `check:data`, `check:regressions`, `check:publication` e `check:ui` com `/propostas` (com e sem busca, 12 avaliações, sem violações) contra API/web compiladas nas portas 3100/3101. Link na navegação adicionado depois, no commit `443c0d1`, sem registro da verificação feita nele (plan.md §44).
 
-## 19. Plano — `proposals-2022-v2` da busca nas propostas (proposto em 20/10/2026, aguardando decisões)
+## 19. Plano — `proposals-2022-v2` da busca nas propostas (proposto e auditado em 20/10/2026, aguardando decisões)
 
 Origem: revisão de código de 20/10/2026 (plan.md §44). A v1 perde ocorrências que estão nos PDFs, e a perda varia com o PDF de cada candidatura:
 1. `pdftotext -layout` põe as colunas lado a lado na mesma linha. Cria adjacências falsas entre colunas e impede reunir a palavra partida no fim da linha.
@@ -325,16 +325,17 @@ A v1 (`cce780ce…`) não é reescrita: a v2 é nova versão do importador, com 
 
 O 0xAD no fim da linha foi tratado como hífen comum: sai como "-" no `-layout` e no `-raw` e é removido no modo padrão.
 
-A auditoria nos PDFs reais não rodou nesta sessão: a rede do ambiente recusa `cdn.tse.jus.br` e `data/` não existe aqui. Ela é o primeiro passo, onde os originais estão preservados.
+A auditoria nos PDFs reais rodou em 20/10/2026, na máquina de Rafael; o resultado está abaixo e mostrou uma falha da remontagem que o PDF sintético não tinha (ligaduras).
 
 ### Passo 1 — auditoria do texto, sem publicação (`npm run audit:proposals-text`)
 
 Script só de leitura, como o inventário da D1. Lê o ZIP preservado (`1c8853cc…`), extrai os PDFs em `data/staging/proposta_governo_2022-auditoria/` (diretório próprio, para não apagar o de uma importação em andamento), roda `pdftotext -layout` e `-bbox-layout` por página e não escreve no banco. Relatório em `data/analysis/propostas-texto-<data>/report.json`, por documento e pelas candidaturas que o apresentaram, para que o efeito seja comparável entre candidaturas.
 
-Implementado em 20/10/2026, ainda sem execução nos PDFs reais:
-- **Arquivos:** `apps/importer/src/proposals-text-audit.ts`; funções em `proposals-text.ts`: leitor restrito do `-bbox-layout`, protótipo `proposedNormalize` (não usado em publicação) e medidas.
-- **Execução:** `npm run audit:proposals-text`; `-- --sem-imagens` dispensa as imagens.
-- **Imagens:** as páginas listadas para conferência são gravadas em `paginas/` (80 dpi, cinza).
+Implementado e executado em 20/10/2026:
+- **Arquivos:** `apps/importer/src/proposals-text-audit.ts`; funções em `proposals-text.ts`: leitor restrito do `-bbox-layout`, remontagem, protótipo `proposedNormalize` (não usado em publicação) e medidas.
+- **Execução:** `npm run audit:proposals-text`; `-- --sem-imagens` dispensa as imagens e `-- --termos=a,b` conta as ocorrências desses termos na v1 e na proposta, por documento.
+- **Remontagem conferida:** o texto do `-bbox-layout`, com o descarte do hífen de fim de linha refeito como o Poppler faz, precisa ser o do modo padrão do `pdftotext`, página a página (`defaultMode` no relatório).
+- **Imagens:** as páginas listadas para conferência são gravadas em `paginas/` (80 dpi, cinza): por colunas, as duas de maior diferença em cada documento; por qualidade, as 12 de pior medida.
 - **Comparação com a v1:** com `DATABASE_URL`, só por leitura (`default_transaction_read_only`), confere que o texto `-layout` reproduz o das páginas nativas da v1 publicada. Também mede o efeito da normalização proposta no texto do OCR da v1. Sem banco, registra o motivo.
 - **Verificação:**
   - 6 testes: leitor, normalização, junções, contagens e uma auditoria de ponta a ponta com PDF sintético no `pdftotext` real;
@@ -357,20 +358,93 @@ O relatório traz:
    As páginas com os maiores valores vão para conferência visual.
 5. **Efeito na busca:** palavras e bigramas encontráveis com a v1 (texto `-layout` + normalização atual) e com a proposta (texto `-bbox-layout` + normalização nova), por candidatura, com ganhos, perdas e exemplos. Usa todos os tokens do corpus, sem lista de termos escolhida a dedo. As grafias com hífen que o marcador acrescenta (`hyphenatedOnlyV2`) ficam separadas das palavras recuperadas (`tokensOnlyV2`). O que só a v1 encontra (`tokensOnlyV1`, `pairsOnlyV1`) precisa de explicação antes da decisão.
 
-### Proposta para a v2 (recomendação, a confirmar com a auditoria)
+### Resultado da auditoria (20/10/2026)
+
+Executada com o banco no ar, em cerca de 1 min, sem escrita no banco. Relatório final em `data/analysis/propostas-texto-2026-10-20T23-03-39.700Z/` (`report.json` e 27 imagens), gerado com `-- --termos=inflação,eficiência,financiamento,profissional,educação,bem-estar`. Fontes: ZIPs `1c8853cc…` e `6f764839…`; ferramenta: `pdftotext` 24.02.0. As execuções anteriores do mesmo dia ficam como histórico.
+
+**Correção da própria auditoria.** Na primeira execução, a remontagem punha espaço entre todas as palavras do `-bbox-layout`. Só que o Poppler parte palavras na ligadura: no nº 22, "ﬁm" sai como "ﬁ" e "m", com a segunda começando 0,15 pt antes do fim da primeira. Isso fabricava centenas de "fi" soltos e escondia o efeito real. O modo padrão do `pdftotext` junta essas partes. A remontagem passou a pôr espaço só quando a distância entre palavras chega a 0,04 da altura da linha (`WORD_SPACE`), com a estrutura do modo padrão. Conferência: em **438 de 438 páginas**, a remontagem, com o hífen descartado como o Poppler faz, é idêntica ao modo padrão. As 524 distâncias juntadas vão até 0,024 da altura da linha; as 96.585 separadas começam em 0,069; nenhuma cai entre as duas.
+
+**V1.** O `-layout` reproduz as 388 páginas nativas publicadas na `cce780ce…`, com o mesmo ZIP.
+
+**Colunas.**
+- 120 das 365 páginas nativas têm pares de palavras diferentes entre o `-layout` e a remontagem. Pares só no `-layout`: nº 22 com 4.230, nº 30 com 1.398, nº 14 com 211; de 3 a 78 nos nº 16, 90, 80, 15 e 44; nenhum nos nº 13, 21 e 27.
+- Os caracteres visíveis são os mesmos nos dois modos em todas as páginas: muda a ordem, não o texto.
+- Mecanismo da perda (nº 30, p. 33): a linha física do `-layout` termina com "responsabiliza-", da coluna da direita, e a seguinte começa com "demais", da esquerda. A junção da v1 cria "responsabilizademais", e "responsabilização" deixa de ser encontrada.
+- Conferência visual (nº 22, p. 40, três colunas; nº 14, p. 11, duas colunas): a remontagem segue a ordem de leitura da página.
+
+**Hífens de fim de linha** (texto remontado das páginas nativas):
+- 461 junções em 8 documentos. O `-layout` mostra 255, porque as colunas escondem o fim da linha.
+- 365 são palavras partidas: a forma reunida aparece no meio da linha em algum documento.
+- 23 são compostas: a forma com hífen aparece no meio da linha. Exemplos: "bem-estar" (7), "2023-2026" (4), "2019-2022" (2), "centro-oeste", "seguro-desemprego", "cívico-militares", "salários-mínimos", "deve-se", "trata-se", "defendê-lo", "preservá-lo".
+- 73 não têm evidência no corpus. Há palavras partidas ("amar-rados"), compostas ("licença-maternidade", "passe-livre", "neo-estalinistas") e marcadores de lista do nº 80 ("A-", "B-", "D-", "E-"), que o próprio Poppler junta à palavra seguinte.
+- 8 envolvem dígitos ("2003-2007", "2014-2024", "2023-2026").
+- Uma atravessa linha em branco, isto é, fim de fluxo: "dispositi-" e "vos", no nº 14, palavra partida que o Poppler pôs em fluxos diferentes.
+- No OCR da v1 (nº 12), "aprimora-" e "deter-" fecham a página e, depois de uma linha em branco, vem o número da página ("18", "20"). Por isso, depois de linha em branco, a junção proposta só vale entre letras.
+
+**Caracteres** (páginas nativas):
+
+| Classe | Ocorrências | Onde |
+| --- | --- | --- |
+| Ligaduras U+FB00–U+FB06 | 334 | Só no nº 22 |
+| Aspas tipográficas | 219 | 10 documentos |
+| Apóstrofos tipográficos | 21 | 8 documentos ("d’Avila", "ONG’s", "d’água", "IDH’s") |
+| Travessão U+2013 | 94 | Nenhum entre letras |
+| U+200B | 2 | Nº 15 |
+| Uso privado U+F0B7 | 53 | Nº 16 (marcadores de lista da fonte Symbol) |
+| Espaços Unicode | 3 | Nº 30 (já tratados como espaço) |
+| U+FFFD, controles, U+00AD, U+2010, U+2011 | 0 | — |
+
+As regras para hífen suave e hífens Unicode ficam só como defesa. Outros sinais: "•" (202), "●" (40), "—" (4), "²", "³" e "⅓", que continuam sem NFKD, como previsto.
+
+**Qualidade.**
+- Nenhuma página nativa passa dos limiares provisórios (1 % de U+FFFD, uso privado e controles, ou 20 % de palavras sem vogal).
+- Maior fração de caracteres ruins: 0,4 %, no nº 16 (os marcadores U+F0B7). Maior fração de palavras sem vogal: 9,9 % (nº 30, p. 36).
+- No OCR publicado (50 páginas), a maior fração de palavras sem vogal numa página com mais de 100 caracteres é 5 % (nº 90, p. 17). As frações acima de 10 % estão em páginas de 29 a 86 caracteres (capas e títulos).
+
+**Efeito na busca** (`search` no relatório). Simulação sobre todas as palavras de 3 ou mais caracteres do corpus, na grafia em que seriam digitadas, nas páginas nativas: em que páginas a v1 (`strpos` no `searchText` do `-layout`) e a proposta (expressão com marcador sobre a remontagem) encontram cada uma.
+- Só a v1 encontra 151 pares termo × página: 128 no nº 30, 15 no nº 14, 5 no nº 22 e 3 no nº 90; nenhum nos outros oito documentos. Todos são pedaços de palavras coladas entre colunas pela v1 ("responsabilizademais", "eleisimultaneamente", "comtransformadoras"), e nenhum existe no texto `-raw` da página.
+- Só a proposta encontra:
+  - nº 22: 528 pares (ligaduras e compostos);
+  - nº 30: 660 pares, na maior parte grafias com hífen de palavras partidas ("pre-cisa"), sem efeito prático, além de palavras recuperadas;
+  - nº 14: 82;
+  - de 1 a 14 nos nº 80, 16, 21, 44, 13, 27 e 90;
+  - nenhum no nº 15.
+- No texto do OCR da v1 (50 páginas), a normalização proposta não muda nenhuma palavra.
+
+Ocorrências nas páginas nativas, v1 → proposta (`terms` no relatório). Os termos foram escolhidos pelo mecanismo (ligadura "fi"/"fl", palavra partida, composto), não pelo tema; as contagens não indicam ênfase de nenhuma candidatura. O nº 12 só tem páginas por OCR, iguais nas duas versões.
+
+| Nº | inflação | eficiência | financiamento | profissional | educação | bem-estar |
+| --- | --- | --- | --- | --- | --- | --- |
+| 13 | 5 | 6 | 7 | 2 | 16 | 2 → 3 |
+| 14 | 0 | 1 | 0 | 2 | 7 → 8 | 0 |
+| 15 | 5 | 22 | 10 | 8 | 24 | 2 |
+| 16 | 3 | 2 | 6 | 0 | 17 | 0 |
+| 21 | 5 | 8 | 5 | 0 | 20 | 2 |
+| 22 | 0 → 8 | 12 → 39 | 4 → 10 | 1 → 10 | 51 | 22 → 28 |
+| 27 | 0 | 1 | 1 | 2 | 8 | 0 |
+| 30 | 1 | 7 | 10 → 11 | 4 → 7 | 26 → 29 | 2 |
+| 44 | 1 | 5 | 8 | 14 | 23 | 8 |
+| 80 | 1 | 5 | 1 | 2 | 19 | 1 |
+| 90 | 1 | 10 | 2 | 8 | 15 | 0 |
+
+A v1 trata as candidaturas de forma desigual: no documento do nº 22, palavras com "fi", "fl" ou "ff" quase não são encontradas, porque o PDF usa ligaduras; nos nº 30 e 14, as colunas partem e colam palavras.
+
+### Proposta para a v2 (recomendação revista com a auditoria)
 
 - **Extração:**
-  - `pdftotext -bbox-layout`, com o texto da página remontado pelos fluxos, blocos e linhas do Poppler: palavras com espaço, linhas com "\n", blocos e fluxos com linha em branco.
-  - Leitor restrito a `page`/`flow`/`block`/`line`/`word`, decodificando só as entidades XML. O número de `<page>` precisa conferir com o `pdfinfo`.
+  - `pdftotext -bbox-layout`, com o texto da página remontado como o modo padrão do Poppler o escreve: espaço entre palavras só quando a distância chega a 0,04 da altura da linha (`WORD_SPACE`), cada linha com "\n" e uma linha em branco depois de cada fluxo. Diferente do modo padrão, o hífen de fim de linha fica.
+  - A remontagem, com o descarte do hífen refeito, é conferida página a página contra o modo padrão do `pdftotext`; qualquer diferença bloqueia a publicação. Na auditoria, as 438 páginas conferiram.
+  - Leitor restrito a `page`/`flow`/`block`/`line`/`word`, com coordenadas nas linhas e palavras, decodificando só as entidades XML. O número de `<page>` precisa conferir com o `pdfinfo`.
   - Perdem-se os espaços internos de tabelas, que a busca e os trechos já colapsam.
 - **Normalização `proposals-search-v2`, nos contratos:**
   - Ligaduras U+FB00–U+FB06 viram letras.
   - Invisíveis (U+00AD no meio da linha, U+200B–U+200D, U+2060, U+FEFF) são removidos sem virar espaço; hoje o U+FEFF vira espaço e parte a palavra.
   - U+2010 e U+2011 viram "-". Apóstrofos e aspas tipográficos viram `'` e `"`.
   - Sem NFKD geral: ele também transformaria "nº" em "no" e "²" em "2", e a busca "no" passaria a casar com "nº".
-  - O travessão U+2013 não muda, porque separa orações, salvo se a auditoria mostrar uso em palavras compostas.
+  - O travessão U+2013 não muda, porque separa orações; a auditoria não achou nenhum entre letras.
 - **Hífen de fim de linha:**
   - Vale para `-`, U+00AD, U+2010 e U+2011 entre letra ou dígito e letra ou dígito, seguidos de quebra.
+  - Depois de linha em branco (fim de fluxo no PDF, de bloco no OCR), só entre letras: no fim da página do OCR, o que segue costuma ser o número dela.
   - Em vez de descartar o hífen, o texto normalizado guarda um marcador (U+00AD, depois de removidos os demais). O marcador significa "hífen que pode ou não pertencer à palavra" e casa com nada ou com "-".
   - Assim, "proteção" encontra "prote-\nção" e "pré-sal" encontra "pré-\nsal". "presal" também encontra, porque a quebra não diz qual grafia é a certa.
   - O hífen no meio da linha continua literal: "presal" não encontra "pré-sal".
@@ -378,21 +452,20 @@ O relatório traz:
   - O termo normalizado vira uma expressão regular: caracteres especiais escapados, marcador opcional entre caracteres e o "-" do termo casando "-" ou o marcador.
   - Ela é aplicada no PostgreSQL (`search_text ~ $2`) e, para localizar o trecho, na API. Divergência entre os dois continua respondendo 503.
   - As 438 páginas (1,6 MB) dispensam índice.
-- **Páginas ilegíveis:**
-  - Página nativa acima do limiar de ilegibilidade (definido com a auditoria) vai para o OCR.
-  - Fica o texto de melhor qualidade pela mesma medida, não só o mais longo, como hoje.
-  - O que continuar suspeito depois do OCR é contado por documento (`suspectPages`) e aparece na cobertura de `/propostas` e nas notas, como o OCR.
+- **Páginas ilegíveis** (revisto com a auditoria, que não encontrou nenhuma):
+  - Recomendado: medir cada página nativa e bloquear a publicação se alguma passar dos limiares, como as demais divergências. Os limiares são 1 % de U+FFFD, uso privado e controles, e 20 % de palavras sem vogal; os maiores valores de 2022 são 0,4 % e 9,9 %. Sem OCR extra, sem migração e sem mudança na interface.
+  - Alternativa (a proposta anterior): a página nativa acima do limiar vai para o OCR e fica o texto de melhor qualidade. O que continuar suspeito é contado por documento (`suspectPages`) e aparece na cobertura de `/propostas` e nas notas. Exige a migração 021.
 - **Publicação:**
   - `VERSION = 'proposals-2022-v2'`.
-  - `method` ganha `extraction: 'bbox-layout'`, `normalization: 'proposals-search-v2'` e os limiares de qualidade, que entram na identidade da publicação, como hoje.
-  - Migração 021 idempotente com `suspect` por página e `suspect_pages` por documento. Nulo significa não medido e nunca é lido como zero.
+  - `method` ganha `extraction: 'bbox-layout'`, `wordSpace: 0.04`, `normalization: 'proposals-search-v2'` e os limiares de qualidade, que entram na identidade da publicação, como hoje.
+  - Só na alternativa das páginas suspeitas: migração 021 idempotente com `suspect` por página e `suspect_pages` por documento. Nulo significa não medido e nunca é lido como zero.
 - **API:**
   - Só busca numa publicação cuja `method.normalization` é a do código.
   - Qualquer outra, inclusive a v1, que não tem o campo, responde 503 explícito: "publicação das propostas com normalização anterior; reimportar".
   - A consulta devolve todas as páginas encontradas, mas o texto só das cinco primeiras por documento (`row_number() OVER (PARTITION BY sha256 ORDER BY page)`), em vez do texto de todas.
 - **Web:**
-  - A cobertura mostra as páginas suspeitas.
-  - `/metodologia#propostas` explica colunas, hífens e marcador, ligaduras e páginas suspeitas.
+  - Só na alternativa das páginas suspeitas: a cobertura as mostra.
+  - `/metodologia#propostas` explica colunas, hífens e marcador, ligaduras e a regra de qualidade.
   - Entram junto os achados menores da revisão nessa página: título próprio, nível dos cabeçalhos do grupo e das candidaturas, e texto do grupo "Candidaturas sem votos" derivado de cada candidatura.
 - **Importador:** a mensagem de ferramenta ausente indica o pacote certo (`poppler-utils` ou Tesseract), e há falha clara quando `--version` não imprime nada.
 
@@ -400,29 +473,32 @@ O relatório traz:
 
 - **Testes:**
   - normalização com cada classe de caractere e cada caso de hífen;
-  - leitor do `-bbox-layout` sobre um PDF sintético como o de cima;
+  - leitor e remontagem do `-bbox-layout` (espaço pela distância, ligadura sobreposta, estrutura do modo padrão) sobre XHTML e PDF sintéticos;
   - expressão da busca (escapes, marcador, termo com hífen) na API com o simulador do banco;
   - recusa da v1 pela API nova.
+- **Remontagem × modo padrão:** em todas as páginas, como na auditoria.
 - **Comparação v1 × v2 por candidatura, sobre todos os tokens:** cada ocorrência da v1 precisa existir na v2 ou estar explicada no relatório (adjacência falsa entre colunas removida). Diferenças por candidatura registradas.
 - **Conferência visual:** amostra das páginas que mais mudaram, por colunas e por qualidade.
 - **Verificações do projeto:** typecheck, testes, build, smokes (`smoke:context` com `proposals-2022-v2`), `check:data`, `check:regressions`, `check:publication` e `check:ui` com `/propostas`.
 
 ### Ordem e custo
 
-1. Auditoria na máquina com `data/`: só leitura, minutos.
+1. Auditoria na máquina com `data/`: só leitura, cerca de 1 min. Feita em 20/10.
 2. Decisões abaixo.
 3. Implementação e testes. Não exige dados e pode ser feita em qualquer sessão.
-4. Carga `import:proposals` com a API nova já no ar. A v1 levou cerca de 7 min; leva mais se a regra de qualidade mandar mais páginas ao OCR. Entre a troca de código e a carga, a busca responde o 503 explícito, só no ambiente local.
+4. Carga `import:proposals` com a API nova já no ar. A v1 levou cerca de 7 min. A extração de texto leva segundos; o resto deve ser o OCR das 73 páginas abaixo do limiar, que são as mesmas na v2 se a regra de qualidade recomendada for aceita. Entre a troca de código e a carga, a busca responde o 503 explícito, só no ambiente local.
 5. Registros no plan.md, README, AGENTS (escopo `proposals-2022-v2`) e aqui.
 
 ### Decisões para Rafael
 
-1. **Extração:** `-bbox-layout` no lugar de `-layout`, confirmado pela auditoria (recomendado).
-2. **Hífen de fim de linha:** marcador opcional (recomendado), ou manter a regra da v1 (descartar sempre) e declarar o limite em `/metodologia`.
-3. **Caracteres:** lista de mapeamentos acima, com o travessão de fora salvo evidência.
-4. **Páginas ainda suspeitas depois do OCR:** declarar na cobertura (recomendado, como o OCR) ou bloquear a publicação.
+1. **Extração:** `-bbox-layout` remontado, com espaço pela distância entre palavras e conferência contra o modo padrão (recomendado). A auditoria confirmou: 438/438 páginas conferem, e tudo o que só a v1 encontra é palavra colada entre colunas.
+2. **Hífen de fim de linha:** marcador opcional, só entre letras depois de linha em branco (recomendado). A alternativa é manter a regra da v1 (descartar sempre) e declarar o limite em `/metodologia`. Na regra da v1, perdem a grafia com hífen as 23 compostas confirmadas e as compostas entre as 73 sem evidência ("licença-maternidade", "passe-livre").
+3. **Caracteres:** lista de mapeamentos acima, com o travessão de fora (nenhum entre letras). As ligaduras são o caso mais grave: 334, todas no documento do nº 22.
+4. **Páginas ilegíveis:** nenhuma em 2022. Recomendado: medir e bloquear a publicação se alguma passar dos limiares, sem migração nem mudança na interface. Alternativa: OCR e páginas suspeitas declaradas na cobertura (migração 021).
 5. **Transição:**
    - Recomendado: 503 explícito enquanto a publicação ativa for de outra normalização. O ambiente é local e a carga leva minutos.
    - Alternativa: manter a normalização da v1 congelada no código, para continuar servindo a v1 até a carga.
 
-Fora da v2, sem reimportação, em commit próprio: `SITE_URL` vazio derruba todas as páginas e não chega ao build do Docker; o README ainda diz "sem push" para commits já no `origin/main`.
+Fora da v2, sem reimportação, feitos em 20/10 (plan.md §47):
+- `SITE_URL` vazia ou ausente vale o padrão local; inválida interrompe a compilação com mensagem própria. O valor vai como argumento de build da imagem da web e fica nela, para páginas pré-renderizadas e dinâmicas.
+- README e "Estado atual" do plan.md sem o "sem push" desatualizado.

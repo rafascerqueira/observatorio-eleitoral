@@ -51,7 +51,7 @@
     "check:publication": "tsx scripts/check-publication.ts",
     "check:geo": "tsx scripts/check-geo.ts",
     "inventory:proposals": "npm run inventory:proposals -w @observatorio/importer",
-    "audit:proposals-text": "npm run build -w @observatorio/contracts && npm run audit:proposals-text -w @observatorio/importer",
+    "audit:proposals-text": "npm run build -w @observatorio/contracts && npm run audit:proposals-text -w @observatorio/importer --",
     "check:reimports": "node scripts/check-reimports.mjs"
   },
   "devDependencies": {
