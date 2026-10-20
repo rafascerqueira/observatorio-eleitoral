@@ -598,5 +598,8 @@ Verificação: typecheck, 121 testes (6 novos no importador) e o script inteiro 
 Na mesma sessão, ficou confirmado que o PostgreSQL rejeita NUL num parâmetro de texto (`22021 invalid byte sequence for encoding "UTF8": 0x00`). Esse era o ponto não reproduzido do §44.
 
 Pendente:
-- rodar a auditoria nos PDFs reais, na máquina com `data/` ou nesta sessão depois de liberar `cdn.tse.jus.br` na rede do ambiente;
-- as decisões 1–5 da seção 19, a partir do relatório.
+- rodar a auditoria nos PDFs reais na máquina de Rafael (decisão dele, 20/10/2026), onde estão `data/` e os originais preservados. Sem dependência nova: `npm ci` (se preciso), banco no ar para a comparação com a v1 (opcional) e `npm run audit:proposals-text`. Usa `pdfinfo`, `pdftotext` e `pdftoppm` do poppler-utils, já exigidos pela v1. Levar ao agente seguinte o `report.json` e, se possível, as imagens de `paginas/`;
+- as decisões 1–5 da seção 19, a partir do relatório;
+- correções sem reimportação, ainda não feitas: `SITE_URL` vazio e o README dizendo "sem push".
+
+Os commits desta sessão (§§44–46) foram feitos no branch `ccr-7d7c3c6c-8vzdyn`, a partir de `443c0d1` do `main`.
