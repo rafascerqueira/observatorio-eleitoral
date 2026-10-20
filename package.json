@@ -33,6 +33,7 @@
     "import:tract-sensitivity": "npm run build -w @observatorio/contracts && npm run tract-sensitivity -w @observatorio/importer",
     "import:tract-demography": "npm run build -w @observatorio/contracts && npm run tract-demography -w @observatorio/importer",
     "import:urban-surroundings": "npm run build -w @observatorio/contracts && npm run urban-surroundings -w @observatorio/importer",
+    "import:tract-geometries": "npm run build -w @observatorio/contracts && npm run tract-geometries -w @observatorio/importer",
     "smoke:national": "node scripts/smoke-national.mjs",
     "smoke:summary": "node scripts/smoke-summary.mjs",
     "smoke:exterior": "node scripts/smoke-forms-exterior.mjs",
@@ -46,6 +47,7 @@
     "check:ui": "node scripts/check-ui.mjs",
     "check:regressions": "node scripts/check-regressions.mjs",
     "check:publication": "tsx scripts/check-publication.ts",
+    "check:geo": "tsx scripts/check-geo.ts",
     "check:reimports": "node scripts/check-reimports.mjs"
   },
   "devDependencies": {

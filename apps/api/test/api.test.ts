@@ -55,7 +55,9 @@ before(async () => {
         if (sql.includes('scope=$1') && parameters[0] === '2022/places/tracts') return { rows: tractsPublished ? [{ id: 'e'.repeat(64), metadata: {} }] : [] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/urban-surroundings') return { rows: urbanPublished ? [{ id: 'f'.repeat(64), metadata: {} }] : [] };
         if (sql.includes('FROM import_batches ORDER BY imported_at DESC')) return { rows: urbanPublished ? [{ id: 'f'.repeat(64), scope: '2022/context/urban-surroundings', published: true, metadata: { id: 'f'.repeat(64), kind: 'urban-surroundings', year: 2022, importedAt: '2026-10-19T00:00:00Z',
-          importerVersion: 'test', sources: [], scope: 'Teste', notes: [], totals: { municipalities: 1, tracts: 3, suppressedTracts: 1, residents: 10, associatedTracts: 2, associatedSurveyed: 1, associatedSuppressed: 0 } } }] : [] };
+          importerVersion: 'test', sources: [], scope: 'Teste', notes: [], totals: { municipalities: 1, tracts: 3, suppressedTracts: 1, residents: 10, associatedTracts: 2, associatedSurveyed: 1, associatedSuppressed: 0 } } },
+          { id: '9'.repeat(64), scope: '2022/geo/tracts', published: true, metadata: { id: '9'.repeat(64), kind: 'tract-geometries', year: 2022, importedAt: '2026-10-19T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', notes: [],
+            totals: { rows: 4, tracts: 3, multipart: 1, invalid: 1, comparedPlaces: 2, equalPlaces: 2 } } }] : [] };
         if (sql.includes('FROM municipality_urban_surroundings WHERE batch_id=$1 AND ibge_code=$2')) return { rows: [{ tracts: 3, suppressed: 1, counts: urbanCounts() }] };
         if (sql.includes('FROM municipality_urban_surroundings')) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', counts: urbanCounts() }] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/municipal') return { rows: contextPublished ? [{ id: 'd'.repeat(64), metadata: {} }] : [] };
@@ -356,7 +358,8 @@ test('entorno dos domicílios: contexto do município, indicador do mapa e setor
     const context = await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).json();
     assert.deepEqual([context.urbanSurroundings.tracts, context.urbanSurroundings.suppressedTracts, context.urbanSurroundings.counts[0]], [3, 1, 10]);
     const catalog = await (await fetch(`${base}/elections/catalog`)).json();
-    assert.equal(catalog.urbanSurroundingsDatasets[0].totals.residents, 10, 'Catálogo lista a publicação do entorno'); assert.equal(catalog.datasets.length, 0, 'Entorno não é publicação de cargo');
+    assert.equal(catalog.urbanSurroundingsDatasets[0].totals.residents, 10, 'Catálogo lista a publicação do entorno'); assert.equal(catalog.datasets.length, 0, 'Entorno e malha não são publicações de cargo');
+    assert.equal(catalog.tractGeometriesDatasets[0].totals.invalid, 1, 'Malha de setores em lista própria');
     urbanPublished = false;
     const without = await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).json();
     assert.equal(without.urbanBatchId, null); assert.equal(without.items[0].tract.urban, undefined, 'Sem publicação do entorno, o setor não diz "fora da pesquisa"');

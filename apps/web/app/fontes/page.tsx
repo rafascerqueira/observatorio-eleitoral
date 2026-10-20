@@ -63,6 +63,11 @@ export default async function Sources() {
       <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>
       <details className="dataset-files"><summary>Arquivos preservados ({dataset.sources.length})</summary>{dataset.sources.map((source) => <article key={`${source.file}/${source.sha256}`}><h3>{source.file}</h3><p><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>Baixar original preservado</a> · <a href={source.url}>Consultar na fonte</a></p><p>{source.entry} · SHA-256 <span className="source-hash">{source.sha256}</span></p></article>)}</details>
     </section>)}
+    {(catalog?.tractGeometriesDatasets ?? []).map((dataset) => <section key={dataset.id} id="malha-setores"><h2>Malha de setores censitários (IBGE)</h2><p>{dataset.scope}</p>
+      <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · {dataset.totals.tracts.toLocaleString('pt-BR')} setores, {dataset.totals.invalid.toLocaleString('pt-BR')} com geometria inválida registrada, {dataset.totals.equalPlaces.toLocaleString('pt-BR')} de {dataset.totals.comparedPlaces.toLocaleString('pt-BR')} locais iguais à associação publicada.</p>
+      <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>
+      <details className="dataset-files"><summary>Arquivos preservados ({dataset.sources.length})</summary>{dataset.sources.map((source) => <article key={`${source.file}/${source.sha256}`}><h3>{source.file}</h3><p><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>Baixar original preservado</a> · <a href={source.url}>Consultar na fonte</a></p><p>{source.entry} · SHA-256 <span className="source-hash">{source.sha256}</span></p></article>)}</details>
+    </section>)}
     {(catalog?.urbanSurroundingsDatasets ?? []).map((dataset) => <section key={dataset.id} id="entorno"><h2>Entorno dos domicílios (IBGE)</h2><p>{dataset.scope}</p>
       <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · {dataset.totals.municipalities.toLocaleString('pt-BR')} municípios, {dataset.totals.tracts.toLocaleString('pt-BR')} setores com a pesquisa, {dataset.totals.residents.toLocaleString('pt-BR')} moradores na base.</p>
       <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>

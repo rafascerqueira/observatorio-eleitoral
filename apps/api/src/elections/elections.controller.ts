@@ -520,7 +520,7 @@ export class ElectionsController {
     const coverageRegistry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_coverage')::text AS registry");
     const coverage = coverageRegistry.rows[0]?.registry ? await this.database.query<{ batch_id: string; uf: string; status: string; municipalities: number; sectionRows: number }>('SELECT batch_id,uf,status,count(*)::integer AS municipalities,sum(section_rows)::integer AS "sectionRows" FROM import_coverage GROUP BY batch_id,uf,status ORDER BY uf,status') : { rows: [] };
     // Contexto municipal (IBGE + perfis do TSE) tem formato próprio, separado das publicações de cargo.
-    const isContext = (scope: string) => scope.startsWith('2022/context/'); const isMap = (scope: string) => scope.startsWith('2022/maps/'); const isTracts = (scope: string) => scope.startsWith('2022/places/');
+    const isContext = (scope: string) => scope.startsWith('2022/context/'); const isMap = (scope: string) => scope.startsWith('2022/maps/'); const isTracts = (scope: string) => scope.startsWith('2022/places/') || scope.startsWith('2022/geo/');
     return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published && !isContext(batch.scope) && !isMap(batch.scope) && !isTracts(batch.scope)).map((batch) => batch.metadata),
       tractsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/tracts').map((batch) => batch.metadata),
       placeProfilesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/profiles').map((batch) => batch.metadata),
@@ -531,6 +531,7 @@ export class ElectionsController {
       incomeBandsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === INCOME_BANDS_SCOPE).map((batch) => batch.metadata),
       tractDemographyDatasets: batches.rows.filter((batch) => batch.published && batch.scope === TRACT_DEMOGRAPHY_SCOPE).map((batch) => batch.metadata),
       urbanSurroundingsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === URBAN_SCOPE).map((batch) => batch.metadata),
+      tractGeometriesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/geo/tracts').map((batch) => batch.metadata),
       mapDatasets: batches.rows.filter((batch) => batch.published && isMap(batch.scope)).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
       // Cargo estadual: só as UFs sem publicação continuam pendentes.
       ...STATE_OFFICES.flatMap((office) => {

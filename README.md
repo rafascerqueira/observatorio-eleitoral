@@ -32,7 +32,7 @@ Verificação concluída em **19/10/2026**, consolidada no commit `825dffb` e en
 - 60 avaliações automáticas de acessibilidade/refluxo em Chrome e Firefox, sem violações do axe ou rolagem horizontal fora das tabelas; isso não certifica toda a acessibilidade.
 - Nove reexecuções idempotentes e duas comparações integrais das 11 tabelas derivadas: conteúdo idêntico ao anterior, versões antigas e 57 publicações eleitorais preservadas.
 
-Evidências, versões/IDs e limites em [reimportações de 18–19/10](docs/reimportacoes-2026-10-18.md). Depois disso, a fase A do [plano de melhorias](docs/plano-postgis-propostas.md) (setor de cada local, série comparada com dispersão e exportação em `/mapa`) foi verificada localmente em 19/10 e está em commit local, sem push: 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox ([plano](plan.md), §33). A fase C (entorno dos domicílios, `import:urban-surroundings`) está publicada no banco local, verificada e em commit local, sem push (§34). O volume Docker do PostgreSQL e o diretório `data/` (originais, backups e artefatos) **não acompanham o Git**; um clone novo exige importar os dados ou restaurar um backup próprio.
+Evidências, versões/IDs e limites em [reimportações de 18–19/10](docs/reimportacoes-2026-10-18.md). Depois disso, a fase A do [plano de melhorias](docs/plano-postgis-propostas.md) (setor de cada local, série comparada com dispersão e exportação em `/mapa`) foi verificada localmente em 19/10 e está em commit local, sem push: 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox ([plano](plan.md), §33). A fase C (entorno dos domicílios, `import:urban-surroundings`) está publicada no banco local, verificada e em commit local, sem push (§34). A fase B2 (malha de setores com a geometria exata, `import:tract-geometries`, ~1,4 GB no banco) está publicada no banco local, verificada e em commit local, sem push (§39). O volume Docker do PostgreSQL e o diretório `data/` (originais, backups e artefatos) **não acompanham o Git**; um clone novo exige importar os dados ou restaurar um backup próprio.
 
 ## Iniciar localmente
 
@@ -105,6 +105,7 @@ Execute sequencialmente, após a Presidência nacional e os resultados estaduais
   npm run import:turnout-profiles    # participação cruzada por UF/município
   npm run import:tract-demography    # moradores de 15+ por faixas de perfil do setor
   npm run import:urban-surroundings  # entorno dos domicílios (calçada, rampa, iluminação...)
+  npm run import:tract-geometries    # malha de setores com a geometria exata (~1,4 GB)
   npm run import:place-groups        # grupos de locais para os resultados publicados
   npm run import:tract-sensitivity   # grupos alternativos nos três raios
 )
@@ -122,6 +123,7 @@ Pare ao primeiro erro; não trate uma cadeia parcial como concluída. A troca é
 | `import:turnout-profiles` | `turnout-profiles-2022-v3` | Contexto + Presidência nacional |
 | `import:tract-demography` | `tract-demography-2022-v2` | Contexto |
 | `import:urban-surroundings` | `urban-surroundings-2022-v1` | Contexto + associação aos setores |
+| `import:tract-geometries` | `tract-geometries-2022-v1` | Nenhuma (confere com a associação aos setores publicada) |
 | `import:place-groups` | `place-groups-2022-v5` | Resultados publicados + perfil por local + associação aos setores |
 | `import:tract-sensitivity` | `tract-sensitivity-2022-v2` | Entradas dos grupos + publicação dos grupos |
 

@@ -194,3 +194,47 @@ Rafael aprovou a fase C com a condição de o acréscimo ser pequeno (“apenas 
 **Implementação:** contratos (`URBAN_CHARACTERISTICS`, `URBAN_INDICATORS`, identidade das categorias e esquemas), migration 017, importador `urban-surroundings-2022-v1` (`npm run import:urban-surroundings`; rótulos conferidos no dicionário, identidades por setor e município, soma contra o arquivo municipal, omissão só por inteiro; tudo bloqueante), publicação `960899b9899cf35438f8c3afd08ee0b7f1c6500303dfab8b4ca725e512150f1f` em 26 s, com totais iguais aos da auditoria. API: `urbanSurroundings` no contexto, oito indicadores `urban-*` em `map/values` e `urban` (pesquisado, omitido ou fora da pesquisa) em cada setor da rota dos locais; catálogo com a publicação. Interface: tabela do entorno no painel do município, com cobertura frente à população residente; entorno do setor no cartão do local; indicadores em `/mapa` com aviso do denominador; `/fontes` e `/metodologia`.
 
 Verificação: 106 testes unitários, typecheck e build; nove smokes e 31 regressões HTTP, com o `smoke:context` conferindo valores lidos dos arquivos do IBGE (Brasil, São Paulo e o setor do Colégio Objetivo). `check:ui` completo nos dois navegadores, com um novo cenário de acessibilidade de detalhes abertos. Corrigidos na verificação: a rota do catálogo não listava a publicação (corrigido, com teste); regiões repetidas e transbordamento no celular na tabela do setor (tabela simples de duas colunas). Detalhes em `plan.md` §34. Consolidado em commit local, sem push. Próximas fases definidas por Rafael: B e depois D, cada uma só com novo aviso.
+
+## 14. Andamento — fase B1 (19/10/2026)
+
+Ensaio sem persistência executado com `npm run check:geo` (script `scripts/check-geo.ts`), dentro de uma transação desfeita: só tabelas temporárias, publicações iguais antes e depois (117 lotes, 67 publicadas), relatório em `data/analysis/geo-ensaio-2026-10-19T21-24-42.885Z/report.json`. GeoPackage conferido pelo SHA-256 (`7b961b05…`, o mesmo da associação `polling-place-tracts-2022-v3`). Parâmetros do PostgreSQL inalterados (padrões da imagem: `shared_buffers` 160 MB, `work_mem` 4 MB, `maintenance_work_mem` 64 MB, `max_wal_size` 1 GB). Rodou com o `npm run dev` de Rafael ativo.
+
+| Medida | Resultado |
+| --- | --- |
+| Carga | 472.780 linhas → 468.099 setores (914 com partes unidas) em 266 s; pico de 574 MiB no processo |
+| Tamanho em tabela | **1,4 GB** no total: 540 MB de tabela, 33 MB de índice GiST e o restante em TOAST (geometrias grandes); sem contar WAL da gravação nem crescimento do backup |
+| Validade | 30 setores inválidos, todos por “Ring Self-intersection” no próprio polígono (não pela união de partes); 2 deles com várias partes. Registrados, sem reparo |
+| Cobertura | Nos 468.069 setores válidos, nenhuma aresta inválida por município (`ST_CoverageInvalidEdges`, tolerância 0): sem sobreposições nem lacunas detectadas |
+| Equivalência | 84.594 de 84.594 locais (associados, outro município, fora dos setores) com a mesma situação e o mesmo setor da publicação |
+
+Desenho na largura dos mapas (600 px), com `ST_CoverageSimplify` na tolerância de ~1 px (o payload do servidor do Next repete o desenho; somar esse efeito ao orçamento):
+
+| Recorte | Setores | SVG bruto | Simplificado | Com gzip |
+| --- | --- | --- | --- | --- |
+| Município mediano (1100080) | 33 | 40 KB | 17 KB | 6 KB |
+| Brasília | 5.418 | 2,7 MB | 560 KB | 170 KB |
+| Belo Horizonte | 5.166 | 1,8 MB | 642 KB | 213 KB |
+| Rio de Janeiro | 13.782 | 6,5 MB | 1,2 MB | 383 KB |
+| São Paulo | 27.301 | 11,3 MB | 2,6 MB | 847 KB (3 polígonos inválidos depois da simplificação) |
+| Maior distrito de São Paulo | 1.107 | 879 KB | 260 KB | 88 KB |
+
+Leitura: a associação publicada é reproduzida exatamente; a malha é coerente, com 30 exceções localizadas. O desenho por município cabe no orçamento da página (referência: 442 KB com gzip em `/mapa?uf=MG`) até o porte de Belo Horizonte e Brasília; Rio fica no limite e São Paulo o ultrapassa, mas o recorte por distrito resolve (88 KB no maior). O que pesa é guardar a geometria exata nacional: cerca de 1,4 GB, ordem de grandeza diferente das fases A e C.
+
+Decisão pendente de Rafael (decisão 7 do plano), antes de qualquer gravação: (a) guardar a geometria exata nacional (~1,4 GB + WAL e backup); (b) guardar só a representação simplificada por município e distrito, calculada na importação a partir do GeoPackage preservado (tamanho a medir; os números acima indicam frações do bruto), sem consultas espaciais por requisição; ou (c) uma UF piloto. Recomendação: (b) — atende ao mapa local → setor (B3) sem o custo da geometria exata, que continua reconstituível a partir do original preservado.
+
+## 15. Andamento — fase B2 (19/10/2026)
+
+Rafael escolheu a opção (a): geometria exata nacional. Antes da gravação, backup completo (`data/backups/observatorio-2026-10-19-antes-geometria.dump`, 326.630.286 bytes, SHA-256 `bd15b8d2…`) e ensaio de restauração integral em banco temporário: 25 tabelas com contagens idênticas, 1.805 s.
+
+Importador `apps/importer/src/tract-geometries.ts` (`npm run import:tract-geometries`, versão `tract-geometries-2022-v1`, escopo `2022/geo/tracts`), migração `018-tract-geometries.sql` (tabela `tract_geometries`: setor, município, situação, partes, `valid`, `invalid_reason`, `geometry(MultiPolygon, 4674)`, índice GiST). Lê o mesmo GeoPackage preservado (`7b961b05…`) pelo mesmo `loadTracts` da associação; não tem publicação de entrada (a associação não passa a ler esta malha, evitando republicações em cadeia), mas exige a associação publicada para a conferência, que bloqueia a publicação se qualquer local divergir.
+
+| Medida | Resultado |
+| --- | --- |
+| Publicação | `90264219f250a36a…` (relatório em `data/audit/`) |
+| Setores | 472.780 linhas → 468.099 setores, 914 com partes unidas |
+| Validade | 30 inválidos (“Ring Self-intersection”), registrados sem reparo em `valid`/`invalid_reason` |
+| Conferência | 84.594 de 84.594 locais com a mesma situação e o mesmo setor da associação `419c7a55…` |
+| Tamanho | Tabela 1.397 MB (489 MB de linhas, 92 MB de índices, restante em TOAST); banco de 10,94 para 12,41 GB |
+| Tempo | 4.353 s no total: 366 s de carga e ~66 min na transação. Repetida isoladamente depois da publicação, a conferência levou 46 s; a causa provável é a ausência de estatísticas das linhas ainda não confirmadas. Acrescentado `ANALYZE` depois da gravação (não muda resultado nem identidade; ainda não exercitado numa carga completa) |
+
+API: `tractGeometriesDatasets` no catálogo (o lote `2022/geo/*` fica fora da lista de publicações eleitorais, que segue com 57); `/fontes` ganhou a seção “Malha de setores censitários”. Verificação: typecheck, 106 testes (28 + 34 + 33 + 11), build, nove smokes (incluindo Senador e contexto), `check:data`, `check:regressions` (31), `check:publication` e `check:ui` (9 casos em Chrome e Firefox, sem violações) contra API/web compiladas. Pendente: B3 (mapa local → setor), que passa a consultar esta tabela filtrando `valid`.

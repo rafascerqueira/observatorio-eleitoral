@@ -126,6 +126,7 @@ export const catalogSchema = z.object({
   tractDemographyDatasets: z.array(z.lazy(() => tractDemographyDatasetSchema)).default([]),
   turnoutProfilesDatasets: z.array(z.lazy(() => turnoutProfilesDatasetSchema)).default([]),
   urbanSurroundingsDatasets: z.array(z.lazy(() => urbanSurroundingsDatasetSchema)).default([]),
+  tractGeometriesDatasets: z.array(z.lazy(() => tractGeometriesDatasetSchema)).default([]),
 });
 const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
@@ -409,6 +410,12 @@ export const placeTractsSchema = z.discriminatedUnion('status', [
     .refine((data) => Object.values(data.summary).reduce((sum, item) => sum + item.places, 0) === data.items.length, 'Resumo da associação não soma os locais.'),
 ]);
 export type PlaceTracts = z.infer<typeof placeTractsSchema>;
+/** Malha de setores com a geometria exata (`2022/geo/tracts`): validade registrada sem reparo e conferência com a associação publicada. */
+export const tractGeometriesDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
+  id: z.string(), kind: z.literal('tract-geometries'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(), notes: z.array(z.string()),
+  totals: z.object({ rows: nonnegative, tracts: nonnegative, multipart: nonnegative, invalid: nonnegative, comparedPlaces: nonnegative, equalPlaces: nonnegative }),
+});
 export const placeProfilesDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('place-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),
