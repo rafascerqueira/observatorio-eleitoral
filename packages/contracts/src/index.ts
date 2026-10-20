@@ -128,6 +128,7 @@ export const catalogSchema = z.object({
   urbanSurroundingsDatasets: z.array(z.lazy(() => urbanSurroundingsDatasetSchema)).default([]),
   tractGeometriesDatasets: z.array(z.lazy(() => tractGeometriesDatasetSchema)).default([]),
   tractDisplayDatasets: z.array(z.lazy(() => tractDisplayDatasetSchema)).default([]),
+  proposalsDatasets: z.array(z.lazy(() => proposalsDatasetSchema)).default([]),
 });
 const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
@@ -677,3 +678,57 @@ export function roundHeld(dataset: { rounds?: Array<'1' | '2'> | undefined }, ro
 export function percent(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : numerator / denominator * 100;
 }
+
+/**
+ * Normalização da busca literal nas propostas (importador e API usam a mesma): minúsculas sem acentos, espaços colapsados e
+ * palavra partida por hífen no fim da linha reunida ("prote-\nção" → "protecao"). `map[i]` é a posição, no texto original, do
+ * caractere `i` normalizado, para recortar os trechos do original.
+ */
+export function searchNormalize(text: string): { normalized: string; map: number[] } {
+  const out: string[] = [], map: number[] = [];
+  const lineBreakHyphen = /-[ \t]*\r?\n\s*/y, space = /\s+/y;
+  for (let index = 0; index < text.length;) {
+    lineBreakHyphen.lastIndex = index;
+    if (index > 0 && /\p{L}/u.test(text[index - 1]!) && lineBreakHyphen.test(text) && /\p{L}/u.test(text[lineBreakHyphen.lastIndex] ?? '')) { index = lineBreakHyphen.lastIndex; continue; }
+    space.lastIndex = index;
+    if (space.test(text)) { if (out.length && out[out.length - 1] !== ' ') { out.push(' '); map.push(index); } index = space.lastIndex; continue; }
+    for (const char of text[index]!.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()) { out.push(char); map.push(index); }
+    index++;
+  }
+  if (out[out.length - 1] === ' ') { out.pop(); map.pop(); }
+  return { normalized: out.join(''), map };
+}
+export const searchText = (text: string) => searchNormalize(text).normalized;
+
+/** Propostas de governo (fase D2, `2022/proposals/president`): documentos do TSE, texto por página e método de extração. */
+export const PROPOSAL_METHODS = ['native', 'ocr', 'empty'] as const;
+/** `candidate`: candidatura com votos; `no-votes`: inapta e sem votos (listada à parte); `same-document`: documento idêntico ao de outra candidatura, exibido só nela. */
+export const PROPOSAL_LISTINGS = ['candidate', 'no-votes', 'same-document'] as const;
+export const proposalsDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
+  id: z.string(), kind: z.literal('proposals'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(), notes: z.array(z.string()),
+  method: z.object({ textPageMinChars: nonnegative, pdftotext: z.string(), tesseract: z.string(), ocrLanguage: z.string(), ocrDpi: nonnegative }),
+  totals: z.object({ candidacies: nonnegative, documents: nonnegative, pages: nonnegative, nativePages: nonnegative, ocrPages: nonnegative, emptyPages: nonnegative }),
+});
+export type ProposalsDataset = z.infer<typeof proposalsDatasetSchema>;
+/** Busca literal: de 3 a 80 caracteres depois da normalização. Sem `q`, só a cobertura. */
+export const proposalsQuerySchema = z.object({ year: z.literal('2022').default('2022'), q: z.string().max(200).optional()
+  .refine((value) => value === undefined || value.trim() === '' || (searchText(value).length >= 3 && searchText(value).length <= 80), 'A busca precisa ter de 3 a 80 caracteres.') }).strict();
+const proposalDocumentSchema = z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), file: z.string(), pages: nonnegative, nativePages: nonnegative, ocrPages: nonnegative, emptyPages: nonnegative })
+  .refine((item) => item.nativePages + item.ocrPages + item.emptyPages === item.pages, 'Páginas por método não somam o documento.');
+export const proposalsResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('awaiting-import') }),
+  z.object({
+    status: z.literal('published'), batchId: z.string(), query: z.string().nullable(),
+    source: z.object({ file: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/), url: z.string() }),
+    method: proposalsDatasetSchema.shape.method,
+    // Todas as candidaturas do recorte, sempre, pela ordem do número; nunca por quantidade de ocorrências.
+    candidacies: z.array(z.object({
+      number: z.string(), ballotName: z.string(), party: z.string(), situation: z.string(), listing: z.enum(PROPOSAL_LISTINGS), document: proposalDocumentSchema.nullable(),
+      sameDocumentAs: z.array(z.object({ number: z.string(), ballotName: z.string(), situation: z.string() })),
+      // Só com `q`: páginas com ocorrência literal (todas, em ordem) e trechos das primeiras.
+      matches: z.object({ pages: z.array(nonnegative), excerpts: z.array(z.object({ page: nonnegative, method: z.enum(PROPOSAL_METHODS), before: z.string(), match: z.string(), after: z.string() })) }).nullable(),
+    })),
+  }),
+]);
+export type ProposalsResponse = z.infer<typeof proposalsResponseSchema>;

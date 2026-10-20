@@ -1,4 +1,4 @@
-import { placeGroupsSchema, turnoutProfilesSchema, mapGeometrySchema, mapValuesSchema, candidateMapSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, placeTractsSchema, tractMapSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
+import { placeGroupsSchema, turnoutProfilesSchema, mapGeometrySchema, mapValuesSchema, candidateMapSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, placeTractsSchema, tractMapSchema, proposalsResponseSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
 
 export async function getExterior(filters: ExteriorQuery) {
   try {
@@ -90,6 +90,18 @@ export async function getPlaceTracts(code: string, uf: string, year: string) {
     if (response.status === 404) return { kind: 'missing' as const };
     if (!response.ok) return { kind: 'unavailable' as const };
     return { kind: 'ready' as const, data: placeTractsSchema.parse(await response.json()) };
+  } catch { return { kind: 'unavailable' as const }; }
+}
+
+/** Busca literal nas propostas de governo da Presidência; sem `q`, só a cobertura. */
+export async function getProposals(q?: string) {
+  try {
+    const url = new URL('/elections/proposals', process.env.API_URL ?? 'http://127.0.0.1:3001');
+    if (q) url.searchParams.set('q', q);
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    if (response.status === 400) return { kind: 'invalid' as const };
+    if (!response.ok) return { kind: 'unavailable' as const };
+    return { kind: 'ready' as const, data: proposalsResponseSchema.parse(await response.json()) };
   } catch { return { kind: 'unavailable' as const }; }
 }
 

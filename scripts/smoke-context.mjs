@@ -276,4 +276,26 @@ if (catalog.tractDisplayDatasets?.length) {
     for (const text of texts) assert.ok(page.includes(text), `${path}: ${text}`);
   }
 }
+if (catalog.proposalsDatasets?.length) {
+  // Propostas de governo (fase D2): cobertura por método, ordem pelo número, documento compartilhado do nº 14 e busca literal.
+  const [proposals] = catalog.proposalsDatasets;
+  assert.equal(proposals.importerVersion, 'proposals-2022-v1');
+  assert.deepEqual(proposals.totals, { candidacies: 13, documents: 12, pages: 438, nativePages: 388, ocrPages: 50, emptyPages: 0 });
+  const found = await json(`/elections/proposals?q=${encodeURIComponent('Acessibilidade')}`);
+  assert.equal(found.query, 'acessibilidade');
+  assert.deepEqual(found.candidacies.map((item) => item.number), ['12', '13', '14', '14', '15', '16', '21', '22', '27', '30', '44', '80', '90'], 'Todas as candidaturas, pela ordem do número');
+  const pagesOf = (number, listing = 'candidate') => found.candidacies.find((item) => item.number === number && item.listing === listing).matches?.pages ?? null;
+  assert.deepEqual([pagesOf('12'), pagesOf('15'), pagesOf('21'), pagesOf('22'), pagesOf('13'), pagesOf('14', 'same-document'), pagesOf('90', 'no-votes')], [[23], [13, 17, 39, 41, 42], [5, 17], [28, 30], [], null, []]);
+  const ciro = found.candidacies.find((item) => item.number === '12');
+  assert.deepEqual([ciro.document.pages, ciro.document.ocrPages, ciro.matches.excerpts[0].method], [26, 26, 'ocr'], 'Documento em imagem lido por OCR');
+  const kelmon = found.candidacies.find((item) => item.number === '14' && item.listing === 'candidate');
+  assert.deepEqual(kelmon.sameDocumentAs.map((item) => item.situation), ['INAPTO']);
+  await request(api, '/elections/proposals?q=ab', 400);
+  await request(web, `/arquivos/sources/${proposals.sources[0].sha256}/${proposals.sources[0].file}`); // ZIP original preservado, sem PDFs avulsos
+  for (const [path, texts] of [['/propostas?q=acessibilidade', ['Resultados para “acessibilidade”', 'Nenhuma ocorrência literal de “acessibilidade” no texto extraído', 'Candidaturas sem votos', 'registrado também pela candidatura 14', '(OCR)']],
+    ['/metodologia', ['Propostas de governo', 'reconhecimento óptico de caracteres']], ['/fontes', ['Propostas de governo (TSE)', 'proposta_governo_2022_BR.zip']]]) {
+    const page = await html(path);
+    for (const text of texts) assert.ok(page.includes(text), `${path}: ${text}`);
+  }
+}
 console.log(`Smoke do contexto municipal aprovado: ${requests} requisições.`);

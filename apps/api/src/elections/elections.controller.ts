@@ -5,7 +5,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, incomeBandOf, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, tractMapQuerySchema, tractMapSchema, type TractMap, URBAN_INDICATORS, urbanIndicatorCounts, type UrbanIndicator, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, incomeBandOf, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, tractMapQuerySchema, tractMapSchema, type TractMap, proposalsQuerySchema, proposalsResponseSchema, proposalsDatasetSchema, searchNormalize, searchText, type ProposalsResponse, URBAN_INDICATORS, urbanIndicatorCounts, type UrbanIndicator, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { checkDependencies } from './dependencies';
 import { nationalSummary } from './national-summary';
@@ -18,6 +18,9 @@ const TRACT_DEMOGRAPHY_SCOPE = '2022/context/tract-demography';
 const TRACTS_SCOPE = '2022/places/tracts';
 const URBAN_SCOPE = '2022/context/urban-surroundings';
 const TRACT_DISPLAY_SCOPE = '2022/geo/tract-display';
+const PROPOSALS_SCOPE = '2022/proposals/president';
+/** Trechos por candidatura e contexto de cada lado da ocorrência, em caracteres do texto original. */
+const PROPOSAL_EXCERPTS = 5, EXCERPT_CONTEXT = 140;
 
 @Controller('elections')
 export class ElectionsController {
@@ -514,6 +517,58 @@ export class ElectionsController {
     return respond({ ...base, legend, places: items, ...(parsed.data.paths === '1' ? { tracts: tracts.map((tract) => ({ code: tract.code, status: tract.status ?? 'missing', band: tract.status === 'band' ? tract.band : null, simplified: tract.simplified, path: tract.path })) } : {}) });
   }
 
+  /**
+   * Propostas de governo (fase D2): todas as candidaturas pela ordem do número, com a cobertura da extração; com `q`, as páginas com
+   * ocorrência literal (texto normalizado) e trechos do texto original. Nenhuma ordenação ou contagem por menções.
+   */
+  @Get('proposals')
+  async proposals(@Query() query: Record<string, unknown>) {
+    const parsed = proposalsQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'A busca precisa ter de 3 a 80 caracteres.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    await this.database.check();
+    const empty = proposalsResponseSchema.parse({ status: 'awaiting-import' });
+    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.proposal_pages')::text AS registry");
+    if (!registry.rows[0]?.registry) return empty;
+    const batch = await this.checkedPublication(PROPOSALS_SCOPE);
+    if (!batch) return empty;
+    const dataset = proposalsDatasetSchema.safeParse(batch.metadata);
+    if (!dataset.success || !dataset.data.sources[0]) throw new ServiceUnavailableException('Publicação das propostas inconsistente.');
+    const rows = (await this.database.query<{ number: string; ballot_name: string; party: string; situation: string; listing: 'candidate' | 'no-votes' | 'same-document'; sha256: string | null; file: string | null; pages: number | null; native_pages: number | null; ocr_pages: number | null; empty_pages: number | null }>(
+      `SELECT c.number, c.ballot_name, c.party, c.situation, c.listing, c.document_sha256 AS sha256, d.file, d.pages, d.native_pages, d.ocr_pages, d.empty_pages
+      FROM proposal_candidacies c LEFT JOIN proposal_documents d ON d.batch_id=c.batch_id AND d.sha256=c.document_sha256 WHERE c.batch_id=$1 ORDER BY c.number::integer, c.sq_candidato`, [batch.id])).rows;
+    const term = parsed.data.q?.trim() ? searchText(parsed.data.q) : null;
+    // Busca no texto normalizado; o trecho é recortado do texto original pelo mapa de posições da normalização.
+    type Excerpt = { page: number; method: 'native' | 'ocr' | 'empty'; before: string; match: string; after: string };
+    const found = new Map<string, { pages: number[]; excerpts: Excerpt[] }>();
+    if (term) {
+      const pages = (await this.database.query<{ sha256: string; page: number; method: Excerpt['method']; text: string }>(
+        'SELECT sha256, page, method, text FROM proposal_pages WHERE batch_id=$1 AND strpos(search_text, $2) > 0 ORDER BY sha256, page', [batch.id, term])).rows;
+      const clean = (text: string) => text.replace(/\s+/g, ' ');
+      for (const page of pages) {
+        const entry = found.get(page.sha256) ?? { pages: [], excerpts: [] };
+        entry.pages.push(page.page);
+        if (entry.excerpts.length < PROPOSAL_EXCERPTS) {
+          const { normalized, map } = searchNormalize(page.text);
+          const at = normalized.indexOf(term);
+          if (at < 0) throw new ServiceUnavailableException('Texto das propostas inconsistente.');
+          const start = map[at]!, end = map[at + term.length - 1]! + 1;
+          entry.excerpts.push({ page: page.page, method: page.method, before: clean(page.text.slice(Math.max(0, start - EXCERPT_CONTEXT), start)).trimStart(), match: clean(page.text.slice(start, end)), after: clean(page.text.slice(end, end + EXCERPT_CONTEXT)).trimEnd() });
+        }
+        found.set(page.sha256, entry);
+      }
+    }
+    const candidacies = rows.map((row) => {
+      const holder = row.listing !== 'same-document' && row.sha256 !== null;
+      return { number: row.number, ballotName: row.ballot_name, party: row.party, situation: row.situation, listing: row.listing,
+        document: holder ? { sha256: row.sha256!, file: row.file!, pages: row.pages!, nativePages: row.native_pages!, ocrPages: row.ocr_pages!, emptyPages: row.empty_pages! } : null,
+        sameDocumentAs: holder ? rows.filter((other) => other !== row && other.listing === 'same-document' && other.sha256 === row.sha256).map((other) => ({ number: other.number, ballotName: other.ballot_name, situation: other.situation })) : [],
+        matches: term && holder ? found.get(row.sha256!) ?? { pages: [], excerpts: [] } : null };
+    });
+    const source = dataset.data.sources[0];
+    try { return proposalsResponseSchema.parse({ status: 'published', batchId: batch.id, query: term, source: { file: source.file, sha256: source.sha256, url: source.url }, method: dataset.data.method, candidacies } satisfies ProposalsResponse); }
+    catch { throw new ServiceUnavailableException('Publicação das propostas inconsistente.'); }
+  }
+
   @Get('municipalities/:code/places')
   async places(@Param('code') code: string, @Query() query: Record<string, unknown>) {
     if (!/^\d+$/.test(code)) throw new NotFoundException('Código municipal inválido.');
@@ -580,7 +635,7 @@ export class ElectionsController {
     const coverageRegistry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_coverage')::text AS registry");
     const coverage = coverageRegistry.rows[0]?.registry ? await this.database.query<{ batch_id: string; uf: string; status: string; municipalities: number; sectionRows: number }>('SELECT batch_id,uf,status,count(*)::integer AS municipalities,sum(section_rows)::integer AS "sectionRows" FROM import_coverage GROUP BY batch_id,uf,status ORDER BY uf,status') : { rows: [] };
     // Contexto municipal (IBGE + perfis do TSE) tem formato próprio, separado das publicações de cargo.
-    const isContext = (scope: string) => scope.startsWith('2022/context/'); const isMap = (scope: string) => scope.startsWith('2022/maps/'); const isTracts = (scope: string) => scope.startsWith('2022/places/') || scope.startsWith('2022/geo/');
+    const isContext = (scope: string) => scope.startsWith('2022/context/'); const isMap = (scope: string) => scope.startsWith('2022/maps/'); const isTracts = (scope: string) => scope.startsWith('2022/places/') || scope.startsWith('2022/geo/') || scope.startsWith('2022/proposals/');
     return catalogSchema.parse({ datasets: batches.rows.filter((batch) => batch.published && !isContext(batch.scope) && !isMap(batch.scope) && !isTracts(batch.scope)).map((batch) => batch.metadata),
       tractsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/tracts').map((batch) => batch.metadata),
       placeProfilesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/places/profiles').map((batch) => batch.metadata),
@@ -593,6 +648,7 @@ export class ElectionsController {
       urbanSurroundingsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === URBAN_SCOPE).map((batch) => batch.metadata),
       tractGeometriesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/geo/tracts').map((batch) => batch.metadata),
       tractDisplayDatasets: batches.rows.filter((batch) => batch.published && batch.scope === TRACT_DISPLAY_SCOPE).map((batch) => batch.metadata),
+      proposalsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === PROPOSALS_SCOPE).map((batch) => batch.metadata),
       mapDatasets: batches.rows.filter((batch) => batch.published && isMap(batch.scope)).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
       // Cargo estadual: só as UFs sem publicação continuam pendentes.
       ...STATE_OFFICES.flatMap((office) => {

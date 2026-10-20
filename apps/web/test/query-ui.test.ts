@@ -51,7 +51,7 @@ test('GET aprimorado preserva zeros, texto e âncora sem transformar entrada em 
 
 test('todas as páginas com formulário de consulta navegam no envio aprimorado', () => {
   // As ações reais das páginas: uma ação fora da lista fazia o envio falhar em silêncio (/participacao, 17/10/2026).
-  for (const action of ['/', '/mapa', '/mapa/candidaturas', '/perfis', '/participacao', '/exterior', '/municipios/71072#resultados']) assert.ok(queryHref(action, [['rows', 'education'], ['cols', 'gender']]).startsWith(action.split('#')[0]!), action);
+  for (const action of ['/', '/mapa', '/mapa/candidaturas', '/perfis', '/participacao', '/propostas#busca', '/exterior', '/municipios/71072#resultados']) assert.ok(queryHref(action, [['rows', 'education'], ['cols', 'gender']]).startsWith(action.split('#')[0]!), action);
   assert.equal(queryHref('/participacao', [['uf', 'SP'], ['municipality', ''], ['rows', 'education']]), '/participacao?uf=SP&rows=education');
 });
 

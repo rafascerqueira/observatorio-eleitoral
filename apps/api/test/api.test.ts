@@ -6,7 +6,7 @@ import { Test } from '@nestjs/testing';
 import { AppModule } from '../src/app';
 import { readConfig } from '../src/config';
 import { DatabaseService } from '../src/database/database.service';
-import { emptyMunicipalitiesSchema, nationalResponseSchema } from '@observatorio/contracts';
+import { emptyMunicipalitiesSchema, nationalResponseSchema, searchText } from '@observatorio/contracts';
 
 let app: INestApplication;
 let base: string;
@@ -25,6 +25,21 @@ let tractsPublished = false;
 let urbanPublished = false;
 // Mapa local → setor (fase B3): vistas, setores e locais sintéticos, com a projeção gravada pelo importador.
 let tractMapPublished = false;
+// Propostas sintéticas: dois documentos, um deles compartilhado por duas candidaturas do mesmo número (valores fictícios).
+let proposalsPublished = false;
+const proposalSource = { file: 'proposta_governo_2022_BR.zip', entry: 'BR/2022BR<SQ>.pdf', url: 'https://cdn.tse.jus.br/estatistica/sead/odsele/proposta_governo/proposta_governo_2022_BR.zip', sha256: '5'.repeat(64),
+  downloadedAt: '2026-10-20T00:00:00Z', generatedAt: [], lastModified: null, rowsRead: 3, rowsSelected: 3 };
+const proposalsDataset = { id: '4'.repeat(64), kind: 'proposals', year: 2022, importedAt: '2026-10-20T00:00:00Z', importerVersion: 'test', sources: [proposalSource], scope: 'Teste', notes: [],
+  method: { textPageMinChars: 50, pdftotext: 'pdftotext test', tesseract: 'tesseract test', ocrLanguage: 'por', ocrDpi: 300 }, totals: { candidacies: 4, documents: 2, pages: 3, nativePages: 2, ocrPages: 1, emptyPages: 0 } };
+const docA = 'a1'.repeat(32), docB = 'b2'.repeat(32);
+const proposalDocument = (sha256: string | null, pages: number, native: number, ocr: number) => sha256 ? { sha256, file: `BR/${sha256.slice(0, 4)}.pdf`, pages, native_pages: native, ocr_pages: ocr, empty_pages: pages - native - ocr } : { sha256: null, file: null, pages: null, native_pages: null, ocr_pages: null, empty_pages: null };
+const proposalCandidacies = [
+  { number: '12', ballot_name: 'CANDIDATURA A', party: 'P1', situation: 'APTO', listing: 'candidate', ...proposalDocument(docA, 2, 1, 1) },
+  { number: '14', ballot_name: 'CANDIDATURA B', party: 'P2', situation: 'INAPTO', listing: 'same-document', ...proposalDocument(docB, 1, 1, 0) },
+  { number: '14', ballot_name: 'CANDIDATURA C', party: 'P2', situation: 'APTO', listing: 'candidate', ...proposalDocument(docB, 1, 1, 0) },
+  { number: '90', ballot_name: 'CANDIDATURA D', party: 'P3', situation: 'INAPTO', listing: 'no-votes', ...proposalDocument(null, 0, 0, 0) },
+];
+const proposalPages = [{ sha256: docA, page: 2, method: 'ocr', text: 'Plano de\n  ACESSIBILI-\n  DADE urbana e calçadas' }, { sha256: docB, page: 1, method: 'native', text: 'Mais acessibilidade nas escolas.' }];
 let tractMapViews: Array<Record<string, unknown>> = [];
 let tractMapTracts: Array<Record<string, unknown>> = [];
 let tractMapPlaces: Array<Record<string, unknown>> = [];
@@ -65,7 +80,8 @@ before(async () => {
         if (sql.includes('FROM import_batches ORDER BY imported_at DESC')) return { rows: urbanPublished ? [{ id: 'f'.repeat(64), scope: '2022/context/urban-surroundings', published: true, metadata: { id: 'f'.repeat(64), kind: 'urban-surroundings', year: 2022, importedAt: '2026-10-19T00:00:00Z',
           importerVersion: 'test', sources: [], scope: 'Teste', notes: [], totals: { municipalities: 1, tracts: 3, suppressedTracts: 1, residents: 10, associatedTracts: 2, associatedSurveyed: 1, associatedSuppressed: 0 } } },
           { id: '9'.repeat(64), scope: '2022/geo/tracts', published: true, metadata: { id: '9'.repeat(64), kind: 'tract-geometries', year: 2022, importedAt: '2026-10-19T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', notes: [],
-            totals: { rows: 4, tracts: 3, multipart: 1, invalid: 1, comparedPlaces: 2, equalPlaces: 2 } } }] : [] };
+            totals: { rows: 4, tracts: 3, multipart: 1, invalid: 1, comparedPlaces: 2, equalPlaces: 2 } } },
+          { id: '4'.repeat(64), scope: '2022/proposals/president', published: true, metadata: proposalsDataset }] : [] };
         if (sql.includes('FROM municipality_urban_surroundings WHERE batch_id=$1 AND ibge_code=$2')) return { rows: [{ tracts: 3, suppressed: 1, counts: urbanCounts() }] };
         if (sql.includes('FROM municipality_urban_surroundings')) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', counts: urbanCounts() }] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/municipal') return { rows: contextPublished ? [{ id: 'd'.repeat(64), metadata: {} }] : [] };
@@ -74,6 +90,9 @@ before(async () => {
         if (sql.includes('FROM tract_income_bands WHERE batch_id=$1 LIMIT 1')) return { rows: [{ exists: 1 }] };
         if (sql.includes('place_code AS code, name')) return { rows: parameters[2] === '71072' ? tractMapPlaces : [] };
         if (sql.includes('FROM tract_display_views')) return { rows: tractMapViews };
+        if (sql.includes('scope=$1') && parameters[0] === '2022/proposals/president') return { rows: proposalsPublished ? [{ id: '4'.repeat(64), metadata: proposalsDataset }] : [] };
+        if (sql.includes('FROM proposal_candidacies')) return { rows: proposalCandidacies };
+        if (sql.includes('FROM proposal_pages')) return { rows: proposalPages.filter((page) => searchText(page.text).includes(String(parameters[1]))) };
         if (sql.includes('FROM tract_display d')) return { rows: tractMapTracts.map((tract) => ({ ...tract, path: sql.includes('d.path') ? tract.path : '' })) };
         if (sql.includes('FROM polling_place_tracts')) return { rows: parameters[2] === '71072' ? tractRows : [] };
         if (sql.includes("->'totals'->>'abstentions'")) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', numerator: '2', denominator: '10' }] };
@@ -374,6 +393,7 @@ test('entorno dos domicílios: contexto do município, indicador do mapa e setor
     const catalog = await (await fetch(`${base}/elections/catalog`)).json();
     assert.equal(catalog.urbanSurroundingsDatasets[0].totals.residents, 10, 'Catálogo lista a publicação do entorno'); assert.equal(catalog.datasets.length, 0, 'Entorno e malha não são publicações de cargo');
     assert.equal(catalog.tractGeometriesDatasets[0].totals.invalid, 1, 'Malha de setores em lista própria');
+    assert.equal(catalog.proposalsDatasets[0].totals.ocrPages, 1, 'Propostas em lista própria, fora das publicações eleitorais');
     urbanPublished = false;
     const without = await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).json();
     assert.equal(without.urbanBatchId, null); assert.equal(without.items[0].tract.urban, undefined, 'Sem publicação do entorno, o setor não diz "fora da pesquisa"');
@@ -438,4 +458,27 @@ test('mapa local → setor: vistas, faixa de cada setor, locais projetados e div
     tractMapViews = [];
     assert.equal((await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP`)).status, 503, 'Município sem vista no desenho publicado');
   } finally { published = false; tractsPublished = false; tractMapPublished = false; }
+});
+
+test('propostas: todas as candidaturas pelo número, documento compartilhado uma vez, busca sem acento e trecho do original', async () => {
+  for (const query of ['q=ab', `q=${'a'.repeat(81)}`, 'year=2026', 'q=saude&uf=SP']) assert.equal((await fetch(`${base}/elections/proposals?${query}`)).status, 400, query);
+  published = true;
+  try {
+    assert.equal((await (await fetch(`${base}/elections/proposals`)).json()).status, 'awaiting-import');
+    proposalsPublished = true;
+    const coverage = await (await fetch(`${base}/elections/proposals`)).json();
+    assert.equal(coverage.query, null); assert.deepEqual(coverage.candidacies.map((item: { number: string }) => item.number), ['12', '14', '14', '90']);
+    assert.ok(coverage.candidacies.every((item: { matches: unknown }) => item.matches === null), 'Sem busca, sem ocorrências');
+    const [, inapt, apt, noVotes] = coverage.candidacies;
+    assert.equal(inapt.document, null, 'Documento compartilhado só na candidatura com votos'); assert.equal(apt.document.sha256, docB);
+    assert.deepEqual(apt.sameDocumentAs, [{ number: '14', ballotName: 'CANDIDATURA B', situation: 'INAPTO' }]); assert.equal(noVotes.listing, 'no-votes');
+    const data = await (await fetch(`${base}/elections/proposals?q=${encodeURIComponent('Acessibilidade')}`)).json();
+    assert.equal(data.query, 'acessibilidade');
+    const [first, , third, fourth] = data.candidacies;
+    assert.deepEqual(first.matches.pages, [2]);
+    assert.deepEqual(first.matches.excerpts[0], { page: 2, method: 'ocr', before: 'Plano de ', match: 'ACESSIBILI- DADE', after: ' urbana e calçadas' }, 'Palavra partida na linha encontrada; trecho do original');
+    assert.deepEqual(third.matches.pages, [1]); assert.equal(fourth.matches, null, 'Sem documento, sem resultado de busca');
+    const none = await (await fetch(`${base}/elections/proposals?q=${encodeURIComponent('saúde')}`)).json();
+    assert.deepEqual(none.candidacies[0].matches, { pages: [], excerpts: [] }, 'Nenhuma ocorrência é lista vazia, não ausência de documento');
+  } finally { published = false; proposalsPublished = false; }
 });

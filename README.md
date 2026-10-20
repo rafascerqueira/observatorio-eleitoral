@@ -107,6 +107,7 @@ Execute sequencialmente, após a Presidência nacional e os resultados estaduais
   npm run import:urban-surroundings  # entorno dos domicílios (calçada, rampa, iluminação...)
   npm run import:tract-geometries    # malha de setores com a geometria exata (~1,4 GB)
   npm run import:tract-display       # desenho simplificado dos setores para o mapa local → setor
+  npm run import:proposals           # propostas de governo da Presidência (exige tesseract-ocr e tesseract-ocr-por)
   npm run import:place-groups        # grupos de locais para os resultados publicados
   npm run import:tract-sensitivity   # grupos alternativos nos três raios
 )
@@ -126,6 +127,7 @@ Pare ao primeiro erro; não trate uma cadeia parcial como concluída. A troca é
 | `import:urban-surroundings` | `urban-surroundings-2022-v1` | Contexto + associação aos setores |
 | `import:tract-geometries` | `tract-geometries-2022-v1` | Nenhuma (confere com a associação aos setores publicada) |
 | `import:tract-display` | `tract-display-2022-v1` | Malha de setores |
+| `import:proposals` | `proposals-2022-v1` | Presidência nacional e exterior |
 | `import:place-groups` | `place-groups-2022-v5` | Resultados publicados + perfil por local + associação aos setores |
 | `import:tract-sensitivity` | `tract-sensitivity-2022-v2` | Entradas dos grupos + publicação dos grupos |
 

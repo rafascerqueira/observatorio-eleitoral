@@ -155,6 +155,14 @@
 .tract-figure img { display: block; width: 100%; max-width: 600px; height: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--paper); }
 .tract-figure figcaption { margin-top: 6px; }
 .tract-map .choropleth-legend + .query-note { margin-top: 10px; }
+/* Busca nas propostas (/propostas): uma entrada por candidatura, sempre na ordem do número. */
+.proposal-entry { margin: 0 28px; padding: 16px 0; border-top: 1px solid var(--border); }
+.proposal-entry h3 { margin: 0 0 4px; font-size: 17px; }
+.proposal-entry p { margin: 4px 0; }
+.proposal-excerpts { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; line-height: 1.5; }
+.proposal-excerpts mark { background: #f3dcc6; color: #1b1b1b; padding: 0 2px; border-radius: 2px; }
+.proposal-group { margin: 24px 28px 4px; }
+#propostas-resultados > .query-note, #propostas-resultados > .notice, #propostas-resultados > .source-note { margin-inline: 28px; }
 .point-key { width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; }
 .point-associated { background: #1b1b1b; box-shadow: 0 0 0 1px #fff; }
 .point-unassociated { background: #fff; border: 1.5px solid #1b1b1b; }
@@ -268,6 +276,7 @@
   .context-section { margin-inline: 18px; }
   .choropleth-pair { grid-template-columns: minmax(0, 1fr); padding-inline: 18px; }
   .tract-map > :not(.section-heading) { margin-inline: 18px; }
+  .proposal-entry, .proposal-group, #propostas-resultados > .query-note, #propostas-resultados > .notice, #propostas-resultados > .source-note { margin-inline: 18px; }
   .candidate-maps, .shared-legend, .map-tabs { padding-inline: 18px; }
   .dot-figure, .scatter-figure { margin-inline: 18px; }
   .section-heading .badge-round { margin-left: 0; }
@@ -292,6 +301,7 @@
   .dot, .dot-legend .swatch, .scatter-dot, .choropleth-legend .swatch, .point-key { forced-color-adjust: none; }
   .choropleth-area { forced-color-adjust: none; }
   .swatch { forced-color-adjust: none; }
+  .proposal-excerpts mark { forced-color-adjust: auto; }
   .segmented::before { display: none; }
   .segmented-choice:has(input:checked) { outline: 2px solid Highlight; outline-offset: -2px; color: Highlight; }
   .segmented-choice:has(input:focus-visible) { outline: 3px solid Highlight; outline-offset: 2px; }
