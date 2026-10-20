@@ -1,4 +1,4 @@
-import { placeGroupsSchema, turnoutProfilesSchema, mapGeometrySchema, mapValuesSchema, candidateMapSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, placeTractsSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
+import { placeGroupsSchema, turnoutProfilesSchema, mapGeometrySchema, mapValuesSchema, candidateMapSchema, contextResponseSchema, catalogSchema, municipalitiesSchema, placesResponseSchema, placeTractsSchema, tractMapSchema, nationalResponseSchema, exteriorResponseSchema, stateResponseSchema, type ExteriorQuery, type NationalQuery, type NationalResponse, type MunicipalitiesResponse, type MunicipalityQuery, type PlacesQuery, type StateQuery, type StateResponse } from '@observatorio/contracts';
 
 export async function getExterior(filters: ExteriorQuery) {
   try {
@@ -90,6 +90,20 @@ export async function getPlaceTracts(code: string, uf: string, year: string) {
     if (response.status === 404) return { kind: 'missing' as const };
     if (!response.ok) return { kind: 'unavailable' as const };
     return { kind: 'ready' as const, data: placeTractsSchema.parse(await response.json()) };
+  } catch { return { kind: 'unavailable' as const }; }
+}
+
+/** Mapa local → setor de uma vista do município; `paths` só para a imagem do mapa. `missing`: município ou vista inexistente. */
+export async function getTractMap(code: string, uf: string, year: string, view?: string, paths = false) {
+  try {
+    const url = new URL(`/elections/municipalities/${encodeURIComponent(code)}/tract-map`, process.env.API_URL ?? 'http://127.0.0.1:3001');
+    url.searchParams.set('uf', uf); url.searchParams.set('year', year);
+    if (view) url.searchParams.set('view', view);
+    if (paths) url.searchParams.set('paths', '1');
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    if (response.status === 404) return { kind: 'missing' as const };
+    if (!response.ok) return { kind: 'unavailable' as const };
+    return { kind: 'ready' as const, data: tractMapSchema.parse(await response.json()) };
   } catch { return { kind: 'unavailable' as const }; }
 }
 

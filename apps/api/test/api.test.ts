@@ -23,6 +23,14 @@ let trigram = true;
 let contextPublished = false;
 let tractsPublished = false;
 let urbanPublished = false;
+// Mapa local → setor (fase B3): vistas, setores e locais sintéticos, com a projeção gravada pelo importador.
+let tractMapPublished = false;
+let tractMapViews: Array<Record<string, unknown>> = [];
+let tractMapTracts: Array<Record<string, unknown>> = [];
+let tractMapPlaces: Array<Record<string, unknown>> = [];
+const mapView = (view_id: string, level: string, split = false, tracts = 2) => ({ view_id, level, name: level === 'municipality' ? null : 'Sé', tracts, split, oversize: split,
+  x0: -46.8, y1: -23.3, kx: 0.92, scale: 1000, offset_x: 8, margin: 8, width: 600, height: 500 });
+const mapPlace = (zone: number, code: string, status: string, cd_setor: string | null, longitude: number | null, latitude: number | null) => ({ zone, code, name: `Local ${code}`, status, latitude, longitude, electors: 100, cd_setor, ibge_code: '3550308' });
 // Locais e setores sintéticos (códigos de formato real, valores fictícios) para o contrato da associação local → setor.
 const tractRow = (zone: number, code: string, status: string, setor: string | null, median: string | null, urban: { surveyed: boolean; urban: number[] | null } = { surveyed: false, urban: null }) => ({ zone, code, status, latitude: setor ? -23.5 : null, longitude: setor ? -46.6 : null,
   electors: 100, shared: 0, cd_setor: setor, context: setor !== null, situation: setor ? 'Urbana' : null, residents: setor ? '500' : null, median, ...urban });
@@ -61,6 +69,12 @@ before(async () => {
         if (sql.includes('FROM municipality_urban_surroundings WHERE batch_id=$1 AND ibge_code=$2')) return { rows: [{ tracts: 3, suppressed: 1, counts: urbanCounts() }] };
         if (sql.includes('FROM municipality_urban_surroundings')) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', counts: urbanCounts() }] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/municipal') return { rows: contextPublished ? [{ id: 'd'.repeat(64), metadata: {} }] : [] };
+        if (sql.includes('scope=$1') && parameters[0] === '2022/geo/tract-display') return { rows: tractMapPublished ? [{ id: '7'.repeat(64), metadata: {} }] : [] };
+        if (sql.includes('scope=$1') && parameters[0] === '2022/context/income-bands') return { rows: tractMapPublished ? [{ id: '6'.repeat(64), metadata: {} }] : [] };
+        if (sql.includes('FROM tract_income_bands WHERE batch_id=$1 LIMIT 1')) return { rows: [{ exists: 1 }] };
+        if (sql.includes('place_code AS code, name')) return { rows: parameters[2] === '71072' ? tractMapPlaces : [] };
+        if (sql.includes('FROM tract_display_views')) return { rows: tractMapViews };
+        if (sql.includes('FROM tract_display d')) return { rows: tractMapTracts.map((tract) => ({ ...tract, path: sql.includes('d.path') ? tract.path : '' })) };
         if (sql.includes('FROM polling_place_tracts')) return { rows: parameters[2] === '71072' ? tractRows : [] };
         if (sql.includes("->'totals'->>'abstentions'")) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', numerator: '2', denominator: '10' }] };
         if (sql.includes('FROM municipality_indicators')) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', numerator: '9', denominator: '10' }] };
@@ -392,4 +406,36 @@ test('contexto inconsistente não é publicado como ausência na fonte', async (
     contextItem.race.total = 11;
     assert.equal((await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).status, 503);
   } finally { contextItem.race.total = previous; published = false; contextPublished = false; }
+});
+
+test('mapa local → setor: vistas, faixa de cada setor, locais projetados e divisão de vistas grandes', async () => {
+  for (const query of ['', 'uf=ZZ', 'uf=SP&view=123', 'uf=SP&paths=2', 'uf=SP&office=governor']) assert.equal((await fetch(`${base}/elections/municipalities/71072/tract-map?${query}`)).status, 400, query);
+  published = true; tractsPublished = true;
+  try {
+    assert.equal((await (await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP`)).json()).status, 'awaiting-import', 'Sem desenho publicado');
+    tractMapPublished = true;
+    tractMapViews = [mapView('3550308', 'municipality')];
+    tractMapTracts = [{ code: '355030807000234', simplified: true, path: 'M 1 1 l 2 0 0 2 z', status: 'band', band: 2, residents: 500 }, { code: '355030807000235', simplified: false, path: 'M 5 5 l 1 0 0 1 z', status: null, band: null, residents: null }];
+    tractMapPlaces = [mapPlace(1, '1015', 'associated', '355030807000234', -46.6, -23.5), mapPlace(1, '1023', 'no-coordinate', null, null, null), mapPlace(2, '1040', 'outside-tracts', null, -46.7, -23.4), mapPlace(2, '1058', 'other-municipality', null, -40, -20)];
+    const data = await (await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP`)).json();
+    assert.equal(data.status, 'published'); assert.equal(data.displayBatchId, '7'.repeat(64)); assert.equal(data.incomeBatchId, '6'.repeat(64));
+    assert.equal(data.tracts, undefined, 'Sem caminhos na consulta da página');
+    assert.deepEqual(data.legend.bands[1], { index: 2, tracts: 1, residents: 500 }); assert.deepEqual(data.legend.missing, { tracts: 1 }, 'Setor sem linha no arquivo de renda não é zero');
+    assert.deepEqual(data.places.map((place: { x: number | null; y: number | null; band: number | null }) => [place.x, place.y, place.band]), [[192, 208, 2], [null, null, null], [100, 108, null], [null, null, null]], 'Mesma projeção do desenho; fora do quadro fica só na tabela');
+    const withPaths = await (await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP&paths=1`)).json();
+    assert.deepEqual(withPaths.tracts.map((tract: { status: string; band: number | null; path: string }) => [tract.status, tract.band, tract.path]), [['band', 2, 'M 1 1 l 2 0 0 2 z'], ['missing', null, 'M 5 5 l 1 0 0 1 z']]);
+    assert.equal((await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP&view=3550308099`)).status, 400, 'Vista com número ímpar de dígitos');
+    assert.equal((await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP&view=355030899`)).status, 404, 'Vista de outro recorte');
+    // Município dividido: a vista dele não tem desenho; a do distrito traz só os locais dos seus setores ou com ponto no quadro.
+    tractMapViews = [mapView('3550308', 'municipality', true, 2), mapView('355030807', 'district')];
+    const split = await (await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP`)).json();
+    assert.equal(split.view.split, true); assert.equal(split.legend, null); assert.deepEqual(split.places, []); assert.equal(split.views.length, 2);
+    const district = await (await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP&view=355030807`)).json();
+    assert.equal(district.view.level, 'district'); assert.deepEqual(district.places.map((place: { code: string }) => place.code), ['1015', '1040']);
+    tractMapViews = [mapView('3550308', 'municipality')];
+    tractMapPlaces = [mapPlace(1, '1015', 'associated', '355030890000197', -46.6, -23.5)];
+    assert.equal((await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP`)).status, 503, 'Setor associado fora do desenho do município');
+    tractMapViews = [];
+    assert.equal((await fetch(`${base}/elections/municipalities/71072/tract-map?uf=SP`)).status, 503, 'Município sem vista no desenho publicado');
+  } finally { published = false; tractsPublished = false; tractMapPublished = false; }
 });

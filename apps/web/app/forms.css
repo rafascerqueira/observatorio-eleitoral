@@ -149,6 +149,19 @@
 .swatch { width: 14px; height: 14px; border-radius: 3px; }
 .swatch-missing { background: #dedcd3; box-shadow: inset 0 0 0 1px #b9b7ad; }
 .choropleth-note { margin: 6px 0 0; font-size: 12px; }
+/* Mapa local → setor (/municipios/[code]/setores): imagem SVG servida à parte, legenda com chaves dos pontos e navegação entre vistas. */
+.tract-map > :not(.section-heading) { margin-inline: 28px; }
+.tract-figure { margin-block: 12px 0; }
+.tract-figure img { display: block; width: 100%; max-width: 600px; height: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--paper); }
+.tract-figure figcaption { margin-top: 6px; }
+.tract-map .choropleth-legend + .query-note { margin-top: 10px; }
+.point-key { width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; }
+.point-associated { background: #1b1b1b; box-shadow: 0 0 0 1px #fff; }
+.point-unassociated { background: #fff; border: 1.5px solid #1b1b1b; }
+.tract-trail { display: flex; flex-wrap: wrap; gap: 4px 0; margin: 0 0 8px; padding: 0; list-style: none; font-size: 14px; }
+.tract-trail li + li::before { content: "›"; margin: 0 8px; color: var(--muted); }
+.tract-views { columns: 2 220px; margin: 8px 0 16px; padding-left: 20px; }
+.tract-views li { margin-bottom: 4px; break-inside: avoid; }
 .map-caveats { font-size: 13px; }
 /* Dica dos mapas (MapHover): segue o cursor, nunca cobre o ponto apontado; texto em tinta, não na cor da série. */
 .map-hover { position: relative; }
@@ -254,6 +267,7 @@
   .round-note { margin-inline: 18px; }
   .context-section { margin-inline: 18px; }
   .choropleth-pair { grid-template-columns: minmax(0, 1fr); padding-inline: 18px; }
+  .tract-map > :not(.section-heading) { margin-inline: 18px; }
   .candidate-maps, .shared-legend, .map-tabs { padding-inline: 18px; }
   .dot-figure, .scatter-figure { margin-inline: 18px; }
   .section-heading .badge-round { margin-left: 0; }
@@ -275,7 +289,7 @@
   ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) { animation: none !important; }
 }
 @media (forced-colors: active) {
-  .dot, .dot-legend .swatch, .scatter-dot { forced-color-adjust: none; }
+  .dot, .dot-legend .swatch, .scatter-dot, .choropleth-legend .swatch, .point-key { forced-color-adjust: none; }
   .choropleth-area { forced-color-adjust: none; }
   .swatch { forced-color-adjust: none; }
   .segmented::before { display: none; }

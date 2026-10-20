@@ -10,7 +10,7 @@ const definitions = [
   ['2022/maps/ibge', 'maps-ibge-2022-v3', ['map_geometries']],
   ['2022/places/tracts', 'polling-place-tracts-2022-v3', ['polling_place_tracts', 'census_tract_context']],
   ['2022/places/profiles', 'place-profiles-2022-v2', ['polling_place_profiles']],
-  ['2022/context/income-bands', 'income-bands-2022-v2', ['municipality_income_bands']],
+  ['2022/context/income-bands', 'income-bands-2022-v3', ['municipality_income_bands', 'tract_income_bands']],
   ['2022/context/turnout-profiles', 'turnout-profiles-2022-v3', ['turnout_profile_cells']],
   ['2022/context/tract-demography', 'tract-demography-2022-v2', ['municipality_tract_demography']],
   ['2022/places/groups', 'place-groups-2022-v5', ['place_groups']],

@@ -253,4 +253,27 @@ if (catalog.urbanSurroundingsDatasets?.length) {
     for (const text of texts) assert.ok(page.includes(text), `${path}: ${text}`);
   }
 }
+if (catalog.tractDisplayDatasets?.length) {
+  // Mapa local → setor (fase B3): desenho publicado, faixa de cada setor (income-bands v3) e vistas divididas em São Paulo.
+  const [display] = catalog.tractDisplayDatasets;
+  assert.equal(display.importerVersion, 'tract-display-2022-v1'); assert.equal(catalog.incomeBandsDatasets[0].importerVersion, 'income-bands-2022-v3');
+  assert.deepEqual([display.totals.municipalities, display.totals.tracts, display.totals.excludedTracts, display.totals.splitViews, display.totals.districtViews, display.totals.exactTracts], [5570, 468097, 2, 1, 96, 30]);
+  const sp = await json('/elections/municipalities/71072/tract-map?uf=SP');
+  assert.equal(sp.view.split, true); assert.equal(sp.views.length, 97); assert.deepEqual(sp.places, [], 'Vista dividida não tem locais');
+  const grajau = await json('/elections/municipalities/71072/tract-map?uf=SP&view=355030830');
+  assert.deepEqual([grajau.view.name, grajau.view.tracts, grajau.places.length], ['Grajaú', 1107, 61]);
+  const legendTracts = grajau.legend.bands.reduce((total, band) => total + band.tracts, 0) + grajau.legend.noData.tracts + grajau.legend.undisclosed.tracts + grajau.legend.missing.tracts;
+  assert.equal(legendTracts, grajau.view.tracts, 'Legenda soma todos os setores da vista');
+  const amparo = await json('/elections/municipalities/31011/tract-map?uf=SE');
+  assert.deepEqual([amparo.view.tracts, amparo.legend.missing.tracts, amparo.places.filter((place) => place.status === 'no-coordinate').length], [11, 3, 4], 'Sem coordenada: local só na tabela');
+  await request(api, '/elections/municipalities/71072/tract-map?uf=SP&view=355030899', 404);
+  const image = await request(web, '/municipios/71072/setores/mapa.svg?uf=SP&view=355030830');
+  assert.match(image.headers.get('content-type'), /^image\/svg\+xml/); assert.ok((await image.text()).includes('<circle'), 'Pontos dos locais na imagem');
+  await request(web, '/municipios/71072/setores/mapa.svg?uf=SP', 404);
+  for (const [path, texts] of [['/municipios/71072/setores?uf=SP', ['Escolha uma parte', 'Distrito Grajaú']], ['/municipios/71072/setores?uf=SP&view=355030830', ['Distrito Grajaú', 'nenhum voto é atribuído a setores', 'Locais de votação desta parte']],
+    ['/municipios/71072?uf=SP&round=1', ['Ver os setores censitários e os locais de votação no mapa']], ['/metodologia', ['Mapa dos setores e dos locais']], ['/fontes', ['Desenho dos setores para o mapa']]]) {
+    const page = await html(path);
+    for (const text of texts) assert.ok(page.includes(text), `${path}: ${text}`);
+  }
+}
 console.log(`Smoke do contexto municipal aprovado: ${requests} requisições.`);

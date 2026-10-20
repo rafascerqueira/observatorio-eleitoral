@@ -46,7 +46,7 @@ async function executable(browser) {
   assert.ok(versions[0], 'Configure UI_EXECUTABLE_PATH com um Chromium/Chrome instalado.');
   return resolve(directory, versions[0], 'chrome-linux64/chrome');
 }
-const urls = ['/', '/?uf=SP', '/?office=senator&uf=SE', '/municipios/71072?uf=SP', '/municipios/26310?uf=PE', '/perfis?indicator=income-median&uf=MA', '/participacao?uf=SP&municipality=71072', '/mapa?uf=PE', '/mapa/candidaturas?uf=SP&round=2', '/fontes', '/mapa?uf=SP&office=governor&round=2&series=10', '/mapa?indicator=urban-ramp&uf=SE'];
+const urls = ['/', '/?uf=SP', '/?office=senator&uf=SE', '/municipios/71072?uf=SP', '/municipios/26310?uf=PE', '/perfis?indicator=income-median&uf=MA', '/participacao?uf=SP&municipality=71072', '/mapa?uf=PE', '/mapa/candidaturas?uf=SP&round=2', '/fontes', '/mapa?uf=SP&office=governor&round=2&series=10', '/mapa?indicator=urban-ramp&uf=SE', '/municipios/71072/setores?uf=SP', '/municipios/71072/setores?uf=SP&view=355030830'];
 for (const name of browserNames) {
   const launch = async () => puppeteer.launch({ browser: name, executablePath: await executable(name), headless: true, args: name === 'chrome' ? ['--no-sandbox', '--disable-dev-shm-usage'] : [], acceptInsecureCerts: false,
     ...(name === 'firefox' ? { extraPrefsFirefox: { 'ui.prefersReducedMotion': 1 } } : {}) });

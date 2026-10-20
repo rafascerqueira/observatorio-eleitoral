@@ -238,3 +238,51 @@ Importador `apps/importer/src/tract-geometries.ts` (`npm run import:tract-geomet
 | Tempo | 4.353 s no total: 366 s de carga e ~66 min na transação. Repetida isoladamente depois da publicação, a conferência levou 46 s; a causa provável é a ausência de estatísticas das linhas ainda não confirmadas. Acrescentado `ANALYZE` depois da gravação (não muda resultado nem identidade; ainda não exercitado numa carga completa) |
 
 API: `tractGeometriesDatasets` no catálogo (o lote `2022/geo/*` fica fora da lista de publicações eleitorais, que segue com 57); `/fontes` ganhou a seção “Malha de setores censitários”. Verificação: typecheck, 106 testes (28 + 34 + 33 + 11), build, nove smokes (incluindo Senador e contexto), `check:data`, `check:regressions` (31), `check:publication` e `check:ui` (9 casos em Chrome e Firefox, sem violações) contra API/web compiladas. Pendente: B3 (mapa local → setor), que passa a consultar esta tabela filtrando `valid`.
+
+## 16. Andamento — fase B3 (19/10/2026)
+
+Mapa local → setor por município em `/municipios/[code]/setores`, com a imagem em `/municipios/[code]/setores/mapa.svg` e a rota `GET /elections/municipalities/:code/tract-map` na API. Setores coloridos **somente** pela faixa fixa da renda mediana do responsável (`INCOME_BANDS`); locais como pontos neutros (cheio: associado; vazado: com coordenada e sem setor); nenhum voto nos setores. Tabela equivalente com zona, local, situação, setor, faixa e eleitores. Link na página do município (detalhes da associação), seções em `/metodologia#mapa-setores` e `/fontes#desenho-setores`.
+
+Duas publicações novas, ambas sem cascata:
+
+| Publicação | Conteúdo | Medidas |
+| --- | --- | --- |
+| `income-bands-2022-v3` (`f89bf867…`) | Mesmas contagens municipais da v2, mais `tract_income_bands`: situação (`band`, `no-data`, `undisclosed`), moradores, mediana e faixa de cada setor | 458.772 setores; somas por município e por situação iguais às da v2 (conferência bloqueante); 33 s; 116 MB (51 MB são o índice da chave, pelo ID do lote repetido) |
+| `tract-display-2022-v1` (`8722a2bd…`, entrada: malha `2022/geo/tracts`) | `tract_display_views` (projeção, tamanho e divisão de cada vista) e `tract_display` (caminho SVG por setor, só nas vistas servidas) | 468.097 setores em 5.665 vistas; só São Paulo passou do limite de 250 KB comprimidos e foi dividido em 96 distritos; maior vista servida: Rio, 225 KB comprimidos; mediana 4,5 KB; 444 s; 209 MB |
+
+Decisões de implementação:
+- **Desenho pré-calculado**, não simplificado por requisição: na B1, simplificar o Rio levou 2,9 s, acima do limite de 2 s das consultas da API. Simplificação de cobertura com ~1 px; caminhos relativos com uma casa decimal (menores que os absolutos medidos na B1: o Rio caiu de 383 para 225 KB comprimidos).
+- **Imagem servida à parte** (`<img>`), não SVG inline: no App Router, o SVG inline voltaria repetido no payload de hidratação. A rota comprime com gzip, porque o servidor do Next não comprimia essa resposta (Rio: 941 KB sem compressão, 235 KB com).
+- **Divisão das vistas grandes:** distritos quando o município tem mais de um; senão, ou se um distrito ainda passar do limite, subdistritos. Nomes de `NM_DIST`/`NM_SUBDIST` do GeoPackage preservado.
+- **Exclusões declaradas:** dois polígonos da malha sem município (`CD_MUN` "0", sem nome nem situação), na posição das lagoas dos Patos e Mirim (RS), contados na publicação e fora do desenho; nenhum local de votação cai neles. Os 30 setores inválidos na fonte são desenhados exatos, sem reparo. A nota publicada “30 desenhos inválidos depois da simplificação” conta esses 30 setores exatos; a simplificação não gerou nenhum desenho inválido (os 30 coincidem com os inválidos na fonte, conferido no banco). O importador passou a contar só os simplificados, para versões futuras.
+- **Setores sem faixa** em tom neutro e contados à parte na legenda: mediana que não se aplica, omitidos pelo IBGE e sem linha no arquivo de renda (a malha tem 9.327 setores a mais que o arquivo de renda).
+
+Verificação: typecheck; 109 testes (29 da API, com a rota nova cobrindo vistas, projeção, vista dividida, vista inexistente e inconsistências; 35 da web, com a imagem e a navegação entre vistas); build; `smoke:context` (107 requisições, com o bloco do mapa) e os demais oito smokes; `check:data`, `check:regressions`, `check:publication`; `check:ui` com as duas páginas novas em 1280, 375 e 320 px no Chrome e no Firefox, sem violações nem rolagem horizontal; capturas conferidas (Rio, Grajaú/SP e a lista de distritos de São Paulo). Banco de 12,41 para 12,75 GB.
+
+## 17. Andamento — fase D1 (19–20/10/2026)
+
+Inventário sem publicação e sem escrita no banco: `npm run inventory:proposals` (`apps/importer/src/proposals-inventory.ts`), relatório em `data/analysis/propostas-inventario-2026-10-20T01-32-13.578Z/report.json`. Originais preservados: `proposta_governo_2022_BR.zip` (15.771.758 bytes, SHA-256 `1c8853cc…`, `Last-Modified` 21/07/2024) e `consulta_cand_2022.zip` (4.390.989 bytes, `6f764839…`, `Last-Modified` 18/10/2026), lido só no arquivo `_BR` e só nas colunas da candidatura (sem CPF, e-mail, nascimento ou título). PDFs extraídos em `data/staging/proposta_governo_2022/<sha>/`, lidos por `pdfinfo` e `pdftotext` 24.02.0 em processo separado, sem shell e com tempo limite; o texto foi só contado (página com texto nativo: ao menos 50 caracteres visíveis).
+
+| Nº | Candidatura (cadastro) | Situação | Páginas | Com texto | Vazias |
+| --- | --- | --- | --- | --- | --- |
+| 12 | Ciro Gomes (PDT) | Apto | 26 | **0** | 26 |
+| 13 | Lula (PT) | Apto | 21 | 21 | 0 |
+| 14 | Roberto Jefferson (PTB) | Inapto | 12 | 11 | 1 |
+| 14 | Padre Kelmon (PTB) | Apto | 12 | 11 | 1 (documento idêntico ao de Roberto Jefferson, mesmo SHA-256) |
+| 15 | Simone Tebet (MDB) | Apto | 48 | 37 | 1 |
+| 16 | Vera (PSTU) | Apto | 26 | 26 | 0 |
+| 21 | Sofia Manzano (PCB) | Apto | 19 | 19 | 0 |
+| 22 | Jair Bolsonaro (PL) | Apto | 48 | 47 | 0 |
+| 27 | Constituinte Eymael (DC) | Apto | 9 | 9 | 0 |
+| 30 | Felipe d'Avila (Novo) | Apto | 36 | 34 | 0 |
+| 44 | Soraya Thronicke (União) | Apto | 73 | 73 | 0 |
+| 80 | Léo Péricles (UP) | Apto | 12 | 12 | 0 |
+| 90 | Pablo Marçal (PROS) | Inapto, sem votos nos resultados | 108 | 76 | 0 |
+
+Resumo: 13 candidaturas no 1º turno (11 aptas), 13 PDFs, um para cada candidatura pelo `SQ_CANDIDATO` do nome do arquivo; nenhum documento órfão, protegido ou ilegível; 450 páginas, 376 com texto nativo. Todos os números aptos estão nos resultados publicados, e nenhum número dos resultados fica sem candidatura no cadastro. O número 14 tem duas candidaturas (a indeferida e a substituta); nos resultados, o número é o da candidatura apta. Nenhum texto foi interpretado ou exibido.
+
+Decisões de Rafael antes da D2:
+1. **Documento só em imagem (nº 12, 26 páginas sem texto):** sem OCR, a busca literal responderia “nenhuma ocorrência” para essa candidatura por limitação da extração, não do conteúdo. Opções: (a) instalar OCR (`tesseract-ocr` com o idioma português, pacote de sistema) e registrar método e versão por página, com conferência por amostra; (b) publicar a busca com a candidatura marcada como “sem texto extraível”, nunca como “sem ocorrência”. Recomendação: (a), com a página indicando o método de cada trecho.
+2. **Páginas parciais** (ex.: nº 15 com 10 páginas abaixo do limiar, nº 90 com 32): aplicar o mesmo OCR às páginas sem texto nativo, ou só declará-las na cobertura.
+3. **Documento duplicado do nº 14:** exibir uma vez, ligado à candidatura apta, com a nota de que o arquivo é o mesmo da candidatura indeferida; e se a candidatura inapta do nº 90 entra na busca (sugestão: listada à parte, como candidatura sem votos).
+4. Servir PDFs individuais (`originalFileSchema` aceita hoje só zip, json, xlsx e gpkg) ou só o ZIP preservado.

@@ -12,8 +12,9 @@ import { preservedDownload, sidraValue } from './sidra';
  * Moradores por faixa fixa de renda do setor (Censo 2022, universo): para cada setor do arquivo de rendimento do responsável,
  * os moradores em domicílios particulares permanentes ocupados (V06002) entram na faixa da mediana do setor (V06006). Inclui
  * todos os setores, com ou sem local de votação. Cada município confere com o V06002 do arquivo municipal do IBGE.
+ * v3: mesmas contagens, mais a faixa de cada setor em `tract_income_bands` (mapa local → setor, fase B3).
  */
-const VERSION = 'income-bands-2022-v2';
+const VERSION = 'income-bands-2022-v3';
 const SCOPE = '2022/context/income-bands';
 const IBGE = 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Rendimento_do_Responsavel';
 const empty = (): IncomeBandPopulation => ({ total: 0, bands: INCOME_BANDS.map((band) => ({ index: band.index, residents: 0, tracts: 0 })), noData: { residents: 0, tracts: 0 }, undisclosed: { tracts: 0 } });
@@ -43,12 +44,15 @@ async function run() {
     if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
     const inputs = await publishedInputs(client, ['2022/context/municipal']);
     await client.query(await readFile(resolve(__dirname, 'migrations/012-income-bands.sql'), 'utf8'));
+    await client.query(await readFile(resolve(__dirname, 'migrations/019-tract-maps.sql'), 'utf8'));
     // UF de cada município pelo contexto municipal publicado (código IBGE validado contra a correspondência TSE–IBGE).
     const context = await client.query<{ ibge_code: string; uf: string }>("SELECT c.ibge_code, c.uf FROM municipality_context c JOIN import_batches b ON b.id=c.batch_id AND b.published AND b.scope='2022/context/municipal'");
     if (!context.rows.length) throw new Error('Contexto municipal precisa estar publicado.');
     const ufOf = new Map(context.rows.map((row) => [row.ibge_code, row.uf]));
 
     const byMunicipality = new Map<string, IncomeBandPopulation>(); let read = 0;
+    type TractRow = { setor: string; code: string; status: 'band' | 'no-data' | 'undisclosed'; residents: number | null; median: number | null; band: number | null };
+    const tractRows: TractRow[] = [];
     for await (const row of rows(tracts.path, csvEntry(tracts.path))) {
       read++;
       const setor = row.CD_SETOR ?? '';
@@ -57,10 +61,10 @@ async function run() {
       if (!ufOf.has(code)) throw new Error(`Setor ${setor} de município fora do contexto publicado.`);
       const item = byMunicipality.get(code) ?? empty();
       const residents = value(row.V06002, `${setor} V06002`), median = value(row.V06006, `${setor} V06006`);
-      if (row.V06002 === 'X') { if (row.V06006 !== 'X') throw new Error(`${setor}: moradores omitidos e mediana divulgada.`); item.undisclosed.tracts++; }
+      if (row.V06002 === 'X') { if (row.V06006 !== 'X') throw new Error(`${setor}: moradores omitidos e mediana divulgada.`); item.undisclosed.tracts++; tractRows.push({ setor, code, status: 'undisclosed', residents: null, median: null, band: null }); }
       else if (residents === null) throw new Error(`${setor}: V06002 "${row.V06002}" não previsto.`);
-      else if (median === null) { item.noData.residents += residents; item.noData.tracts++; item.total += residents; }
-      else { const band = item.bands[incomeBandOf(median) - 1]!; band.residents += residents; band.tracts++; item.total += residents; }
+      else if (median === null) { item.noData.residents += residents; item.noData.tracts++; item.total += residents; tractRows.push({ setor, code, status: 'no-data', residents, median: null, band: null }); }
+      else { const index = incomeBandOf(median), band = item.bands[index - 1]!; band.residents += residents; band.tracts++; item.total += residents; tractRows.push({ setor, code, status: 'band', residents, median, band: index }); }
       byMunicipality.set(code, item);
     }
     // Conferência por município: soma dos setores = V06002 do arquivo municipal (os setores "X" não entram no total do IBGE).
@@ -90,7 +94,8 @@ async function run() {
       notes: [`Soma dos setores igual ao V06002 do arquivo municipal do IBGE nos ${byMunicipality.size.toLocaleString('pt-BR')} municípios.`,
         `${totals.undisclosed.tracts.toLocaleString('pt-BR')} setores com dados omitidos pelo IBGE ("X"): moradores não divulgados e fora do total municipal; não estimados.`,
         `${totals.noData.tracts.toLocaleString('pt-BR')} setores sem mediana por não se aplicar ("."), com ${totals.noData.residents.toLocaleString('pt-BR')} moradores: contados no total, fora das faixas.`,
-        'Moradores em domicílios particulares permanentes ocupados não incluem domicílios coletivos nem improvisados; o total difere da população residente do Censo.'] });
+        'Moradores em domicílios particulares permanentes ocupados não incluem domicílios coletivos nem improvisados; o total difere da população residente do Censo.',
+        `Faixa de cada setor guardada por setor (${read.toLocaleString('pt-BR')} setores), com moradores e mediana como no arquivo, para o mapa dos setores; nada é estimado para setores omitidos.`] });
     await client.query('BEGIN');
     try {
       await client.query('INSERT INTO import_batches(id,scope,metadata) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET metadata=EXCLUDED.metadata', [id, SCOPE, dataset]);
@@ -99,6 +104,15 @@ async function run() {
       await client.query('INSERT INTO municipality_income_bands SELECT $1, x.code, x.uf, x.result FROM jsonb_to_recordset($2::jsonb) AS x(code text, uf text, result jsonb)', [id, JSON.stringify(list)]);
       const stored = await client.query<{ n: number; total: string }>("SELECT count(*)::integer AS n, sum((result->>'total')::bigint)::text AS total FROM municipality_income_bands WHERE batch_id=$1", [id]);
       if (stored.rows[0]!.n !== list.length || Number(stored.rows[0]!.total) !== totals.total) throw new Error('Faixas gravadas não conferem.');
+      await client.query('DELETE FROM tract_income_bands WHERE batch_id=$1', [id]);
+      for (let start = 0; start < tractRows.length; start += 50_000) {
+        await client.query(`INSERT INTO tract_income_bands SELECT $1, x.setor, x.code, x.status, x.residents, x.median, x.band
+          FROM jsonb_to_recordset($2::jsonb) AS x(setor text, code text, status text, residents integer, median numeric, band smallint)`, [id, JSON.stringify(tractRows.slice(start, start + 50_000))]);
+      }
+      // Os setores gravados reproduzem as somas municipais: mesma contagem por situação e mesmos moradores.
+      const tractTotals = (await client.query<{ n: number; residents: string; undisclosed: number; nodata: number }>(`SELECT count(*)::int AS n, coalesce(sum(residents), 0)::text AS residents,
+        count(*) FILTER (WHERE status='undisclosed')::int AS undisclosed, count(*) FILTER (WHERE status='no-data')::int AS nodata FROM tract_income_bands WHERE batch_id=$1`, [id])).rows[0]!;
+      if (tractTotals.n !== read || Number(tractTotals.residents) !== totals.total || tractTotals.undisclosed !== totals.undisclosed.tracts || tractTotals.nodata !== totals.noData.tracts) throw new Error('Faixas por setor não conferem com as somas municipais.');
       await preparePublication(client, { id, scope: SCOPE, inputs, report: { dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000) } });
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }

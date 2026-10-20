@@ -5,7 +5,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, incomeBandOf, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, URBAN_INDICATORS, urbanIndicatorCounts, type UrbanIndicator, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, incomeBandOf, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, tractMapQuerySchema, tractMapSchema, type TractMap, URBAN_INDICATORS, urbanIndicatorCounts, type UrbanIndicator, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { checkDependencies } from './dependencies';
 import { nationalSummary } from './national-summary';
@@ -17,6 +17,7 @@ const TRACT_SENSITIVITY_SCOPE = '2022/places/tract-sensitivity';
 const TRACT_DEMOGRAPHY_SCOPE = '2022/context/tract-demography';
 const TRACTS_SCOPE = '2022/places/tracts';
 const URBAN_SCOPE = '2022/context/urban-surroundings';
+const TRACT_DISPLAY_SCOPE = '2022/geo/tract-display';
 
 @Controller('elections')
 export class ElectionsController {
@@ -454,6 +455,65 @@ export class ElectionsController {
     catch { throw new ServiceUnavailableException('Associação dos locais inconsistente.'); }
   }
 
+  /**
+   * Mapa local → setor (fase B3): desenho dos setores de uma vista (município, distrito ou subdistrito), faixa de renda de cada setor
+   * e locais de votação projetados na mesma escala. Os setores só recebem indicador do Censo; nenhum voto é desenhado.
+   */
+  @Get('municipalities/:code/tract-map')
+  async tractMap(@Param('code') code: string, @Query() query: Record<string, unknown>) {
+    if (!/^\d+$/.test(code)) throw new NotFoundException('Código municipal inválido.');
+    const parsed = tractMapQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException({ message: 'Informe ano, UF e, se for o caso, a vista do mapa.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    await this.database.check();
+    const empty = tractMapSchema.parse({ status: 'awaiting-import' });
+    const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.tract_display')::text AS registry");
+    if (parsed.data.year !== '2022' || !registry.rows[0]?.registry) return empty;
+    const display = await this.checkedPublication(TRACT_DISPLAY_SCOPE), income = await this.checkedPublication(INCOME_BANDS_SCOPE), association = await this.checkedPublication(TRACTS_SCOPE);
+    if (!display || !income || !association) return empty;
+    // Faixas por setor existem a partir da income-bands v3; publicação anterior não tem o que colorir.
+    if (!(await this.database.query('SELECT 1 FROM tract_income_bands WHERE batch_id=$1 LIMIT 1', [income.id])).rows.length) return empty;
+    const places = (await this.database.query<{ zone: number; code: string; name: string | null; status: typeof TRACT_STATUSES[number]; latitude: number | null; longitude: number | null; electors: number; cd_setor: string | null; ibge_code: string }>(
+      'SELECT zone, place_code AS code, name, status, latitude, longitude, electors, cd_setor, ibge_code FROM polling_place_tracts WHERE batch_id=$1 AND uf=$2 AND municipality_code=$3 ORDER BY zone, place_code',
+      [association.id, parsed.data.uf, code.padStart(5, '0')])).rows;
+    if (!places.length) throw new NotFoundException('Município sem locais na associação publicada.');
+    const ibge = places[0]!.ibge_code;
+    if (places.some((place) => place.ibge_code !== ibge)) throw new ServiceUnavailableException('Associação dos locais inconsistente.');
+    type ViewRow = { view_id: string; level: 'municipality' | 'district' | 'subdistrict'; name: string | null; tracts: number; split: boolean; oversize: boolean; x0: number; y1: number; kx: number; scale: number; offset_x: number; margin: number; width: number; height: number };
+    const views = (await this.database.query<ViewRow>('SELECT view_id, level, name, tracts, split, oversize, x0, y1, kx, scale, offset_x, margin, width, height FROM tract_display_views WHERE batch_id=$1 AND cd_mun=$2 ORDER BY length(view_id), view_id', [display.id, ibge])).rows;
+    if (!views.length || views[0]!.view_id !== ibge) throw new ServiceUnavailableException('Desenho dos setores inconsistente.');
+    const selected = views.find((view) => view.view_id === (parsed.data.view ?? ibge));
+    if (!selected) throw new NotFoundException('Vista inexistente neste município.');
+    const viewOf = (row: ViewRow) => ({ id: row.view_id, level: row.level, name: row.name, tracts: row.tracts, split: row.split, oversize: row.oversize });
+    const base = { status: 'published' as const, displayBatchId: display.id, incomeBatchId: income.id, associationBatchId: association.id, views: views.map(viewOf), view: { ...viewOf(selected), width: selected.width, height: selected.height } };
+    const respond = (data: TractMap) => { try { return tractMapSchema.parse(data); } catch { throw new ServiceUnavailableException('Mapa dos setores inconsistente.'); } };
+    if (selected.split) return respond({ ...base, legend: null, places: [], ...(parsed.data.paths === '1' ? { tracts: [] } : {}) });
+    const tracts = (await this.database.query<{ code: string; simplified: boolean; path: string; status: 'band' | 'no-data' | 'undisclosed' | null; band: number | null; residents: number | null }>(
+      `SELECT d.cd_setor AS code, d.simplified, ${parsed.data.paths === '1' ? 'd.path' : "''"} AS path, i.status, i.band, i.residents
+      FROM tract_display d LEFT JOIN tract_income_bands i ON i.batch_id=$2 AND i.cd_setor=d.cd_setor WHERE d.batch_id=$1 AND d.view_id=$3 ORDER BY d.cd_setor`, [display.id, income.id, selected.view_id])).rows;
+    const legend = { bands: [1, 2, 3, 4, 5].map((index) => ({ index, tracts: 0, residents: 0 })), noData: { tracts: 0, residents: 0 }, undisclosed: { tracts: 0 }, missing: { tracts: 0 } };
+    for (const tract of tracts) {
+      if (tract.status === 'band') { const band = legend.bands[tract.band! - 1]!; band.tracts++; band.residents += tract.residents ?? 0; }
+      else if (tract.status === 'no-data') { legend.noData.tracts++; legend.noData.residents += tract.residents ?? 0; }
+      else if (tract.status === 'undisclosed') legend.undisclosed.tracts++;
+      else legend.missing.tracts++;
+    }
+    const bandOf = new Map(tracts.map((tract) => [tract.code, tract.status === 'band' ? tract.band : null]));
+    // Mesma projeção do desenho (ver migração 019). Fora do quadro, o local fica só na tabela.
+    const project = (place: typeof places[number]) => {
+      if (place.latitude === null || place.longitude === null) return null;
+      const x = selected.offset_x + (place.longitude - selected.x0) * selected.kx * selected.scale, y = selected.margin + (selected.y1 - place.latitude) * selected.scale;
+      return x >= 0 && x <= selected.width && y >= 0 && y <= selected.height ? { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 } : null;
+    };
+    const whole = selected.level === 'municipality';
+    const items = places.flatMap((place) => {
+      const point = project(place), inView = place.cd_setor !== null ? bandOf.has(place.cd_setor) : point !== null;
+      return whole || inView ? [{ zone: place.zone, code: place.code, name: place.name, status: place.status, tract: place.cd_setor, band: place.cd_setor === null ? null : bandOf.get(place.cd_setor) ?? null,
+        electors: place.electors, x: point?.x ?? null, y: point?.y ?? null }] : [];
+    });
+    if (whole && items.some((item) => item.tract !== null && !bandOf.has(item.tract))) throw new ServiceUnavailableException('Setor associado fora do desenho do município.');
+    return respond({ ...base, legend, places: items, ...(parsed.data.paths === '1' ? { tracts: tracts.map((tract) => ({ code: tract.code, status: tract.status ?? 'missing', band: tract.status === 'band' ? tract.band : null, simplified: tract.simplified, path: tract.path })) } : {}) });
+  }
+
   @Get('municipalities/:code/places')
   async places(@Param('code') code: string, @Query() query: Record<string, unknown>) {
     if (!/^\d+$/.test(code)) throw new NotFoundException('Código municipal inválido.');
@@ -532,6 +592,7 @@ export class ElectionsController {
       tractDemographyDatasets: batches.rows.filter((batch) => batch.published && batch.scope === TRACT_DEMOGRAPHY_SCOPE).map((batch) => batch.metadata),
       urbanSurroundingsDatasets: batches.rows.filter((batch) => batch.published && batch.scope === URBAN_SCOPE).map((batch) => batch.metadata),
       tractGeometriesDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/geo/tracts').map((batch) => batch.metadata),
+      tractDisplayDatasets: batches.rows.filter((batch) => batch.published && batch.scope === TRACT_DISPLAY_SCOPE).map((batch) => batch.metadata),
       mapDatasets: batches.rows.filter((batch) => batch.published && isMap(batch.scope)).map((batch) => batch.metadata), imports: batches.rows.map((batch) => ({ id: batch.id, scope: batch.scope, published: batch.published, failureReason: batch.metadata.failureReason ?? null, coverage: coverage.rows.filter((item) => item.batch_id === batch.id) })), plannedOffices: [
       // Cargo estadual: só as UFs sem publicação continuam pendentes.
       ...STATE_OFFICES.flatMap((office) => {

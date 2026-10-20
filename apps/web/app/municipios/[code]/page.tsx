@@ -14,6 +14,7 @@ import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from 
 import { overviewHref } from '../../../lib/query-navigation';
 import { NonValidVotesTable } from '../../../components/non-valid-votes';
 import { PlaceTractDetails, TractSummaryTable } from '../../../components/place-tract';
+import { tractMapHref } from '../../../lib/tract-map';
 
 export const dynamic = 'force-dynamic';
 export default async function Municipality({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -91,7 +92,7 @@ export default async function Municipality({ params, searchParams }: { params: P
       : <RoundNote decided={rounds.decided} office={officeLabel} place={filters.uf && filters.uf !== 'ZZ' ? `em ${UF_NAMES[filters.uf]}` : 'nesta UF'}>{filters.round !== '1' && <> <Link href={placesHref(code, filters, { round: '1', page: 1 })}>Ver o 1º turno</Link>.</>}</RoundNote>}
     <details className="notice place-context"><summary>Como interpretar os locais e seus dados</summary><p>Local de votação é onde o eleitor vota, não onde mora. O código do local só é único junto com a zona eleitoral. Prédios compartilhados entre zonas não foram unificados.</p><p>Aptos, comparecimento e abstenção por local não estão disponíveis neste recorte.</p>
       {exterior ? <p>Locais do exterior não têm setor censitário do IBGE.</p> : <><p>Cada local mostra o setor censitário do Censo 2022 que contém o seu ponto no cadastro do TSE, quando a associação é possível; nos demais casos, nenhum setor é escolhido. O setor descreve o entorno do prédio, não os eleitores que votam nele. <Link href="/metodologia#perfis">Como a associação é feita</Link>.</p>
-        {tractData ? <TractSummaryTable summary={tractData.summary} /> : tracts?.kind === 'missing' ? <p>Este município não tem locais na associação publicada.</p> : tracts?.kind === 'ready' ? <p>Associação a setores ainda sem publicação para esta eleição.</p> : null}</>}</details>
+        {tractData ? <><TractSummaryTable summary={tractData.summary} /><p><Link href={tractMapHref(code, filters.uf!)}>Ver os setores censitários e os locais de votação no mapa</Link>.</p></> : tracts?.kind === 'missing' ? <p>Este município não tem locais na associação publicada.</p> : tracts?.kind === 'ready' ? <p>Associação a setores ainda sem publicação para esta eleição.</p> : null}</>}</details>
     <section id="resultados" className="places-results" aria-labelledby="resultados-titulo" tabIndex={-1}>
       <h2 id="resultados-titulo">Locais encontrados</h2>
       <p className="query-note places-scope">{filters.section ? <>A seção {filters.section}{filters.zone ? ` da zona ${filters.zone}` : ''} é usada para localizar o local. </> : null}Os resultados exibidos são do <strong>local inteiro</strong>. Percentuais de candidaturas usam os votos válidos do local.</p>

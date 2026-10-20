@@ -83,6 +83,7 @@ export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands
         <tbody>{ages.map((band) => { const electors = item.electorate.age.categories.find((entry) => entry.key === band.key)?.value ?? null; return <tr key={band.key}><th scope="row">{band.label}{['a16', 'a17'].includes(band.key) || ['a70-74', 'a75-79', 'a80-84', 'a85-89', 'a90-94', 'a95-99', 'a100+'].includes(band.key) ? <span className="source-note"> · voto facultativo</span> : null}</th><td>{number(band.value)}</td><td>{number(electors)}</td><td>{rate(share(electors, band.value))}</td></tr>; })}
           {item.electorate.age.categories.filter((entry) => ['invalid', 'not-informed'].includes(entry.key) && entry.value).map((entry) => <tr key={entry.key}><th scope="row">{entry.label}</th><td>—</td><td>{number(entry.value)}</td><td>—</td></tr>)}</tbody>
       </table></div>
+      <p className="query-note">Por faixa, o cadastro pode superar a população sem indicar erro de cálculo: o eleitor vota onde mantém o domicílio eleitoral (por exemplo, o município de origem), não necessariamente onde mora, e o cadastro pode manter registros de pessoas que o Censo já não conta no município. As idades também têm referências diferentes: o Censo as conta em 31/07/2022 e o arquivo do TSE não informa a data, o que pesa mais nas faixas de um ano (16 a 20).</p>
     </details>
 
     <details className="context-section" open><summary>Comparecimento e abstenção por perfil — {round}º turno</summary>

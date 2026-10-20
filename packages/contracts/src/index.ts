@@ -127,6 +127,7 @@ export const catalogSchema = z.object({
   turnoutProfilesDatasets: z.array(z.lazy(() => turnoutProfilesDatasetSchema)).default([]),
   urbanSurroundingsDatasets: z.array(z.lazy(() => urbanSurroundingsDatasetSchema)).default([]),
   tractGeometriesDatasets: z.array(z.lazy(() => tractGeometriesDatasetSchema)).default([]),
+  tractDisplayDatasets: z.array(z.lazy(() => tractDisplayDatasetSchema)).default([]),
 });
 const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
@@ -416,6 +417,50 @@ export const tractGeometriesDatasetSchema = z.object({
   id: z.string(), kind: z.literal('tract-geometries'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(), notes: z.array(z.string()),
   totals: z.object({ rows: nonnegative, tracts: nonnegative, multipart: nonnegative, invalid: nonnegative, comparedPlaces: nonnegative, equalPlaces: nonnegative }),
 });
+/**
+ * Desenho dos setores (fase B3, `2022/geo/tract-display`): largura do SVG, altura máxima, margem e limite do desenho comprimido de
+ * uma vista. Vistas acima do limite são divididas em distritos ou subdistritos.
+ */
+export const TRACT_DISPLAY = { width: 600, maxHeight: 560, margin: 8, gzipLimit: 250 * 1024 } as const;
+export const tractDisplayDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
+  id: z.string(), kind: z.literal('tract-display'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(), notes: z.array(z.string()),
+  config: z.object({ width: nonnegative, maxHeight: nonnegative, margin: nonnegative, gzipLimit: nonnegative, tolerancePx: z.number().positive(), precision: nonnegative }),
+  totals: z.object({ municipalities: nonnegative, tracts: nonnegative, excludedTracts: nonnegative, views: nonnegative, servedViews: nonnegative, splitViews: nonnegative, districtViews: nonnegative, subdistrictViews: nonnegative,
+    exactTracts: nonnegative, invalidAfterSimplify: nonnegative, oversizeServed: nonnegative }),
+});
+/**
+ * Mapa local → setor de um município (fase B3). `view`: município (código IBGE, 7 dígitos), distrito (9) ou subdistrito (11);
+ * sem `view`, a do município. `paths=1` inclui os caminhos SVG (só a imagem do mapa os usa; a página traz legenda e locais).
+ */
+export const tractMapQuerySchema = placeTractsQuerySchema.extend({ view: z.string().regex(/^\d{7}(\d{2}){0,2}$/).optional(), paths: z.enum(['0', '1']).default('0') }).strict();
+export const TRACT_MAP_LEVELS = ['municipality', 'district', 'subdistrict'] as const;
+/** Situação do setor no arquivo de renda: faixa da mediana, mediana que não se aplica, setor omitido ("X") ou sem linha no arquivo. */
+export const TRACT_INCOME_STATUSES = ['band', 'no-data', 'undisclosed', 'missing'] as const;
+const tractMapViewSchema = z.object({ id: z.string().regex(/^\d{7}(\d{2}){0,2}$/), level: z.enum(TRACT_MAP_LEVELS), name: z.string().nullable(), tracts: nonnegative, split: z.boolean(), oversize: z.boolean() });
+// Faixas 1–5 de `INCOME_BANDS` (declaradas adiante; o mesmo limite de `placeTractSchema`).
+const bandIndex = z.number().int().min(1).max(5);
+export const tractMapSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('awaiting-import') }),
+  z.object({
+    status: z.literal('published'), displayBatchId: z.string(), incomeBatchId: z.string(), associationBatchId: z.string(),
+    // Todas as vistas do município (a do município primeiro); `view`: a pedida. Vista dividida não tem desenho, legenda nem locais.
+    views: z.array(tractMapViewSchema).min(1), view: tractMapViewSchema.extend({ width: nonnegative, height: nonnegative }),
+    // Setores da vista por faixa de renda mediana do responsável (moradores em domicílios particulares permanentes ocupados).
+    legend: z.object({ bands: z.array(z.object({ index: bandIndex, tracts: nonnegative, residents: nonnegative })).length(5),
+      noData: z.object({ tracts: nonnegative, residents: nonnegative }), undisclosed: z.object({ tracts: nonnegative }), missing: z.object({ tracts: nonnegative }) }).nullable(),
+    tracts: z.array(z.object({ code: z.string().regex(/^\d{15}$/), status: z.enum(TRACT_INCOME_STATUSES), band: bandIndex.nullable(), simplified: z.boolean(), path: z.string() })).optional(),
+    // Locais da vista: associados a um setor dela ou, sem setor, com coordenada dentro do quadro. `x`/`y` na escala do SVG.
+    places: z.array(z.object({ zone: z.number().int().positive(), code: z.string(), name: z.string().nullable(), status: z.enum(TRACT_STATUSES), tract: z.string().regex(/^\d{15}$/).nullable(),
+      band: bandIndex.nullable(), electors: nonnegative, x: z.number().nullable(), y: z.number().nullable() })),
+  }).superRefine((data, ctx) => {
+    if (data.view.split && (data.legend !== null || data.places.length || data.tracts?.length)) ctx.addIssue({ code: 'custom', message: 'Vista dividida não tem desenho nem locais.' });
+    if (!data.view.split && data.legend === null) ctx.addIssue({ code: 'custom', message: 'Vista servida sem legenda.' });
+    if (data.tracts && data.legend && data.tracts.length !== data.view.tracts) ctx.addIssue({ code: 'custom', message: 'Setores da vista incompletos.' });
+    if (data.tracts?.some((tract) => (tract.status === 'band') !== (tract.band !== null))) ctx.addIssue({ code: 'custom', message: 'Faixa só para setor com mediana.' });
+  }),
+]);
+export type TractMap = z.infer<typeof tractMapSchema>;
 export const placeProfilesDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('place-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),
