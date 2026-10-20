@@ -35,6 +35,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <Link href="/mapa"><BrandIcon name="territory" />Mapa</Link>
               <Link href="/perfis"><BrandIcon name="population" />Perfis</Link>
               <Link href="/participacao"><BrandIcon name="participation" />Participação</Link>
+              <Link href="/propostas"><BrandIcon name="proposals" />Propostas</Link>
               <Link href="/fontes"><BrandIcon name="sources" />Fontes</Link>
               <Link href="/metodologia"><BrandIcon name="methodology" />Metodologia</Link>
             </nav>
