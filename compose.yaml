@@ -47,6 +47,9 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      # Vai para a compilação e fica na imagem; vazia ou ausente, o padrão local.
+      args:
+        SITE_URL: ${SITE_URL:-http://localhost:3000}
     environment:
       API_URL: http://api:3001
       NODE_ENV: production

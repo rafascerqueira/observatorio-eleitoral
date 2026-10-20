@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { BrandIcon } from '../components/brand-icon';
+import { siteUrl } from '../lib/site-url';
 import './globals.css';
 import './atlas.css';
 import './forms.css';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.SITE_URL ?? 'http://localhost:3000'),
+  metadataBase: siteUrl(process.env.SITE_URL),
   title: { default: 'Mente Eleitoral — votação e população', template: '%s · Mente Eleitoral' },
   applicationName: 'Mente Eleitoral',
   description: 'Um olhar único sobre votação e população. Explore resultados eleitorais e contexto territorial com dados oficiais do TSE e do IBGE e metodologia transparente.',
