@@ -582,3 +582,21 @@ Pendente:
 - auditoria `audit:proposals-text`, só leitura, na máquina com os originais;
 - decisões 1–5 de Rafael (seção 19);
 - correções sem reimportação (`SITE_URL`, README "sem push").
+
+## 46. Script da auditoria do texto das propostas — 20/10/2026
+
+Rafael pediu o script do passo 1 do plano da v2 (seção 19 do [plano de melhorias](docs/plano-postgis-propostas.md)).
+
+- **Script:** `npm run audit:proposals-text` (`apps/importer/src/proposals-text-audit.ts`, funções em `proposals-text.ts`). Só leitura: originais preservados, staging próprio, relatório e imagens em `data/analysis/propostas-texto-<data>/`.
+- **Comparação com a v1:** opcional, com o banco em modo só leitura.
+- **Normalização:** a proposta é um protótipo dentro do script; a busca publicada não muda.
+
+Verificação: typecheck, 121 testes (6 novos no importador) e o script inteiro rodado de duas formas, ambas desfeitas ao final:
+- numa cópia do repositório, com ZIPs sintéticos;
+- contra um PostgreSQL 16 temporário com uma v1 simulada.
+
+Na mesma sessão, ficou confirmado que o PostgreSQL rejeita NUL num parâmetro de texto (`22021 invalid byte sequence for encoding "UTF8": 0x00`). Esse era o ponto não reproduzido do §44.
+
+Pendente:
+- rodar a auditoria nos PDFs reais, na máquina com `data/` ou nesta sessão depois de liberar `cdn.tse.jus.br` na rede do ambiente;
+- as decisões 1–5 da seção 19, a partir do relatório.

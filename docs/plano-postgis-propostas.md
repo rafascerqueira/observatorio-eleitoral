@@ -329,7 +329,19 @@ A auditoria nos PDFs reais não rodou nesta sessão: a rede do ambiente recusa `
 
 ### Passo 1 — auditoria do texto, sem publicação (`npm run audit:proposals-text`)
 
-Script só de leitura, como o inventário da D1. Lê o ZIP preservado (`1c8853cc…`), extrai os PDFs em `data/staging`, roda `pdftotext -layout` e `-bbox-layout` por página e não escreve no banco. Relatório em `data/analysis/propostas-texto-<data>/report.json`, por documento e por candidatura, para que o efeito seja comparável entre candidaturas:
+Script só de leitura, como o inventário da D1. Lê o ZIP preservado (`1c8853cc…`), extrai os PDFs em `data/staging/proposta_governo_2022-auditoria/` (diretório próprio, para não apagar o de uma importação em andamento), roda `pdftotext -layout` e `-bbox-layout` por página e não escreve no banco. Relatório em `data/analysis/propostas-texto-<data>/report.json`, por documento e pelas candidaturas que o apresentaram, para que o efeito seja comparável entre candidaturas.
+
+Implementado em 20/10/2026, ainda sem execução nos PDFs reais:
+- **Arquivos:** `apps/importer/src/proposals-text-audit.ts`; funções em `proposals-text.ts`: leitor restrito do `-bbox-layout`, protótipo `proposedNormalize` (não usado em publicação) e medidas.
+- **Execução:** `npm run audit:proposals-text`; `-- --sem-imagens` dispensa as imagens.
+- **Imagens:** as páginas listadas para conferência são gravadas em `paginas/` (80 dpi, cinza).
+- **Comparação com a v1:** com `DATABASE_URL`, só por leitura (`default_transaction_read_only`), confere que o texto `-layout` reproduz o das páginas nativas da v1 publicada. Também mede o efeito da normalização proposta no texto do OCR da v1. Sem banco, registra o motivo.
+- **Verificação:**
+  - 6 testes: leitor, normalização, junções, contagens e uma auditoria de ponta a ponta com PDF sintético no `pdftotext` real;
+  - execução do script inteiro numa cópia do repositório, com ZIPs sintéticos no lugar dos do TSE (documento repetido em duas candidaturas, `leiame.pdf`, página abaixo do limiar);
+  - execução contra um PostgreSQL 16 temporário com uma v1 simulada: mesmo ZIP, página idêntica e página alterada detectadas, ligadura do OCR recuperada.
+
+O relatório traz:
 
 1. **Caracteres:** U+FFFD, uso privado (U+E000–U+F8FF), controles, U+00AD (no meio e no fim da linha), hífens U+2010/U+2011, travessão U+2013 entre letras, ligaduras U+FB00–U+FB06, invisíveis (U+200B–U+200D, U+2060, U+FEFF), aspas e apóstrofos tipográficos. O relatório da D1 já tem `replacementChars` por documento: conferir primeiro.
 2. **Colunas:** pares de palavras vizinhas (bigramas normalizados) que só existem no `-layout` (adjacências criadas entre colunas) e só no `-bbox-layout` (recuperadas). As páginas com mais diferenças vão para conferência visual com a imagem da página (`pdftoppm`), como foi feito com o OCR.
@@ -343,7 +355,7 @@ Script só de leitura, como o inventário da D1. Lê o ZIP preservado (`1c8853cc
    - fração de palavras de três ou mais letras sem vogal.
 
    As páginas com os maiores valores vão para conferência visual.
-5. **Efeito na busca:** palavras e bigramas encontráveis com a v1 (texto `-layout` + normalização atual) e com a proposta (texto `-bbox-layout` + normalização nova), por candidatura, com ganhos, perdas e exemplos. Usa todos os tokens do corpus, sem lista de termos escolhida a dedo.
+5. **Efeito na busca:** palavras e bigramas encontráveis com a v1 (texto `-layout` + normalização atual) e com a proposta (texto `-bbox-layout` + normalização nova), por candidatura, com ganhos, perdas e exemplos. Usa todos os tokens do corpus, sem lista de termos escolhida a dedo. As grafias com hífen que o marcador acrescenta (`hyphenatedOnlyV2`) ficam separadas das palavras recuperadas (`tokensOnlyV2`). O que só a v1 encontra (`tokensOnlyV1`, `pairsOnlyV1`) precisa de explicação antes da decisão.
 
 ### Proposta para a v2 (recomendação, a confirmar com a auditoria)
 
