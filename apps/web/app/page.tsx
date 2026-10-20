@@ -100,10 +100,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
 
   return (
     <>
-      <section className="hero" aria-labelledby="titulo">
-        <div className="eyebrow"><span aria-hidden="true" /> DADOS PÚBLICOS · BRASIL</div>
-        <h1 id="titulo">Um olhar sobre as eleições.<br /><span>Com contexto e transparência.</span></h1>
-        <p className="hero-description">Explore os resultados eleitorais, consulte seus municípios e conheça o contexto dos territórios. Fontes oficiais, critérios explícitos e espaço para suas próprias perguntas.</p>
+      <section className="hero home-hero" aria-labelledby="titulo">
+        <div className="hero-intro">
+          <div className="hero-copy">
+            <p className="eyebrow"><span aria-hidden="true" /> OBSERVATÓRIO ELEITORAL INDEPENDENTE</p>
+            <h1 id="titulo">Um olhar único sobre<br /><span>votação e população.</span></h1>
+            <p className="hero-description">Explore os resultados eleitorais e o contexto demográfico dos territórios. Dados oficiais do TSE e do IBGE, com fontes abertas e critérios explícitos para suas próprias perguntas.</p>
+            <div className="hero-actions"><a className="hero-action" href="#explorar">Explorar resultados <span aria-hidden="true">↓</span></a><Link href="/mapa">Conhecer os mapas <span aria-hidden="true">↗</span></Link></div>
+          </div>
+          <img className="hero-mark" src="/brand/mark-on-dark.svg" width="366" height="316" alt="" aria-hidden="true" />
+        </div>
         <div className="project-note"><span className="badge">{published ? data.dataset.level === 'national' ? 'Cobertura nacional' : data.dataset.level === 'state' ? 'Publicação estadual' : 'Piloto municipal' : 'Cobertura e fontes'}</span><p>{published ? data.dataset.level === 'state' ? `${officeLabel} · 2022 · ${data.dataset.uf} · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados${data.dataset.rounds ? ` em ${data.dataset.rounds.length === 2 ? 'dois turnos' : 'turno único'}` : ''}. Cada UF tem publicação própria, com fontes e cobertura na transparência.` : data.dataset.level === 'national' ? `Presidência · 2022 · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados nas 27 UFs. ${nationalData?.includesExterior ? 'Exterior incluído no consolidado Brasil.' : 'Exterior consultável à parte; confira a cobertura nas fontes.'}` : 'São Paulo · Presidência · 2022. A expansão nacional só aparece após a reconciliação.' : 'A disponibilidade depende do recorte consultado. Veja as versões publicadas e o andamento das importações na transparência.'}</p></div>
       </section>
 

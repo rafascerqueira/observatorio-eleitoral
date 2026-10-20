@@ -1,4 +1,8 @@
-# Observatório eleitoral brasileiro
+# Mente Eleitoral
+
+![Mente Eleitoral — Um olhar único sobre votação e população](apps/web/public/brand/banner.svg)
+
+**Um olhar único sobre votação e população.** Observatório eleitoral brasileiro independente. Nome e identidade visual 03A (petróleo, terracota e tons claros) definidos em 19/10/2026; aplicações e originais em [identidade visual](docs/identidade/2026-10-19/README.md).
 
 Projeto de dashboard público, gratuito e sem fins lucrativos para explorar eleições e contexto territorial com dados oficiais. A implementação está disponível **localmente, sem implantação externa**. O [planejamento](plan.md) separa o estado vigente, as decisões e o histórico; `AGENTS.md` reúne as orientações para assistentes de código.
 
@@ -47,7 +51,7 @@ npm run dev
 
 Abra <http://localhost:3000>. A API fica em <http://127.0.0.1:3001>. Sem importação, a interface mostra o estado vazio — nunca números de exemplo.
 
-A aplicação e os importadores leem o `.env` da raiz; variáveis já definidas no ambiente têm precedência. O comando acima preserva um `.env` existente. Se alterar `POSTGRES_PORT`, usuário, senha ou banco, ajuste também `DATABASE_URL`. Credenciais do exemplo são apenas locais, e mudar usuário/senha não altera um banco já inicializado no volume.
+A aplicação e os importadores leem o `.env` da raiz; variáveis já definidas no ambiente têm precedência. O comando acima preserva um `.env` existente. Se alterar `POSTGRES_PORT`, usuário, senha ou banco, ajuste também `DATABASE_URL`. Credenciais do exemplo são apenas locais, e mudar usuário/senha não altera um banco já inicializado no volume. Na web, `SITE_URL` define a origem absoluta das imagens de compartilhamento (padrão local: `http://localhost:3000`); qualquer hospedagem futura precisa definir essa variável na compilação da web.
 
 `Ctrl+C` encerra os servidores de desenvolvimento; `npm run db:stop` para o banco preservando o volume. `npm run build` confere a compilação. Para executar o conjunto compilado sem watch, use o perfil Docker abaixo: a web tem saída `standalone` e o Dockerfile executa seu servidor Node com os arquivos estáticos. O `next start` do script da workspace web não é a forma indicada para essa configuração.
 

@@ -1,6 +1,6 @@
-# Contexto do projeto — Observatório eleitoral brasileiro
+# Contexto do projeto — Mente Eleitoral
 
-Criado em 12/10/2026 e revisado em **19/10/2026**. Fonte de verdade sobre finalidade, princípios, decisões e continuidade do projeto. O resumo abaixo descreve o estado vigente; os registros a partir do §12 preservam o estado de cada marco, inclusive pendências depois resolvidas. Nome e licença continuam sem decisão.
+Criado em 12/10/2026 e revisado em **19/10/2026**. Fonte de verdade sobre finalidade, princípios, decisões e continuidade do projeto. O resumo abaixo descreve o estado vigente; os registros a partir do §12 preservam o estado de cada marco, inclusive pendências depois resolvidas. Nome definido: **Mente Eleitoral**, identidade 03A (petróleo e terracota), conforme §37. Licença continua sem decisão.
 
 ## Estado atual
 
@@ -11,6 +11,7 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 | Resultados eleitorais | Presidência 2022 nacional e exterior; Governador e Senador nas 27 UFs, com turnos e categorias não válidas auditados. Deputados fora do escopo; 2026 e suplementar de RR não importados. |
 | IBGE e perfis TSE | Contexto municipal, mapas, associação local → setor, perfil por local, faixas de renda, participação por perfil, demografia, grupos, sensibilidade e entorno dos domicílios (§34) publicados no banco local. Nove versões atuais e ordem de importação no [README](README.md); IDs e auditorias em [reimportações](docs/reimportacoes-2026-10-18.md). |
 | Interface | Busca com sugestões, listagem municipal compacta/paginada, detalhe de todas as candidaturas, formulários GET sem JS, participação por município/estado civil e mapas por candidatura concluídos. Fase A (§33): setor censitário em cada local e quadro do município por situação; em `/mapa`, abstenção do cargo ou candidatura à escolha, dispersão e exportação CSV. Fase C (§34): entorno dos domicílios no painel do município, no cartão do local e em oito indicadores de `/mapa`. |
+| Identidade | **Mente Eleitoral**, com a identidade 03A (petróleo/terracota), símbolo M/conexões e frase “Um olhar único sobre votação e população”. Marca aplicada ao site, ícones, banner inicial, compartilhamento e README (§37). |
 | Robustez e rastreabilidade | Isolamento por ano/cargo; downloads de relatórios/originais, inclusive GeoPackage; distinção entre falha técnica e ausência na fonte; dependências versionadas e publicação bloqueada por divergência. |
 | Última verificação da aplicação | 86 testes, typecheck/build, nove smokes, 31 regressões HTTP e 60 avaliações automáticas em Chrome/Firefox aprovados em 19/10; nove reexecuções idempotentes e duas comparações integrais das 11 tabelas, com dados anteriores preservados (§28). Fase A (§33): 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox, com os envios dos formulários com e sem JavaScript. Fase C (§34): 106 testes, typecheck/build, nove smokes, 31 regressões e `check:ui` completo nos dois navegadores, com novo cenário de acessibilidade de detalhes abertos. |
 | Operação | npm workspaces, Node 24.21.0, Next.js/NestJS, PostgreSQL/PostGIS e `pg_trgm`. Acesso por `pg`, sem Prisma. API/web temporárias encerradas no fim da verificação; banco preservado. |
@@ -19,7 +20,7 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 
 - **Antes de declarar acessibilidade completa:** leitor de tela humano, Safari e dispositivos reais, zoom de texto/alto contraste do sistema. Chrome/Firefox e verificações automáticas já foram realizados; não substituem esses ensaios.
 - **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
-- **Decisões abertas:** licença, nome definitivo e eventual tratamento da suplementar de Governador de RR/2026. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Ordem definida por Rafael em 19/10: fase B do [plano de melhorias](docs/plano-postgis-propostas.md) e depois a D, cada uma só com novo aviso dele; a E segue sem decisão. As decisões da seção 10 do plano para B e D continuam valendo.
+- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Ordem definida por Rafael em 19/10: fase B do [plano de melhorias](docs/plano-postgis-propostas.md) e depois a D, cada uma só com novo aviso dele; a E segue sem decisão. As decisões da seção 10 do plano para B e D continuam valendo.
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
 - **Manutenção registrada, sem execução autorizada nesta etapa:** limpeza de armazenamento; renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
 
@@ -127,7 +128,7 @@ Monorepo TypeScript com **npm workspaces**, Node 24.21.0 e npm 12.2.0 como refer
 
 Importações fora das requisições do visitante. Preservar originais e versões anteriores; preparar, validar e só então trocar a publicação. Usar SQL em lote e agregados por território, sem enviar a base nacional inteira ao navegador. A fase espacial usa PostGIS; seção, local e setor mantêm chaves/universos próprios.
 
-Backend único, sem microserviços, Redis ou filas sem necessidade demonstrada. Compose é ambiente local; a web empacotada usa saída `standalone`, conforme o Dockerfile. Hospedagem, limites de carga e restauração em destino exigem verificação própria antes de implantação autorizada. Nome definitivo e licença permanecem em aberto.
+Backend único, sem microserviços, Redis ou filas sem necessidade demonstrada. Compose é ambiente local; a web empacotada usa saída `standalone`, conforme o Dockerfile. Hospedagem, limites de carga e restauração em destino exigem verificação própria antes de implantação autorizada. Nome definitivo: Mente Eleitoral (§37); licença permanece em aberto.
 
 ## 9. Validação e rastreabilidade
 
@@ -469,6 +470,40 @@ Verificação:
 Problemas encontrados e corrigidos durante a verificação: (1) a rota do catálogo não listava a publicação do entorno, embora o contrato a previsse; o `smoke:context` pulou o bloco em silêncio e a contagem de requisições denunciou. Corrigido, com teste da API que falharia sem a correção. (2) Com os detalhes abertos, o axe acusou regiões com o mesmo nome (`landmark-unique`) na tabela do setor repetida em cada cartão; o `check:ui` ganhou o cenário “Acessibilidade com detalhes abertos (municípios)”. (3) No celular, a regra global `min-width: 790px` das tabelas roláveis empurrava a coluna de percentuais da tabela do setor para fora do cartão; ela virou tabela simples de duas colunas, como a das candidaturas, o que também resolveu (2).
 
 Encerramento: API e web temporárias encerradas, portas 3000/3001 livres; banco saudável, agora com a publicação do entorno. Não verificados: leitor de tela humano, Safari e dispositivos reais. A pedido de Rafael, código, testes, scripts e documentação da fase C foram consolidados em commit local, sem push. Ele definiu a sequência seguinte — fase B (começando pelo ensaio sem persistência, B1) e depois D — e pediu para aguardar novo aviso antes de iniciar cada uma.
+
+## 35. Exploração da marca e identidade visual — 19/10/2026
+
+Rafael solicitou versões de nome, logotipo e ícones para decidir a identidade do observatório, sugerindo Mente Eleitoral, Mentalidade Eleitoral e a frase “Um olhar único sobre votação e população”. No início: `main` em `c1484cf`, com modificação preexistente em `apps/web/next-env.d.ts`, preservada. Lidos o resumo vigente e os últimos registros do planejamento.
+
+Criadas três pranchas com a ferramenta integrada de geração de imagens: **01 — Olhar / Mente Eleitoral**, olhar com barras de dados em marinho/teal; **02 — Conexões / Mentalidade Eleitoral**, M conectado em berinjela/lilás; **03 — Territórios / Mente Eleitoral**, monograma territorial em petróleo/terracota e tipografia editorial. Cada prancha contém logotipo, aplicação escura, símbolo para ícone e quatro ícones de navegação. Arquivos, apresentação e pedidos completos em [docs/identidade/2026-10-19/](docs/identidade/2026-10-19/README.md). A frase sugerida foi mantida nas três para comparação.
+
+Verificação: revisão visual das três imagens (nomes, frase, acentos e elementos solicitados), integridade/dimensões dos PNGs, leitura do JSON dos pedidos, referências locais e `git diff --check`. Sem testes/build/smokes: somente estudos gráficos e documentação. Nome e identidade seguem em decisão; ícones ainda estão incorporados às pranchas, com refinamento vetorial, exportações individuais e verificação em tamanhos reais pendentes após a escolha. Sem mudanças na aplicação, importações, serviços iniciados ou implantação. Mudanças desta etapa sem commit, integralmente descritas neste registro.
+
+
+## 36. Refinamento do M e variante verde-oliva — 19/10/2026
+
+Rafael preferiu a direção 03 do §35 e solicitou linhas/grafos no M para remeter a cérebro, além de uma variante substituindo o petróleo por verde-oliva. Conferidos planejamento, histórico e estado do Git; preservadas a modificação preexistente em `apps/web/next-env.d.ts` e as propostas anteriores.
+
+Criadas duas edições pela ferramenta integrada de imagens: **03A — M/conexões em petróleo**, com curvas internas e pontos de conexão, e **03B — M/conexões em verde-oliva** (`#4B5134` solicitado), derivada da 03A, mantendo tipografia editorial, frase, terracota e tons claros. As imagens e os pedidos completos estão em [docs/identidade/2026-10-19/](docs/identidade/2026-10-19/README.md). Rafael ainda decidirá sobre o símbolo refinado e a paleta final.
+
+Verificação: revisão visual das duas pranchas, texto/acentos, mudança para oliva, correspondência geral do símbolo nas aplicações, presença dos quatro ícones; integridade/dimensões dos PNGs, leitura dos pedidos JSON, referências e `git diff --check`. Sem testes/build/smokes por serem apenas imagens e documentação. Sem alteração da aplicação, importações, serviços iniciados ou implantação. Pranchas são estudos; desenho vetorial, exportações individuais e avaliação em tamanhos reais seguem pendentes após a escolha. Mudanças desta etapa sem commit, descritas neste registro.
+
+
+## 37. Aplicação de Mente Eleitoral e revisão do banner — 19/10/2026
+
+Rafael aprovou a identidade **03A** (petróleo/terracota) e o nome **Mente Eleitoral**, pedindo sua aplicação e a revisão posterior do banner. Conferidos histórico e estado inicial (`c1484cf`), preservadas as propostas dos §§35–36 e a modificação preexistente em `apps/web/next-env.d.ts` (restaurada ao conteúdo exato do início depois dos arquivos gerados pelo build). Lidas as orientações da web e a documentação local do Next.js sobre fontes, metadados e ícones.
+
+Implementação: contornos do M/conexões e das letras da prancha 03A convertidos em caminhos SVG locais, com versões clara, para fundo escuro e monocromática; logotipo sem dependência de fonte externa. Aplicados no cabeçalho, seis ícones de navegação, ícone SVG da aba, ícone Apple de 180 px, título/metadados Open Graph/Twitter e rodapé. Paleta normalizada em petróleo `#103F4C`, terracota `#BD7159`, aveia `#F1E7D7` e branco `#FFFDFA`, com variantes de terracota para texto/foco; títulos usam a pilha local Georgia/Times/serif. Escalas dos mapas preservadas. Nome e situação atualizados no resumo vigente, README e documentação de identidade.
+
+Banner inicial revisado: frase “Um olhar único sobre votação e população”, explicação sobre TSE/IBGE e acessos à consulta e aos mapas; marca em destaque no desktop e composição simplificada no celular. A cobertura continua sendo a do recorte publicado, sem números novos ou estimados. Criados também banner SVG do README e imagem de compartilhamento 1200 × 630; exportador local `scripts/render-brand.mjs` usa Chrome com rede bloqueada. `SITE_URL` configura a origem dos metadados (padrão local; configurável na compilação futura); `.env` existente preservado. Dockerfile inclui `public/` na execução standalone. Arquivos e referências em [identidade visual](docs/identidade/2026-10-19/README.md).
+
+Verificações:
+
+- **106 testes** (28 API, 34 importador, 33 web, 11 contratos), typecheck e build completo aprovados; build da web repetido após os últimos ajustes de cor e metadados, sem avisos. `npm run smoke` aprovado com banco/API/web locais e dados já publicados.
+- **72 avaliações axe/refluxo:** 12 páginas × 1280/375/320 px, em Chrome 151.0.7922.71 e Firefox 158.0, sem violações automáticas ou rolagem horizontal externa às tabelas. Relatórios `data/analysis/ui-checks/2026-10-19T18-27-40.890Z/` (Chrome) e `2026-10-19T18-30-01.156Z/` (Firefox). Cenário adicional de foco por teclado, movimento reduzido, estabilidade de consulta e captura em alto contraste aprovado no Chrome, CLS 0 (`2026-10-19T18-30-32.276Z/`). A primeira execução do roteiro completo foi interrompida com saída 143 durante os envios sem JavaScript; não foi declarada aprovada integralmente. Antes da interrupção, passaram os seis envios com JavaScript no Chrome; as subrotinas visuais foram concluídas separadamente por navegador. Os demais cenários do roteiro completo não foram todos repetidos nesta etapa.
+- **Marca e banner:** nome, frase, metadados/imagem de compartilhamento, ícones, carregamento de todas as imagens, links dos arquivos públicos e âncora da consulta conferidos em 1280/1024/768/650/375/320 px, sem erros de execução nem refluxo; capturas em `data/analysis/brand-2026-10-19/`. Revisão visual do cabeçalho/banner em 1280 e 375 px e do banner de compartilhamento. SVGs, dimensões/integridade dos PNGs, referências locais, sintaxe do exportador e `git diff --check` conferidos.
+
+Encerramento: API e web temporárias encerradas, portas 3000/3001 livres; PostgreSQL disponível, com conferência final somente de leitura. Sem importação, escrita nos dados ou implantação externa. Imagem Docker não reconstruída; arquivos públicos verificados na execução standalone local. Leitor de tela humano, Safari e dispositivos reais continuam pendentes; verificações automáticas não certificam toda a acessibilidade. Alterações desta etapa e estudos anteriores de identidade permanecem sem commit, descritos aqui e nos §§35–36.
 
 ## 38. Fase B1 do plano de melhorias: ensaio espacial sem persistência — 19/10/2026
 
