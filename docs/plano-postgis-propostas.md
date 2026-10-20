@@ -299,4 +299,118 @@ Conferência do OCR por amostra (imagem da página × texto gravado): nº 12, p.
 - Normalização única nos contratos (`searchNormalize`/`searchText`): minúsculas sem acentos, espaços colapsados, palavra partida por hífen no fim da linha reunida; o mapa de posições permite recortar o trecho do texto original. Busca por `strpos` no texto normalizado (450 páginas dispensam índice; sem dicionário `portuguese`, para continuar literal).
 - `GET /elections/proposals` e página `/propostas` (GET, funciona sem JavaScript): todas as candidaturas na ordem do número, cobertura por método, páginas com ocorrência e trechos das cinco primeiras, OCR marcado; “nenhuma ocorrência literal no texto extraído” com o aviso de que não indica ausência do tema. Seções em `/metodologia#propostas` e `/fontes#propostas`; licença e link para o ZIP preservado.
 - Falha encontrada na verificação e corrigida: com a publicação no banco, o catálogo respondia 500, porque o escopo `2022/proposals/` caía na lista de publicações eleitorais; agora fica em `proposalsDatasets`, com teste.
-- Verificação: typecheck, testes (API com o catálogo e a busca; web com ausência ≠ não propõe, aviso do OCR só para documentos com OCR e trecho do PDF tratado como texto), build; `smoke:context` (113 requisições, com o bloco das propostas e o ZIP original), os demais oito smokes, `check:data`, `check:regressions`, `check:publication` e `check:ui` com `/propostas` (com e sem busca, 12 avaliações, sem violações) contra API/web compiladas nas portas 3100/3101. Pendente: link na navegação (o cabeçalho está em `layout.tsx`, com mudanças do Codex ainda sem commit).
+- Verificação: typecheck, testes (API com o catálogo e a busca; web com ausência ≠ não propõe, aviso do OCR só para documentos com OCR e trecho do PDF tratado como texto), build; `smoke:context` (113 requisições, com o bloco das propostas e o ZIP original), os demais oito smokes, `check:data`, `check:regressions`, `check:publication` e `check:ui` com `/propostas` (com e sem busca, 12 avaliações, sem violações) contra API/web compiladas nas portas 3100/3101. Link na navegação adicionado depois, no commit `443c0d1`, sem registro da verificação feita nele (plan.md §44).
+
+## 19. Plano — `proposals-2022-v2` da busca nas propostas (proposto em 20/10/2026, aguardando decisões)
+
+Origem: revisão de código de 20/10/2026 (plan.md §44). A v1 perde ocorrências que estão nos PDFs, e a perda varia com o PDF de cada candidatura:
+1. `pdftotext -layout` põe as colunas lado a lado na mesma linha. Cria adjacências falsas entre colunas e impede reunir a palavra partida no fim da linha.
+2. A normalização não trata ligaduras (ﬁ, ﬂ), caracteres invisíveis nem hífens Unicode.
+3. A junção do hífen de fim de linha sempre descarta o hífen: "pré-\nsal" vira "presal", e a busca "pré-sal" não o encontra.
+4. Página com texto nativo ilegível (fonte sem mapa Unicode) não passa por OCR.
+5. A versão da normalização não fica na publicação: qualquer mudança nela sem reimportação faz a busca responder 503.
+
+A v1 (`cce780ce…`) não é reescrita: a v2 é nova versão do importador, com validação própria, e a troca da publicação continua atômica (`preparePublication`).
+
+### Evidência já obtida (PDF sintético, sem dados reais)
+
+`pdftotext` 24.02.0, a mesma versão da v1, sobre um PDF de duas páginas gerado para o teste (Helvetica, WinAnsi). Página 1: uma coluna com "prote-/ção", "pré-/sal", "educa" + hífen invisível (0xAD)/"ção" e "2022-/2026" em fim de linha. Página 2: duas colunas com "prote-/ção" na da esquerda.
+
+| Modo | Colunas | Hífen de fim de linha |
+| --- | --- | --- |
+| `-layout` (v1) | Lado a lado na mesma linha: "esquerda fala de prote-␣␣␣␣direita fala de saude" | Preservado, mas a continuação fica depois do texto da outra coluna |
+| padrão (ordem de leitura) | Separadas | Removido pelo próprio Poppler, sem volta: "proteção", mas também "présal" e "20222026" |
+| `-raw` | Ordem do conteúdo do PDF, que depende do programa que o gerou | Preservado |
+| `-bbox-layout` (fluxos, blocos, linhas e palavras) | Separadas, na mesma ordem de leitura do modo padrão | Preservado: remontado, dá "prote-\nção", "pré-\nsal" e "2022-\n2026" |
+
+O 0xAD no fim da linha foi tratado como hífen comum: sai como "-" no `-layout` e no `-raw` e é removido no modo padrão.
+
+A auditoria nos PDFs reais não rodou nesta sessão: a rede do ambiente recusa `cdn.tse.jus.br` e `data/` não existe aqui. Ela é o primeiro passo, onde os originais estão preservados.
+
+### Passo 1 — auditoria do texto, sem publicação (`npm run audit:proposals-text`)
+
+Script só de leitura, como o inventário da D1. Lê o ZIP preservado (`1c8853cc…`), extrai os PDFs em `data/staging`, roda `pdftotext -layout` e `-bbox-layout` por página e não escreve no banco. Relatório em `data/analysis/propostas-texto-<data>/report.json`, por documento e por candidatura, para que o efeito seja comparável entre candidaturas:
+
+1. **Caracteres:** U+FFFD, uso privado (U+E000–U+F8FF), controles, U+00AD (no meio e no fim da linha), hífens U+2010/U+2011, travessão U+2013 entre letras, ligaduras U+FB00–U+FB06, invisíveis (U+200B–U+200D, U+2060, U+FEFF), aspas e apóstrofos tipográficos. O relatório da D1 já tem `replacementChars` por documento: conferir primeiro.
+2. **Colunas:** pares de palavras vizinhas (bigramas normalizados) que só existem no `-layout` (adjacências criadas entre colunas) e só no `-bbox-layout` (recuperadas). As páginas com mais diferenças vão para conferência visual com a imagem da página (`pdftoppm`), como foi feito com o OCR.
+3. **Hífens:**
+   - junções letra/dígito + hífen + quebra + letra/dígito em cada modo;
+   - quantas atravessam linha em branco;
+   - quantas formas reunidas ("pre-sal") também aparecem inteiras no meio de uma linha em algum documento, o que mede o caso "pré-sal".
+4. **Qualidade do texto nativo, por página:**
+   - fração de U+FFFD, uso privado e controles sobre os caracteres visíveis;
+   - fração de letras;
+   - fração de palavras de três ou mais letras sem vogal.
+
+   As páginas com os maiores valores vão para conferência visual.
+5. **Efeito na busca:** palavras e bigramas encontráveis com a v1 (texto `-layout` + normalização atual) e com a proposta (texto `-bbox-layout` + normalização nova), por candidatura, com ganhos, perdas e exemplos. Usa todos os tokens do corpus, sem lista de termos escolhida a dedo.
+
+### Proposta para a v2 (recomendação, a confirmar com a auditoria)
+
+- **Extração:**
+  - `pdftotext -bbox-layout`, com o texto da página remontado pelos fluxos, blocos e linhas do Poppler: palavras com espaço, linhas com "\n", blocos e fluxos com linha em branco.
+  - Leitor restrito a `page`/`flow`/`block`/`line`/`word`, decodificando só as entidades XML. O número de `<page>` precisa conferir com o `pdfinfo`.
+  - Perdem-se os espaços internos de tabelas, que a busca e os trechos já colapsam.
+- **Normalização `proposals-search-v2`, nos contratos:**
+  - Ligaduras U+FB00–U+FB06 viram letras.
+  - Invisíveis (U+00AD no meio da linha, U+200B–U+200D, U+2060, U+FEFF) são removidos sem virar espaço; hoje o U+FEFF vira espaço e parte a palavra.
+  - U+2010 e U+2011 viram "-". Apóstrofos e aspas tipográficos viram `'` e `"`.
+  - Sem NFKD geral: ele também transformaria "nº" em "no" e "²" em "2", e a busca "no" passaria a casar com "nº".
+  - O travessão U+2013 não muda, porque separa orações, salvo se a auditoria mostrar uso em palavras compostas.
+- **Hífen de fim de linha:**
+  - Vale para `-`, U+00AD, U+2010 e U+2011 entre letra ou dígito e letra ou dígito, seguidos de quebra.
+  - Em vez de descartar o hífen, o texto normalizado guarda um marcador (U+00AD, depois de removidos os demais). O marcador significa "hífen que pode ou não pertencer à palavra" e casa com nada ou com "-".
+  - Assim, "proteção" encontra "prote-\nção" e "pré-sal" encontra "pré-\nsal". "presal" também encontra, porque a quebra não diz qual grafia é a certa.
+  - O hífen no meio da linha continua literal: "presal" não encontra "pré-sal".
+- **Busca:**
+  - O termo normalizado vira uma expressão regular: caracteres especiais escapados, marcador opcional entre caracteres e o "-" do termo casando "-" ou o marcador.
+  - Ela é aplicada no PostgreSQL (`search_text ~ $2`) e, para localizar o trecho, na API. Divergência entre os dois continua respondendo 503.
+  - As 438 páginas (1,6 MB) dispensam índice.
+- **Páginas ilegíveis:**
+  - Página nativa acima do limiar de ilegibilidade (definido com a auditoria) vai para o OCR.
+  - Fica o texto de melhor qualidade pela mesma medida, não só o mais longo, como hoje.
+  - O que continuar suspeito depois do OCR é contado por documento (`suspectPages`) e aparece na cobertura de `/propostas` e nas notas, como o OCR.
+- **Publicação:**
+  - `VERSION = 'proposals-2022-v2'`.
+  - `method` ganha `extraction: 'bbox-layout'`, `normalization: 'proposals-search-v2'` e os limiares de qualidade, que entram na identidade da publicação, como hoje.
+  - Migração 021 idempotente com `suspect` por página e `suspect_pages` por documento. Nulo significa não medido e nunca é lido como zero.
+- **API:**
+  - Só busca numa publicação cuja `method.normalization` é a do código.
+  - Qualquer outra, inclusive a v1, que não tem o campo, responde 503 explícito: "publicação das propostas com normalização anterior; reimportar".
+  - A consulta devolve todas as páginas encontradas, mas o texto só das cinco primeiras por documento (`row_number() OVER (PARTITION BY sha256 ORDER BY page)`), em vez do texto de todas.
+- **Web:**
+  - A cobertura mostra as páginas suspeitas.
+  - `/metodologia#propostas` explica colunas, hífens e marcador, ligaduras e páginas suspeitas.
+  - Entram junto os achados menores da revisão nessa página: título próprio, nível dos cabeçalhos do grupo e das candidaturas, e texto do grupo "Candidaturas sem votos" derivado de cada candidatura.
+- **Importador:** a mensagem de ferramenta ausente indica o pacote certo (`poppler-utils` ou Tesseract), e há falha clara quando `--version` não imprime nada.
+
+### Validação
+
+- **Testes:**
+  - normalização com cada classe de caractere e cada caso de hífen;
+  - leitor do `-bbox-layout` sobre um PDF sintético como o de cima;
+  - expressão da busca (escapes, marcador, termo com hífen) na API com o simulador do banco;
+  - recusa da v1 pela API nova.
+- **Comparação v1 × v2 por candidatura, sobre todos os tokens:** cada ocorrência da v1 precisa existir na v2 ou estar explicada no relatório (adjacência falsa entre colunas removida). Diferenças por candidatura registradas.
+- **Conferência visual:** amostra das páginas que mais mudaram, por colunas e por qualidade.
+- **Verificações do projeto:** typecheck, testes, build, smokes (`smoke:context` com `proposals-2022-v2`), `check:data`, `check:regressions`, `check:publication` e `check:ui` com `/propostas`.
+
+### Ordem e custo
+
+1. Auditoria na máquina com `data/`: só leitura, minutos.
+2. Decisões abaixo.
+3. Implementação e testes. Não exige dados e pode ser feita em qualquer sessão.
+4. Carga `import:proposals` com a API nova já no ar. A v1 levou cerca de 7 min; leva mais se a regra de qualidade mandar mais páginas ao OCR. Entre a troca de código e a carga, a busca responde o 503 explícito, só no ambiente local.
+5. Registros no plan.md, README, AGENTS (escopo `proposals-2022-v2`) e aqui.
+
+### Decisões para Rafael
+
+1. **Extração:** `-bbox-layout` no lugar de `-layout`, confirmado pela auditoria (recomendado).
+2. **Hífen de fim de linha:** marcador opcional (recomendado), ou manter a regra da v1 (descartar sempre) e declarar o limite em `/metodologia`.
+3. **Caracteres:** lista de mapeamentos acima, com o travessão de fora salvo evidência.
+4. **Páginas ainda suspeitas depois do OCR:** declarar na cobertura (recomendado, como o OCR) ou bloquear a publicação.
+5. **Transição:**
+   - Recomendado: 503 explícito enquanto a publicação ativa for de outra normalização. O ambiente é local e a carga leva minutos.
+   - Alternativa: manter a normalização da v1 congelada no código, para continuar servindo a v1 até a carga.
+
+Fora da v2, sem reimportação, em commit próprio: `SITE_URL` vazio derruba todas as páginas e não chega ao build do Docker; o README ainda diz "sem push" para commits já no `origin/main`.

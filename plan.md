@@ -566,3 +566,19 @@ Revisão de código (Claude Code) sobre o último commit, a fase D2 e a identida
 Verificação: typecheck, 115 testes (novos casos nos contratos, na API e na web; os da API falham contra o contrato anterior), build, e `/propostas` compilada contra uma API falsa que responde 400 (mensagem própria para `q` com NUL; a de 3 a 80 caracteres segue para `q=ab`). Não verificados: smokes, `check:ui` e `/fontes` contra um catálogo real (sem banco nem Docker nesta sessão); a rejeição do NUL pelo PostgreSQL não foi reproduzida localmente. Node 22 na sessão, não o 24 do `.nvmrc`.
 
 Pendente da revisão, sem decisão: busca nas propostas perde ocorrências com `pdftotext -layout` em páginas de colunas, hífens Unicode/invisíveis e ligaduras, e junção de hífen em palavras compostas ("pré-sal"); páginas nativas com texto ilegível (U+FFFD) não vão para OCR; versão da normalização fora do método da publicação. Correção exige `proposals-2022-v2` e reimportação, sem reescrever a v1. Menores: texto fixo do grupo "Candidaturas sem votos", consulta que traz o texto inteiro de todas as páginas encontradas, `SITE_URL` vazio derruba as páginas e não chega ao build do Docker, `/propostas` sem título próprio, cabeçalhos `h3` do grupo e das candidaturas no mesmo nível, mensagem de `version()` no importador, "link na navegação" ainda pendente em `docs/plano-postgis-propostas.md` e README dizendo "sem push".
+
+## 45. Plano da `proposals-2022-v2` da busca nas propostas — 20/10/2026
+
+Rafael pediu o plano para os itens 2–4 da revisão (§44). Ele está na seção 19 do [plano de melhorias](docs/plano-postgis-propostas.md), com auditoria, proposta, validação, ordem e decisões.
+
+Evidência já obtida com um PDF sintético de duas colunas no `pdftotext` 24.02.0, a versão da v1:
+- `-layout` (v1) mistura as colunas na mesma linha e separa a palavra partida da continuação.
+- O modo padrão separa as colunas, mas o Poppler remove o hífen de fim de linha sem volta ("présal", "20222026").
+- `-bbox-layout` separa as colunas e preserva hífens e quebras de linha.
+
+A recomendação é remontar o texto a partir dele e guardar o hífen de fim de linha como marcador opcional na normalização. Nada foi implementado nem importado. A auditoria dos PDFs reais não rodou nesta sessão: a rede do ambiente recusa `cdn.tse.jus.br` e não há `data/` aqui.
+
+Pendente:
+- auditoria `audit:proposals-text`, só leitura, na máquina com os originais;
+- decisões 1–5 de Rafael (seção 19);
+- correções sem reimportação (`SITE_URL`, README "sem push").
