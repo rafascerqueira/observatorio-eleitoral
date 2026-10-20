@@ -44,7 +44,7 @@ export function queryErrors(query: RawQuery, issues: readonly Issue[], mode: 'mu
     zone: 'Informe uma zona de 1 a 9999, usando apenas números. Zeros iniciais são aceitos.',
     section: 'Informe uma seção de 1 a 99999, usando apenas números. Zeros iniciais são aceitos.',
     local: 'Informe um código do local de 1 a 99999, usando apenas números.',
-    search: 'Use até 100 caracteres na busca.',
+    search: 'Use até 100 caracteres na busca, sem caracteres de controle.',
     rows: 'Escolha a dimensão das linhas: gênero, faixa etária, escolaridade ou obrigatoriedade do voto.',
     cols: 'Escolha a dimensão das colunas: gênero, faixa etária, escolaridade ou obrigatoriedade do voto.',
     page: 'A página deve estar entre 1 e 1.000.000. Uma nova consulta começa na primeira página.',

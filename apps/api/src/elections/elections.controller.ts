@@ -524,7 +524,7 @@ export class ElectionsController {
   @Get('proposals')
   async proposals(@Query() query: Record<string, unknown>) {
     const parsed = proposalsQuerySchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException({ message: 'A busca precisa ter de 3 a 80 caracteres.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    if (!parsed.success) throw new BadRequestException({ message: 'A busca precisa ter de 3 a 80 caracteres, sem caracteres de controle.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
     await this.database.check();
     const empty = proposalsResponseSchema.parse({ status: 'awaiting-import' });
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.proposal_pages')::text AS registry");

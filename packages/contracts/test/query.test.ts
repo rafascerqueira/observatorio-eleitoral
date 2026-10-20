@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022, placeGroupBandOf, placeGroupsQuerySchema, turnoutProfilesQuerySchema, mapQuerySchema, mapPageQuerySchema, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, URBAN_COUNTS, URBAN_INDICATORS, MAP_INDICATORS, CENSUS_MAP_INDICATORS, urbanIndex, urbanIdentityErrors, urbanIndicatorCounts, urbanSurroundingsSchema } from '../src';
+import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022, placeGroupBandOf, placeGroupsQuerySchema, turnoutProfilesQuerySchema, mapQuerySchema, mapPageQuerySchema, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, URBAN_COUNTS, URBAN_INDICATORS, MAP_INDICATORS, CENSUS_MAP_INDICATORS, urbanIndex, urbanIdentityErrors, urbanIndicatorCounts, urbanSurroundingsSchema, hasControlCharacters, suggestQuerySchema, proposalsQuerySchema } from '../src';
 
 test('aplica defaults e limita a paginação sem coerção de entradas vazias', () => {
   const defaults = municipalityQuerySchema.parse({});
@@ -101,4 +101,16 @@ test('entorno: 35 contagens na ordem do dicionário, categorias somando a base e
   assert.equal(urbanSurroundingsSchema.safeParse({ tracts: 1, suppressedTracts: 0, counts: coherent.slice(1) }).success, false);
   assert.deepEqual(urbanIndicatorCounts(coherent, 'urban-trees'), { numerator: 0, denominator: 10 }, 'Sem árvores fica fora do numerador');
   for (const key of Object.keys(URBAN_INDICATORS)) { assert.equal(MAP_INDICATORS[key as keyof typeof MAP_INDICATORS].kind, 'entorno', key); assert.ok(CENSUS_MAP_INDICATORS.includes(key as never), key); }
+});
+
+test('buscas em texto livre recusam caracteres de controle, mas não espaços, tabulações nem quebras de linha', () => {
+  for (const value of ['abc\u0000', 'a\u0001b', 'a\u001Fb', 'a\u007Fb', 'a\u0085b']) assert.equal(hasControlCharacters(value), true, JSON.stringify(value));
+  for (const value of ['São Paulo', 'a\tb', 'a\nb', 'a\r\nb', 'proteção-social', 'a\u00A0b']) assert.equal(hasControlCharacters(value), false, JSON.stringify(value));
+  assert.equal(municipalityQuerySchema.safeParse({ search: 'São\u0000' }).success, false);
+  assert.equal(placesQuerySchema.safeParse({ search: 'Col\u0001égio' }).success, false);
+  assert.equal(exteriorQuerySchema.safeParse({ search: 'Lisboa\u0000' }).success, false);
+  assert.equal(suggestQuerySchema.safeParse({ q: 'sa\u0000o' }).success, false);
+  assert.equal(proposalsQuerySchema.safeParse({ q: 'saude\u0000' }).success, false);
+  assert.equal(proposalsQuerySchema.safeParse({ q: 'saúde\tpública' }).success, true);
+  assert.equal(municipalityQuerySchema.parse({ search: '  São Paulo  ' }).search, 'São Paulo');
 });

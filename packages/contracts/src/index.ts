@@ -19,13 +19,20 @@ export const SINGLE_ROUND_OFFICES: readonly Office[] = ['senator'];
 export const isStateOffice = (office: Office) => STATE_OFFICES.includes(office);
 const integerParameter = (minimum: number, maximum: number, fallback: number) =>
   z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(minimum).max(maximum)).default(fallback);
+/**
+ * Caracteres de controle (fora espaços, tabulações e quebras de linha) não existem nos nomes nem nos textos publicados, e o NUL
+ * nem pode ser enviado ao PostgreSQL: a busca com eles é recusada como inválida, em vez de falhar como banco indisponível.
+ */
+export const hasControlCharacters = (value: string) => /(?!\s)\p{Cc}/u.test(value);
+const CONTROL_CHARACTERS_MESSAGE = 'A busca não aceita caracteres de controle.';
+const searchInput = (maximum: number) => z.string().trim().max(maximum).refine((value) => !hasControlCharacters(value), CONTROL_CHARACTERS_MESSAGE);
 
 export const municipalityQuerySchema = z.object({
   year: z.enum(['2022', '2026']).default('2022'),
   round: z.enum(['1', '2']).default('1'),
   office: z.enum(OFFICES).default('president'),
   uf: z.enum(STATES).optional(),
-  search: z.string().trim().max(100).optional(),
+  search: searchInput(100).optional(),
   page: integerParameter(1, 1_000_000, 1),
   pageSize: integerParameter(1, 100, 25),
   sort: z.enum(['municipality', 'uf']).default('municipality'),
@@ -662,7 +669,7 @@ export const contextResponseSchema = z.discriminatedUnion('status', [
 export type ContextResponse = z.infer<typeof contextResponseSchema>;
 
 /** Sugestões de município enquanto se digita: só municípios publicados no recorte (cargo, UF). */
-export const suggestQuerySchema = municipalityQuerySchema.pick({ year: true, office: true, uf: true }).extend({ q: z.string().trim().min(2).max(60) }).strict();
+export const suggestQuerySchema = municipalityQuerySchema.pick({ year: true, office: true, uf: true }).extend({ q: searchInput(60).min(2) }).strict();
 export type SuggestQuery = z.infer<typeof suggestQuerySchema>;
 export const SUGGESTION_MATCHES = ['prefix', 'word', 'contains', 'similar'] as const;
 export const suggestResponseSchema = z.object({
@@ -711,8 +718,8 @@ export const proposalsDatasetSchema = z.object({
   totals: z.object({ candidacies: nonnegative, documents: nonnegative, pages: nonnegative, nativePages: nonnegative, ocrPages: nonnegative, emptyPages: nonnegative }),
 });
 export type ProposalsDataset = z.infer<typeof proposalsDatasetSchema>;
-/** Busca literal: de 3 a 80 caracteres depois da normalização. Sem `q`, só a cobertura. */
-export const proposalsQuerySchema = z.object({ year: z.literal('2022').default('2022'), q: z.string().max(200).optional()
+/** Busca literal: de 3 a 80 caracteres depois da normalização, sem caracteres de controle. Sem `q`, só a cobertura. */
+export const proposalsQuerySchema = z.object({ year: z.literal('2022').default('2022'), q: z.string().max(200).refine((value) => !hasControlCharacters(value), CONTROL_CHARACTERS_MESSAGE).optional()
   .refine((value) => value === undefined || value.trim() === '' || (searchText(value).length >= 3 && searchText(value).length <= 80), 'A busca precisa ter de 3 a 80 caracteres.') }).strict();
 const proposalDocumentSchema = z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), file: z.string(), pages: nonnegative, nativePages: nonnegative, ocrPages: nonnegative, emptyPages: nonnegative })
   .refine((item) => item.nativePages + item.ocrPages + item.emptyPages === item.pages, 'Páginas por método não somam o documento.');

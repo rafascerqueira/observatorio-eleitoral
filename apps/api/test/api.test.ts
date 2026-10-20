@@ -213,7 +213,7 @@ test('saúde, contrato vazio e rejeição de filtros inválidos por HTTP', async
   assert.equal(data.filters.year, '2026');
   assert.equal(data.pagination.page, 2);
   assert.deepEqual(data.items, []);
-  for (const query of ['page=0', 'pageSize=101', 'year=2024', 'uf=XX', 'year=2022&year=2026']) {
+  for (const query of ['page=0', 'pageSize=101', 'year=2024', 'uf=XX', 'year=2022&year=2026', 'search=S%00o', 'search=S%01o']) {
     assert.equal((await fetch(`${base}/elections/municipalities?${query}`)).status, 400);
   }
 });
@@ -295,7 +295,7 @@ test('senador é cargo estadual de turno único, com publicação própria e sep
 });
 
 test('sugestões usam trigramas sobre o nome normalizado, com curingas escapados e recorte publicado', async () => {
-  for (const query of ['q=s', 'q=', `q=${'a'.repeat(61)}`, 'q=sao&page=2', 'q=sao&office=deputies']) assert.equal((await fetch(`${base}/elections/municipalities/suggest?${query}`)).status, 400, query);
+  for (const query of ['q=s', 'q=', `q=${'a'.repeat(61)}`, 'q=sao&page=2', 'q=sao&office=deputies', 'q=sa%00o']) assert.equal((await fetch(`${base}/elections/municipalities/suggest?${query}`)).status, 400, query);
   assert.deepEqual((await (await fetch(`${base}/elections/municipalities/suggest?q=rio&office=senator`)).json()).fields, ['uf']);
   assert.equal((await (await fetch(`${base}/elections/municipalities/suggest?q=sao`)).json()).status, 'awaiting-import');
   published = true; national = true; queries.length = 0;
@@ -461,7 +461,7 @@ test('mapa local → setor: vistas, faixa de cada setor, locais projetados e div
 });
 
 test('propostas: todas as candidaturas pelo número, documento compartilhado uma vez, busca sem acento e trecho do original', async () => {
-  for (const query of ['q=ab', `q=${'a'.repeat(81)}`, 'year=2026', 'q=saude&uf=SP']) assert.equal((await fetch(`${base}/elections/proposals?${query}`)).status, 400, query);
+  for (const query of ['q=ab', `q=${'a'.repeat(81)}`, 'year=2026', 'q=saude&uf=SP', 'q=saude%00', 'q=sa%7Fude']) assert.equal((await fetch(`${base}/elections/proposals?${query}`)).status, 400, query);
   published = true;
   try {
     assert.equal((await (await fetch(`${base}/elections/proposals`)).json()).status, 'awaiting-import');

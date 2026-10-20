@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { hasControlCharacters } from '@observatorio/contracts';
 import { getProposals } from '../../lib/results';
 import { QueryForm } from '../../components/query-form';
 import { CandidacyEntry } from '../../components/proposal-entry';
@@ -25,7 +26,7 @@ export default async function Proposals({ searchParams }: { searchParams: Promis
       </QueryForm>
       <p id="busca-ajuda" className="query-note">De 3 a 80 caracteres. Maiúsculas e acentos não importam; a expressão precisa aparecer exatamente nessa sequência.</p>
       <div id="propostas-resultados" className="query-results">
-        {result.kind === 'invalid' ? <p className="notice" role="alert" id="query-errors" tabIndex={-1}>A busca precisa ter de 3 a 80 caracteres, sem contar acentos e espaços repetidos.</p>
+        {result.kind === 'invalid' ? <p className="notice" role="alert" id="query-errors" tabIndex={-1}>{hasControlCharacters(raw) ? 'A busca não aceita caracteres de controle. Digite a palavra ou expressão no campo acima.' : 'A busca precisa ter de 3 a 80 caracteres, sem contar acentos e espaços repetidos.'}</p>
           : result.kind === 'unavailable' ? <p className="notice" role="status">Não foi possível consultar ou validar as propostas. Isso é uma indisponibilidade técnica, não ausência de documentos. Tente novamente.</p>
           : !data ? <p className="notice" role="status">Propostas de governo ainda sem publicação.</p>
           : <>
