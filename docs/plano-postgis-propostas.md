@@ -135,12 +135,12 @@ Desenhar ponto, raios e setores incluídos exige a faixa de cada local por raio,
   - Tabelas de documentos e páginas: texto por página, método (nativo, OCR ou falha) e versão do extrator. Texto normalizado no importador, como `search_name`, com índice de busca `portuguese`, sem depender de `unaccent` em índice.
   - API de busca e página `/propostas` (GET, sem JavaScript). Todas as candidaturas do recorte sempre listadas, na ordem do número de urna, com página e trecho. "Nenhuma ocorrência literal no texto extraído" é diferente de "não propõe" e vem com a cobertura da extração. Nunca ordenar por número de menções ou de páginas.
   - Licença CC-BY do TSE e atribuição exibidas. O ZIP original já pode ser servido; PDFs individuais exigiriam aceitar `.pdf` em `originalFileSchema` (hoje só zip, json, xlsx e gpkg), com cabeçalhos de segurança, e são decisão à parte.
-- **D3. Rubrica (só com revisão humana definida).** Tema piloto ligado à fase C (ex.: acessibilidade e mobilidade urbana), aplicado a todos os planos da Presidência. Codificação independente por duas pessoas, adjudicação, concordância medida e publicada, versão da rubrica e canal de contestação. IA pode sugerir trechos, nunca publicar sem revisão.
+- **D3. Rubrica (só com revisão humana definida).** Tema piloto ligado à fase C (ex.: acessibilidade e mobilidade urbana), aplicado a todos os planos da Presidência. Codificação independente por duas pessoas, adjudicação, concordância medida e publicada, versão da rubrica e canal de contestação. IA pode sugerir trechos, nunca publicar sem revisão. Preparada em 20/10/2026 (seção 20); a codificação espera a definição de quem revisa.
 - **D4.** Governadores só depois da avaliação da D3; Senado fora da obrigação legal de apresentar plano.
 
 ## 8. Fase E — prioridades declaradas
 
-Somente pesquisa documental: esclarecer a divergência do ESEB 2022 (2.001 × 1.806 entrevistas; novembro–dezembro × outubro) pela documentação do CESOP e conferir licença e termos do LAPOP Brasil 2023. Cadastro em acervos, contato com instituições e download de microdados dependem de Rafael. Respostas de pesquisas nacionais não são espacializadas.
+Somente pesquisa documental: esclarecer a divergência do ESEB 2022 (2.001 × 1.806 entrevistas; novembro–dezembro × outubro) pela documentação do CESOP e conferir licença e termos do LAPOP Brasil 2023. Cadastro em acervos, contato com instituições e download de microdados dependem de Rafael. Respostas de pesquisas nacionais não são espacializadas. Pesquisa feita em 20/10/2026 (seção 21).
 
 ## 9. Regras transversais
 
@@ -522,3 +522,103 @@ Verificação: typecheck, 128 testes, builds, nove smokes (o `smoke:context` com
 Fora da v2, sem reimportação, feitos em 20/10 (plan.md §47):
 - `SITE_URL` vazia ou ausente vale o padrão local; inválida interrompe a compilação com mensagem própria. O valor vai como argumento de build da imagem da web e fica nela, para páginas pré-renderizadas e dinâmicas.
 - README e "Estado atual" do plan.md sem o "sem push" desatualizado.
+
+## 20. Andamento — fase D3: preparação da rubrica (20/10/2026)
+
+Decisões de Rafael em 20/10/2026:
+- quem revisa ainda não está definido: preparar rubrica, protocolo e ferramentas, e a codificação espera;
+- tema piloto: acessibilidade e mobilidade urbana;
+- uma planilha CSV por pessoa;
+- trechos localizados por busca literal com termos publicados.
+
+O que foi feito:
+- **Livro de códigos:** [rubrica das propostas](rubrica-propostas.md), versão `rubrica-acessibilidade-mobilidade-v1`. Traz o tema com inclusões e exclusões, 11 critérios documentais com valores e regras de decisão, evidência obrigatória, termos, procedimento, concordância, versionamento e decisões pendentes. Não tem nota, peso nem ordenação.
+- **Código:**
+  - `apps/importer/src/rubric-core.ts`: versão, termos, critérios, planilha, validação, kappa de Cohen e consolidação depois da adjudicação;
+  - `apps/importer/src/rubric.ts`: `npm run rubric:packet` e `npm run rubric:agreement`, com o banco só em leitura;
+  - 5 testes com dados sintéticos.
+- **Termos:** medidos no corpus publicado antes de fixar a lista.
+  - Muitos termos do tema não aparecem em nenhum plano (rampa, ciclovia, ciclofaixa, bicicleta, pedestre, piso tátil, iluminação pública, passe livre, VLT, BRT) e ficam na lista, que sai da definição do tema.
+  - Saem os termos que a busca por trecho confunde com outras palavras: "trem" (extrema), "metrô" (metros, parâmetros), "PcD" (PCdoB), "cidades" (capacidades); e saem "urbana" e "urbano", amplos demais.
+- **Pacote gerado** a partir da `proposals-2022-v2`, em `data/rubric/rubrica-acessibilidade-mobilidade-v1/pacote-2026-10-21T00-47-35.678Z/` (16 MB):
+  - 12 PDFs conferidos pelo SHA-256 publicado e o texto publicado de cada página, de onde se copiam os trechos (nas páginas por OCR, a imagem não tem texto);
+  - 132 trechos candidatos em 80 páginas — nenhum nos nº 14 e nº 27, onde a decisão depende da leitura;
+  - modelo com 132 linhas (12 documentos × 11 critérios), manifesto e instruções.
+  - Um primeiro pacote, sem os textos e nunca distribuído, foi substituído.
+- **Ensaio do fluxo** com planilhas fictícias, gravadas fora do repositório e apagadas depois:
+  - a validação conferiu um trecho real no texto publicado e recusou um trecho que não estava na página citada, sem calcular nada;
+  - concordância, planilha de adjudicação e consolidação final, com a origem de cada valor, funcionaram.
+
+Nada foi codificado nem publicado.
+
+Pendente (decisões de Rafael, seção 9 do livro de códigos):
+1. quem codifica e como se adjudica;
+2. aprovação do livro de códigos;
+3. concordância mínima para publicar;
+4. forma de publicação e canal de contestação.
+
+## 21. Andamento — fase E: pesquisa documental (20/10/2026)
+
+Só documentação pública: sem cadastro, download de microdados ou contato com instituições. As cópias dos documentos consultados, com origem e SHA-256, ficam em `data/analysis/pesquisas-prioridades-2026-10-20/`, fora do Git e sem redistribuição.
+
+**ESEB 2022 (CESOP/Unicamp, pesquisa nº 04810)**
+
+Quatro documentos públicos dão 2.001 entrevistas, com campo iniciado em 19/11/2022:
+- a página do estudo no CESOP (até 04/12/2022, em 119 municípios dos 27 estados);
+- a metodologia (`Met_04810`, PDF de 21/09/2023: de 19/11 a 04/12/2022);
+- as tabelas de frequência (PDF de 15/09/2025), com cabeçalho "Tamanho da Pesquisa: 2001" e total de 2001 em todas as variáveis;
+- o relatório de desenho do CSES Módulo 6, preparado pela Quaest em 26/07/2024: "2001 respondents" e início em 19/11/2022. Esse relatório traz a eleição como de 2024 e o fim do campo como "12/04/2018", erros de digitação; os 48 e 20 dias entre os turnos e o início conferem com 19/11/2022.
+
+A ficha técnica ligada ao catálogo (`FichaTec_04810`, exportada do Google Docs) é o único documento com 1806 entrevistas e data "10/2022"; a página do catálogo traz "11/2022".
+
+Leitura: a ficha técnica diverge de todos os demais, e 2.001 é a contagem mais sustentada. Só o arquivo de microdados confirma. A ficha não é "corrigida" aqui: se houver cadastro, conferir no arquivo o número de casos e as datas e então comunicar a divergência ao CESOP.
+
+Diferenças menores entre os documentos:
+- municípios: 120 no texto da metodologia, 119 na tabela por UF da própria metodologia e do CSES;
+- seleção de domicílios: pular duas casas (metodologia) ou três (CSES);
+- referência das cotas: TSE 2022 ou 2018.
+
+Desenho:
+- municípios e setores censitários (Censo 2010) sorteados por probabilidade proporcional ao tamanho; a seleção final é por cotas, sem probabilidade;
+- representativa do país e das cinco regiões;
+- peso obrigatório (variável "peso", pós-estratificação); margem de cerca de 2 pontos sob amostra aleatória simples.
+
+Conteúdo: não há pergunta de prioridade nem de "problema mais importante". Há democracia e voto (módulo CSES) e posições a favor ou contra temas controversos (Q31: maioridade penal, aborto, cotas raciais, privatizações e outros).
+
+Condições do cadastro no CESOP:
+- dados pessoais no cadastro (nome, nascimento, endereços, telefone; CPF opcional);
+- vetados o uso comercial, a redistribuição dos microdados e a sua publicação em outras plataformas sem autorização;
+- citação obrigatória ("Centro de Estudos de Opinião Pública/Unicamp. Pesquisa de Opinião. Banco de Dados do CESOP/Unicamp, Campinas.");
+- envio de cópia dos trabalhos a cesopsit@unicamp.br.
+
+**LAPOP AmericasBarometer Brasil 2023**
+
+Desenho (relatório técnico v5.0, 07/03/2024):
+- 1.526 entrevistas presenciais, de 06/06 a 04/07/2023, com campo do IPEC;
+- amostra probabilística da população em idade de votar, estratificada pelas cinco regiões, pelo porte do município e por área urbana ou rural;
+- 125 unidades primárias e 250 pontos em 24 estados e no DF, 22 deles substituídos; base no Censo 2010;
+- margem de ±2,51, com recomendação de considerar o efeito do desenho;
+- peso obrigatório: `wt`, ou `weight1500` nas comparações entre países;
+- representativa do país e das regiões, não de UFs nem de municípios.
+
+Questionário v9.3.3.3, em português:
+- A4N: "Na sua opinião, qual é o problema mais grave que o país está enfrentando?", resposta única e espontânea;
+- categorias amplas: economia, segurança, serviços básicos, política, desemprego, corrupção, COVID-19, alimentação, educação e outros; transporte e mobilidade não têm categoria própria;
+- módulos experimentais só são liberados depois de dois anos.
+
+Condições:
+- dados públicos gratuitos;
+- os arquivos não podem ser repassados a terceiros, nem a revistas, por força do contrato de usuário; a replicação se faz por link e código;
+- citação com LAPOP Lab, título, ano da coleta, versão e editora;
+- a página não trata de uso comercial, e o texto integral do contrato só aparece no download.
+
+**Implicações**
+- Nenhuma das duas pode ser espacializada abaixo das regiões.
+- Estimativas só nacionais ou regionais, ponderadas, com incerteza, versão do arquivo e citação, nunca apresentadas como números do TSE ou do Censo.
+- Os microdados não podem ser republicados em nenhum dos dois casos: o observatório só mostraria agregados calculados por ele, citando a fonte e, no caso do CESOP, enviando cópia.
+- Para "prioridades declaradas", só o LAPOP 2023 tem a pergunta. As posições sobre temas controversos do ESEB 2022 exigiriam cuidado próprio de neutralidade.
+
+Decisões de Rafael:
+1. seguir ou não, sabendo que o próximo passo exige cadastro no CESOP, com dados pessoais, ou aceitar o contrato do LAPOP no download;
+2. qual pesquisa usar;
+3. no caso do ESEB, conferir o número de casos e as datas no arquivo e comunicar a divergência ao CESOP.

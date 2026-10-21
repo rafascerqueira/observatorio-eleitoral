@@ -4,7 +4,7 @@ Criado em 12/10/2026 e revisado em **20/10/2026**. Fonte de verdade sobre finali
 
 ## Estado atual
 
-Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). Próximo: D3 depende de definir a revisão humana; E sem decisão; hospedagem a decidir.
+Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). A rubrica da D3 está preparada, sem codificação, à espera de quem revisa, e a pesquisa documental da E está feita (§49). Próximo: decisões de Rafael sobre revisores e livro de códigos (D3), sobre seguir com o ESEB ou o LAPOP (E) e sobre a hospedagem.
 
 | Frente | Situação em 20/10/2026 |
 | --- | --- |
@@ -20,7 +20,7 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 
 - **Antes de declarar acessibilidade completa:** leitor de tela humano, Safari e dispositivos reais, zoom de texto/alto contraste do sistema. Chrome/Firefox e verificações automáticas já foram realizados; não substituem esses ensaios.
 - **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. O importador das propostas depende de pacotes do sistema (`poppler-utils`, `tesseract-ocr`, `tesseract-ocr-por`), que a API e a web não usam: importar localmente e levar o banco com `data/originals` e `data/audit`, ou criar uma imagem do importador com Ubuntu 24.04 para reproduzir as versões da publicação (§48). A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
-- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 depende de definir a revisão humana e a E segue sem decisão. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
+- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas) à espera de quem revisa, e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
 - **Manutenção registrada, sem execução autorizada nesta etapa:** limpeza de armazenamento; renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
 
@@ -674,3 +674,42 @@ Pendente:
 - decisão da hospedagem, com o caminho do importador;
 - D3 (revisão humana) e E, sem decisão.
 
+## 49. Fase D3 (preparação da rubrica) e fase E (pesquisa documental) — 20/10/2026
+
+Rafael pediu para atacar a D3 e depois a E. Para a D3, definiu:
+- quem revisa ainda não está definido: preparar tudo, e a codificação espera;
+- tema piloto: acessibilidade e mobilidade urbana;
+- uma planilha CSV por pessoa;
+- trechos candidatos por busca literal com termos publicados.
+
+**D3** (seção 20 do [plano de melhorias](docs/plano-postgis-propostas.md)):
+- livro de códigos em [rubrica das propostas](docs/rubrica-propostas.md), versão `rubrica-acessibilidade-mobilidade-v1`, com 11 critérios documentais, sem nota, peso nem ordenação;
+- `npm run rubric:packet` gera o pacote idêntico para as duas pessoas: PDFs conferidos, texto publicado por página, 132 trechos candidatos em 80 páginas e modelo com 132 linhas;
+- `npm run rubric:agreement` valida as planilhas contra o texto publicado, mede a concordância (kappa de Cohen) e consolida a adjudicação;
+- lista de termos medida no corpus: ficam os termos do tema, mesmo sem ocorrência; saem só os que colidem com outras palavras na busca por trecho, como "trem", "metrô" e "PcD";
+- pacote em `data/rubric/rubrica-acessibilidade-mobilidade-v1/pacote-2026-10-21T00-47-35.678Z/`;
+- fluxo ensaiado com planilhas fictícias fora do repositório, apagadas depois.
+
+Nada foi codificado nem publicado.
+
+**E** (seção 21 do plano):
+- **ESEB 2022:** quatro documentos públicos (página do estudo, metodologia, tabelas de frequência e relatório do CSES feito pela Quaest) dão 2.001 entrevistas e início do campo em 19/11/2022. Só a ficha técnica do catálogo traz 1806 e "10/2022"; a confirmação depende dos microdados, com cadastro.
+- O ESEB não tem pergunta de prioridade. O LAPOP Brasil 2023 tem (A4N, "problema mais grave"): 1.526 entrevistas de junho a julho de 2023, peso `wt`.
+- Os dois proíbem republicar microdados, e o CESOP veda uso comercial e exige citação e cópia dos trabalhos.
+- As cópias dos documentos consultados, com origem e SHA-256, estão em `data/analysis/pesquisas-prioridades-2026-10-20/`.
+
+AGENTS passa a citar a rubrica e os comandos.
+
+Verificação:
+- typecheck e 133 testes (5 novos da rubrica);
+- pacote gerado do banco em modo só leitura, com os PDFs conferidos pelo SHA-256;
+- ensaio do fluxo da concordância e da adjudicação.
+
+Sem smokes nem `check:ui`: nada mudou na API, na web ou nos dados publicados. Na pesquisa, só documentação pública: sem cadastro, contrato aceito ou download de microdados.
+
+A pedido de Rafael, em commit local no `main`, sem push.
+
+Pendente:
+- D3: quem codifica e como se adjudica; aprovação do livro de códigos; concordância mínima; publicação e canal de contestação;
+- E: seguir ou não; qual pesquisa; cadastro no CESOP ou contrato do LAPOP, ambos com Rafael;
+- hospedagem.

@@ -1,0 +1,153 @@
+import { parse } from 'csv-parse/sync';
+import { searchPattern, searchText } from '@observatorio/contracts';
+
+/**
+ * Rubrica documental das propostas de governo (fase D3; livro de códigos em docs/rubrica-propostas.md): tema piloto, termos da
+ * busca, critérios e valores, planilha de codificação, validação, concordância entre as duas pessoas e consolidação depois da
+ * adjudicação. Atributos documentais, iguais para todas as candidaturas: sem nota, peso, ordenação ou juízo de mérito.
+ */
+export const RUBRIC_VERSION = 'rubrica-acessibilidade-mobilidade-v1';
+export const RUBRIC_THEME = 'Acessibilidade e mobilidade urbana';
+
+/**
+ * Termos da busca literal que localiza trechos candidatos (a mesma busca de /propostas, reproduzível lá). Saem da definição do
+ * tema, não do número de ocorrências: ficam também os que não aparecem em nenhum plano. Quem codifica lê os trechos e as seções
+ * relacionadas e pode acrescentar trechos achados na leitura.
+ */
+export const RUBRIC_TERMS = [
+  'acessibilidade', 'acessível', 'acessíveis', 'deficiência', 'deficientes', 'cadeirante', 'cadeira de rodas', 'piso tátil', 'rampa',
+  'desenho universal', 'lei brasileira de inclusão',
+  'mobilidade', 'transporte', 'trânsito', 'ônibus', 'trens', 'metroviário', 'metroviária', 'VLT', 'BRT', 'tarifa', 'passe livre',
+  'bilhete único', 'ciclovia', 'ciclofaixa', 'bicicleta', 'pedestre', 'calçada', 'segurança viária', 'iluminação pública', 'pavimentação',
+  'infraestrutura urbana', 'deslocamento', 'frota',
+] as const;
+/** Fora da lista: a busca por trecho não os separa de outras palavras (medido no corpus de 2022), ou são amplos demais para o tema. */
+export const RUBRIC_EXCLUDED_TERMS = [
+  { term: 'trem', reason: 'casa com “extrema” e “extremamente”; o plural “trens” fica na lista' },
+  { term: 'metrô', reason: 'casa com “metros”, “parâmetros”, “metrópoles” e “quilômetros”; “metroviário” e “metroviária” ficam na lista' },
+  { term: 'PcD', reason: 'casa com “PCdoB”' },
+  { term: 'cidades', reason: 'casa com “capacidades” e é amplo demais para o tema' },
+  { term: 'urbana, urbano', reason: 'amplos demais (população urbana, violência urbana)' },
+] as const;
+
+type Value = { code: string; label: string; evidence: boolean };
+const NOT_FOUND: Value = { code: 'nao-localizado', label: 'Não localizado no texto revisado', evidence: false };
+const NOT_APPLICABLE: Value = { code: 'nao-se-aplica', label: 'Não se aplica: tema não localizado no documento', evidence: false };
+const declared = (code: string, label: string): Value[] => [{ code, label, evidence: true }, NOT_FOUND, NOT_APPLICABLE];
+/**
+ * Critérios, codificados por documento: um valor vale se aparece em qualquer trecho do tema (o mais completo, quando há mais de um).
+ * Valor com evidência exige página e trecho literal; `nao-localizado` não significa que o documento não proponha.
+ */
+export const RUBRIC_CRITERIA = [
+  { code: 'tema', question: 'O documento trata de acessibilidade ou de mobilidade urbana?', values: [{ code: 'trata', label: 'Trata: há ao menos um trecho sobre o tema', evidence: true }, NOT_FOUND] },
+  { code: 'diagnostico', question: 'Descreve um problema ou a situação do tema?', values: [
+    { code: 'com-dado', label: 'Sim, com dado, número ou fonte citada', evidence: true }, { code: 'sem-dado', label: 'Sim, sem dado nem fonte', evidence: true }, NOT_FOUND, NOT_APPLICABLE] },
+  { code: 'intervencao', question: 'Propõe medida sobre o tema?', values: [
+    { code: 'especifica', label: 'Medida específica: diz o que será feito (programa, obra, norma, serviço)', evidence: true },
+    { code: 'generica', label: 'Só intenção geral, sem dizer o que será feito', evidence: true }, NOT_FOUND, NOT_APPLICABLE] },
+  { code: 'publico', question: 'Declara o público da medida?', values: declared('declarado', 'Declarado') },
+  { code: 'territorio', question: 'Declara o território da medida?', values: declared('declarado', 'Declarado') },
+  { code: 'meta-quantidade', question: 'Declara meta em quantidade (valor e unidade)?', values: declared('declarada', 'Declarada') },
+  { code: 'meta-prazo', question: 'Declara prazo?', values: declared('declarado', 'Declarado') },
+  { code: 'responsabilidade', question: 'Menciona órgão, ente federativo, programa ou norma responsável?', values: declared('mencionada', 'Mencionada') },
+  { code: 'custo', question: 'Declara custo?', values: declared('declarado', 'Declarado') },
+  { code: 'fonte-recursos', question: 'Declara a fonte dos recursos?', values: declared('declarada', 'Declarada') },
+  { code: 'acompanhamento', question: 'Declara indicador de acompanhamento ou critério de entrega?', values: declared('declarado', 'Declarado') },
+] as const;
+
+/** Documento a codificar: identificador da planilha (`doc-` + 12 primeiros caracteres do SHA-256, para planilhas não o lerem como número). */
+export type RubricDocument = { id: string; sha256: string; pages: number; candidacies: string };
+export const documentId = (sha256: string) => `doc-${sha256.slice(0, 12)}`;
+export const CODING_COLUMNS = ['documento', 'candidaturas', 'criterio', 'pergunta', 'valores_permitidos', 'valor', 'paginas', 'trecho', 'observacao'] as const;
+export type CodingRow = { documento: string; criterio: string; valor: string; paginas: number[]; trecho: string; observacao: string };
+
+/** CSV para Excel e LibreOffice em português: UTF-8 com BOM, `;`, todos os campos entre aspas, CRLF. */
+export const csv = (rows: ReadonlyArray<ReadonlyArray<string | number>>) => `﻿${rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(';')).join('\r\n')}\r\n`;
+/** Modelo da planilha: uma linha por documento e critério, na ordem dos documentos e dos critérios. */
+export const codingTemplate = (documents: readonly RubricDocument[]) => csv([CODING_COLUMNS, ...documents.flatMap((document) => RUBRIC_CRITERIA.map((criterion) =>
+  [document.id, document.candidacies, criterion.code, criterion.question, criterion.values.map((value) => value.code).join(' | '), '', '', '', '']))]);
+
+/** Lê uma planilha preenchida. Erro de leitura (formato, colunas) interrompe; os problemas de conteúdo vêm de `validateCoding`. */
+export function readCoding(text: string): CodingRow[] {
+  if (text.includes('�')) throw new Error('Planilha com caracteres ilegíveis: salve como “CSV UTF-8”.');
+  const records = parse(text, { delimiter: ';', columns: true, bom: true, skip_empty_lines: true, trim: true }) as Array<Record<string, string>>;
+  const missing = CODING_COLUMNS.filter((column) => !records[0] || !(column in records[0]));
+  if (missing.length) throw new Error(`Planilha sem as colunas ${missing.join(', ')} (separador “;”).`);
+  return records.map((record) => ({ documento: record.documento!, criterio: record.criterio!, valor: record.valor!.toLowerCase(), trecho: record.trecho!, observacao: record.observacao!,
+    paginas: record.paginas!.split(/[,;\s]+/).filter(Boolean).map(Number) }));
+}
+
+const key = (row: { documento: string; criterio: string }) => `${row.documento}/${row.criterio}`;
+/**
+ * Problemas de uma planilha: linhas ausentes ou repetidas, valor fora dos permitidos, "nao-se-aplica" incoerente com o tema,
+ * evidência ausente, página inexistente ou trecho que não está na página citada (pela mesma normalização da busca).
+ * `pageText(documento, página)` devolve o `search_text` publicado, ou nulo.
+ */
+export function validateCoding(rows: readonly CodingRow[], documents: readonly RubricDocument[], pageText: (sha256: string, page: number) => string | null) {
+  const problems: string[] = [], byKey = new Map<string, CodingRow>();
+  for (const row of rows) {
+    if (byKey.has(key(row))) problems.push(`${key(row)}: linha repetida.`);
+    byKey.set(key(row), row);
+  }
+  for (const document of documents) for (const criterion of RUBRIC_CRITERIA) {
+    const row = byKey.get(`${document.id}/${criterion.code}`);
+    if (!row) { problems.push(`${document.id}/${criterion.code}: linha ausente.`); continue; }
+    const value = (criterion.values as readonly Value[]).find((item) => item.code === row.valor);
+    if (!value) { problems.push(`${key(row)}: valor "${row.valor}" fora dos permitidos (${criterion.values.map((item) => item.code).join(', ')}).`); continue; }
+    const theme = byKey.get(`${document.id}/tema`)?.valor;
+    if (criterion.code !== 'tema' && (theme === 'nao-localizado') !== (value.code === 'nao-se-aplica')) problems.push(`${key(row)}: "nao-se-aplica" só quando o tema não foi localizado, e sempre nesse caso.`);
+    if (!value.evidence) continue;
+    if (!row.paginas.length || !row.trecho) { problems.push(`${key(row)}: valor "${value.code}" exige página e trecho.`); continue; }
+    const invalid = row.paginas.filter((page) => !Number.isInteger(page) || page < 1 || page > document.pages);
+    if (invalid.length) { problems.push(`${key(row)}: página ${invalid.join(', ')} fora do documento (1 a ${document.pages}).`); continue; }
+    const term = searchText(row.trecho);
+    if (term.length < 3) { problems.push(`${key(row)}: trecho curto demais para conferir.`); continue; }
+    const expression = new RegExp(searchPattern(term), 'u');
+    if (!row.paginas.some((page) => expression.test(pageText(document.sha256, page) ?? ''))) problems.push(`${key(row)}: trecho não encontrado na página ${row.paginas.join(', ')} do texto publicado.`);
+  }
+  for (const row of rows) if (!documents.some((document) => document.id === row.documento) || !RUBRIC_CRITERIA.some((criterion) => criterion.code === row.criterio)) problems.push(`${key(row)}: documento ou critério desconhecido.`);
+  return problems;
+}
+
+/**
+ * Concordância entre duas pessoas sobre os mesmos itens: proporção observada e kappa de Cohen. Kappa nulo quando a concordância
+ * esperada é total (as duas usaram uma só categoria, a mesma, em todos os itens); sem itens, tudo nulo.
+ */
+export function cohenKappa(pairs: ReadonlyArray<readonly [string, string]>) {
+  const items = pairs.length, agreements = pairs.filter(([a, b]) => a === b).length;
+  if (!items) return { items, agreements, observed: null, expected: null, kappa: null };
+  const observed = agreements / items;
+  const expected = [...new Set(pairs.flat())].reduce((sum, category) => sum + (pairs.filter(([a]) => a === category).length / items) * (pairs.filter(([, b]) => b === category).length / items), 0);
+  return { items, agreements, observed, expected, kappa: expected === 1 ? null : (observed - expected) / (1 - expected) };
+}
+/** Concordância por critério e no conjunto (categorias distintas por critério), e a lista de divergências, na ordem da planilha. */
+export function agreement(a: readonly CodingRow[], b: readonly CodingRow[]) {
+  const other = new Map(b.map((row) => [key(row), row]));
+  const pairs = a.flatMap((row) => other.has(key(row)) ? [{ row, peer: other.get(key(row))! }] : []);
+  const byCriterion = Object.fromEntries(RUBRIC_CRITERIA.map((criterion) => [criterion.code, cohenKappa(pairs.filter(({ row }) => row.criterio === criterion.code).map(({ row, peer }) => [row.valor, peer.valor] as const))]));
+  return { byCriterion, overall: cohenKappa(pairs.map(({ row, peer }) => [`${row.criterio}:${row.valor}`, `${peer.criterio}:${peer.valor}`] as const)),
+    divergences: pairs.filter(({ row, peer }) => row.valor !== peer.valor).map(({ row, peer }) => ({ a: row, b: peer })) };
+}
+export const ADJUDICATION_COLUMNS = ['documento', 'candidaturas', 'criterio', 'valor_a', 'paginas_a', 'trecho_a', 'valor_b', 'paginas_b', 'trecho_b', 'valor_final', 'paginas_final', 'trecho_final', 'justificativa'] as const;
+/** Planilha de adjudicação: só as divergências, com o que cada pessoa registrou e campos para a decisão e o motivo. */
+export const adjudicationTemplate = (divergences: ReturnType<typeof agreement>['divergences'], documents: readonly RubricDocument[]) => csv([ADJUDICATION_COLUMNS,
+  ...divergences.map(({ a, b }) => [a.documento, documents.find((document) => document.id === a.documento)?.candidacies ?? '', a.criterio, a.valor, a.paginas.join(', '), a.trecho, b.valor, b.paginas.join(', '), b.trecho, '', '', '', ''])]);
+
+/**
+ * Codificação final: o valor comum quando as duas pessoas concordam e a decisão registrada quando divergem. Toda divergência precisa
+ * de decisão e justificativa; a decisão passa pela mesma validação de uma planilha. Cada linha guarda a origem (`concordancia` ou
+ * `adjudicacao`) para a publicação poder mostrá-la.
+ */
+export function consolidate(a: readonly CodingRow[], b: readonly CodingRow[], decisions: ReadonlyArray<Record<string, string>>) {
+  const decided = new Map(decisions.map((decision) => [`${decision.documento}/${decision.criterio}`, decision]));
+  const problems: string[] = [], other = new Map(b.map((row) => [key(row), row]));
+  const final = a.map((row) => {
+    const peer = other.get(key(row));
+    if (peer && peer.valor === row.valor) return { ...row, paginas: [...new Set([...row.paginas, ...peer.paginas])].sort((x, y) => x - y), origem: 'concordancia' as const, justificativa: '' };
+    const decision = decided.get(key(row));
+    if (!decision?.valor_final?.trim() || !decision.justificativa?.trim()) problems.push(`${key(row)}: divergência sem decisão e justificativa.`);
+    return { documento: row.documento, criterio: row.criterio, valor: decision?.valor_final?.trim().toLowerCase() ?? '', paginas: (decision?.paginas_final ?? '').split(/[,;\s]+/).filter(Boolean).map(Number),
+      trecho: decision?.trecho_final?.trim() ?? '', observacao: '', origem: 'adjudicacao' as const, justificativa: decision?.justificativa?.trim() ?? '' };
+  });
+  return { final, problems };
+}

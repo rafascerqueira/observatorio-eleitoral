@@ -52,6 +52,8 @@
     "check:geo": "tsx scripts/check-geo.ts",
     "inventory:proposals": "npm run inventory:proposals -w @observatorio/importer",
     "audit:proposals-text": "npm run build -w @observatorio/contracts && npm run audit:proposals-text -w @observatorio/importer --",
+    "rubric:packet": "npm run build -w @observatorio/contracts && npm run rubric:packet -w @observatorio/importer --",
+    "rubric:agreement": "npm run build -w @observatorio/contracts && npm run rubric:agreement -w @observatorio/importer --",
     "check:reimports": "node scripts/check-reimports.mjs"
   },
   "devDependencies": {
