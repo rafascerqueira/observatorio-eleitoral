@@ -157,7 +157,7 @@
 .tract-map .choropleth-legend + .query-note { margin-top: 10px; }
 /* Busca nas propostas (/propostas): uma entrada por candidatura, sempre na ordem do número. */
 .proposal-entry { margin: 0 28px; padding: 16px 0; border-top: 1px solid var(--border); }
-.proposal-entry h3 { margin: 0 0 4px; font-size: 17px; }
+.proposal-entry :is(h3, h4) { margin: 0 0 4px; font-size: 17px; }
 .proposal-entry p { margin: 4px 0; }
 .proposal-excerpts { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; line-height: 1.5; }
 .proposal-excerpts mark { background: #f3dcc6; color: #1b1b1b; padding: 0 2px; border-radius: 2px; }

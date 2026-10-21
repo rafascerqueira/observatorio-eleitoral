@@ -29,17 +29,22 @@ let tractMapPublished = false;
 let proposalsPublished = false;
 const proposalSource = { file: 'proposta_governo_2022_BR.zip', entry: 'BR/2022BR<SQ>.pdf', url: 'https://cdn.tse.jus.br/estatistica/sead/odsele/proposta_governo/proposta_governo_2022_BR.zip', sha256: '5'.repeat(64),
   downloadedAt: '2026-10-20T00:00:00Z', generatedAt: [], lastModified: null, rowsRead: 3, rowsSelected: 3 };
+// Método da v1 (sem normalização registrada) e da v2: a API só busca numa publicação com a normalização do código.
+const proposalsV1Method = { textPageMinChars: 50, pdftotext: 'pdftotext test', tesseract: 'tesseract test', ocrLanguage: 'por', ocrDpi: 300 };
 const proposalsDataset = { id: '4'.repeat(64), kind: 'proposals', year: 2022, importedAt: '2026-10-20T00:00:00Z', importerVersion: 'test', sources: [proposalSource], scope: 'Teste', notes: [],
-  method: { textPageMinChars: 50, pdftotext: 'pdftotext test', tesseract: 'tesseract test', ocrLanguage: 'por', ocrDpi: 300 }, totals: { candidacies: 4, documents: 2, pages: 3, nativePages: 2, ocrPages: 1, emptyPages: 0 } };
+  method: { ...proposalsV1Method, extraction: 'bbox-layout', wordSpace: 0.04, normalization: 'proposals-search-v2', quality: { maxBadRatio: 0.01, maxVowellessRatio: 0.2 } },
+  totals: { candidacies: 4, documents: 2, pages: 10, nativePages: 9, ocrPages: 1, emptyPages: 0 } };
+let proposalsMetadata: Record<string, unknown> = proposalsDataset;
 const docA = 'a1'.repeat(32), docB = 'b2'.repeat(32);
 const proposalDocument = (sha256: string | null, pages: number, native: number, ocr: number) => sha256 ? { sha256, file: `BR/${sha256.slice(0, 4)}.pdf`, pages, native_pages: native, ocr_pages: ocr, empty_pages: pages - native - ocr } : { sha256: null, file: null, pages: null, native_pages: null, ocr_pages: null, empty_pages: null };
 const proposalCandidacies = [
-  { number: '12', ballot_name: 'CANDIDATURA A', party: 'P1', situation: 'APTO', listing: 'candidate', ...proposalDocument(docA, 2, 1, 1) },
-  { number: '14', ballot_name: 'CANDIDATURA B', party: 'P2', situation: 'INAPTO', listing: 'same-document', ...proposalDocument(docB, 1, 1, 0) },
-  { number: '14', ballot_name: 'CANDIDATURA C', party: 'P2', situation: 'APTO', listing: 'candidate', ...proposalDocument(docB, 1, 1, 0) },
+  { number: '12', ballot_name: 'CANDIDATURA A', party: 'P1', situation: 'APTO', listing: 'candidate', ...proposalDocument(docA, 3, 2, 1) },
+  { number: '14', ballot_name: 'CANDIDATURA B', party: 'P2', situation: 'INAPTO', listing: 'same-document', ...proposalDocument(docB, 7, 7, 0) },
+  { number: '14', ballot_name: 'CANDIDATURA C', party: 'P2', situation: 'APTO', listing: 'candidate', ...proposalDocument(docB, 7, 7, 0) },
   { number: '90', ballot_name: 'CANDIDATURA D', party: 'P3', situation: 'INAPTO', listing: 'no-votes', ...proposalDocument(null, 0, 0, 0) },
 ];
-const proposalPages = [{ sha256: docA, page: 2, method: 'ocr', text: 'Plano de\n  ACESSIBILI-\n  DADE urbana e calçadas' }, { sha256: docB, page: 1, method: 'native', text: 'Mais acessibilidade nas escolas.' }];
+const proposalPages = [{ sha256: docA, page: 2, method: 'ocr', text: 'Plano de\n  ACESSIBILI-\n  DADE urbana e calçadas' }, { sha256: docA, page: 3, method: 'native', text: 'O petróleo do pré-\nsal e o bem-estar.' },
+  { sha256: docB, page: 1, method: 'native', text: 'Mais acessibilidade nas escolas.' }, ...[2, 3, 4, 5, 6, 7].map((page) => ({ sha256: docB, page, method: 'native', text: `Acessibilidade na página ${page}.` }))];
 let tractMapViews: Array<Record<string, unknown>> = [];
 let tractMapTracts: Array<Record<string, unknown>> = [];
 let tractMapPlaces: Array<Record<string, unknown>> = [];
@@ -90,9 +95,15 @@ before(async () => {
         if (sql.includes('FROM tract_income_bands WHERE batch_id=$1 LIMIT 1')) return { rows: [{ exists: 1 }] };
         if (sql.includes('place_code AS code, name')) return { rows: parameters[2] === '71072' ? tractMapPlaces : [] };
         if (sql.includes('FROM tract_display_views')) return { rows: tractMapViews };
-        if (sql.includes('scope=$1') && parameters[0] === '2022/proposals/president') return { rows: proposalsPublished ? [{ id: '4'.repeat(64), metadata: proposalsDataset }] : [] };
+        if (sql.includes('scope=$1') && parameters[0] === '2022/proposals/president') return { rows: proposalsPublished ? [{ id: '4'.repeat(64), metadata: proposalsMetadata }] : [] };
         if (sql.includes('FROM proposal_candidacies')) return { rows: proposalCandidacies };
-        if (sql.includes('FROM proposal_pages')) return { rows: proposalPages.filter((page) => searchText(page.text).includes(String(parameters[1]))) };
+        if (sql.includes('FROM proposal_pages')) {
+          // Expressão aplicada ao texto normalizado; texto só nas primeiras páginas de cada documento, como o row_number() da consulta.
+          assert.ok(sql.includes('search_text ~ $2'), 'Busca pela expressão no banco');
+          const expression = new RegExp(String(parameters[1]), 'u'), seen = new Map<string, number>();
+          return { rows: proposalPages.filter((page) => expression.test(searchText(page.text))).sort((a, b) => a.sha256.localeCompare(b.sha256) || a.page - b.page)
+            .map((page) => { const order = (seen.get(page.sha256) ?? 0) + 1; seen.set(page.sha256, order); return { ...page, text: order <= Number(parameters[2]) ? page.text : null }; }) };
+        }
         if (sql.includes('FROM tract_display d')) return { rows: tractMapTracts.map((tract) => ({ ...tract, path: sql.includes('d.path') ? tract.path : '' })) };
         if (sql.includes('FROM polling_place_tracts')) return { rows: parameters[2] === '71072' ? tractRows : [] };
         if (sql.includes("->'totals'->>'abstentions'")) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', numerator: '2', denominator: '10' }] };
@@ -477,8 +488,20 @@ test('propostas: todas as candidaturas pelo número, documento compartilhado uma
     const [first, , third, fourth] = data.candidacies;
     assert.deepEqual(first.matches.pages, [2]);
     assert.deepEqual(first.matches.excerpts[0], { page: 2, method: 'ocr', before: 'Plano de ', match: 'ACESSIBILI- DADE', after: ' urbana e calçadas' }, 'Palavra partida na linha encontrada; trecho do original');
-    assert.deepEqual(third.matches.pages, [1]); assert.equal(fourth.matches, null, 'Sem documento, sem resultado de busca');
+    assert.deepEqual(third.matches.pages, [1, 2, 3, 4, 5, 6, 7], 'Todas as páginas encontradas');
+    assert.deepEqual(third.matches.excerpts.map((item: { page: number }) => item.page), [1, 2, 3, 4, 5], 'Trechos só das cinco primeiras');
+    assert.equal(fourth.matches, null, 'Sem documento, sem resultado de busca');
     const none = await (await fetch(`${base}/elections/proposals?q=${encodeURIComponent('saúde')}`)).json();
     assert.deepEqual(none.candidacies[0].matches, { pages: [], excerpts: [] }, 'Nenhuma ocorrência é lista vazia, não ausência de documento');
-  } finally { published = false; proposalsPublished = false; }
+    // Hífen de fim de linha: a palavra é encontrada inteira ou com o hífen; no meio da linha, o hífen conta como escrito.
+    const pagesFor = async (q: string) => (await (await fetch(`${base}/elections/proposals?q=${encodeURIComponent(q)}`)).json()).candidacies[0].matches.pages;
+    assert.deepEqual(await Promise.all(['pré-sal', 'presal', 'bem-estar', 'bemestar'].map(pagesFor)), [[3], [3], [3], []]);
+    const hyphen = await (await fetch(`${base}/elections/proposals?q=${encodeURIComponent('pré-sal')}`)).json();
+    assert.deepEqual(hyphen.candidacies[0].matches.excerpts[0], { page: 3, method: 'native', before: 'O petróleo do ', match: 'pré- sal', after: ' e o bem-estar.' });
+    // Publicação com a normalização anterior: cobertura continua, busca responde 503 explícito até a reimportação.
+    proposalsMetadata = { ...proposalsDataset, method: proposalsV1Method };
+    assert.equal((await fetch(`${base}/elections/proposals`)).status, 200);
+    const stale = await fetch(`${base}/elections/proposals?q=${encodeURIComponent('acessibilidade')}`);
+    assert.equal(stale.status, 503); assert.match((await stale.json()).message, /normalização anterior; reimportar/);
+  } finally { published = false; proposalsPublished = false; proposalsMetadata = proposalsDataset; }
 });

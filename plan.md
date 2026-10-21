@@ -4,23 +4,23 @@ Criado em 12/10/2026 e revisado em **20/10/2026**. Fonte de verdade sobre finali
 
 ## Estado atual
 
-Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. Próximo: decisões de Rafael sobre a `proposals-2022-v2` da busca nas propostas, com a auditoria do §47; D3 depende de definir a revisão humana; E sem decisão.
+Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). Próximo: D3 depende de definir a revisão humana; E sem decisão; hospedagem a decidir.
 
 | Frente | Situação em 20/10/2026 |
 | --- | --- |
 | Resultados eleitorais | Presidência 2022 nacional e exterior; Governador e Senador nas 27 UFs, com turnos e categorias não válidas auditados. Deputados fora do escopo; 2026 e suplementar de RR não importados. |
 | IBGE e perfis TSE | Contexto municipal, mapas, associação local → setor, perfil por local, faixas de renda, participação por perfil, demografia, grupos, sensibilidade e entorno dos domicílios (§34) publicados no banco local. Nove versões atuais e ordem de importação no [README](README.md); IDs e auditorias em [reimportações](docs/reimportacoes-2026-10-18.md). |
-| Interface | Busca com sugestões, listagem municipal compacta/paginada, detalhe de todas as candidaturas, formulários GET sem JS, participação por município/estado civil e mapas por candidatura concluídos. Fase A (§33): setor censitário em cada local e quadro do município por situação; em `/mapa`, abstenção do cargo ou candidatura à escolha, dispersão e exportação CSV. Fase C (§34): entorno dos domicílios no painel do município, no cartão do local e em oito indicadores de `/mapa`. Fase B3 (§41): setores e locais em `/municipios/[code]/setores`. Fase D2 (§43): busca literal nas propostas da Presidência em `/propostas`. |
+| Interface | Busca com sugestões, listagem municipal compacta/paginada, detalhe de todas as candidaturas, formulários GET sem JS, participação por município/estado civil e mapas por candidatura concluídos. Fase A (§33): setor censitário em cada local e quadro do município por situação; em `/mapa`, abstenção do cargo ou candidatura à escolha, dispersão e exportação CSV. Fase C (§34): entorno dos domicílios no painel do município, no cartão do local e em oito indicadores de `/mapa`. Fase B3 (§41): setores e locais em `/municipios/[code]/setores`. Fase D2 (§43): busca literal nas propostas da Presidência em `/propostas`; na v2 (§48), texto em ordem de leitura das colunas, ligaduras e hífens de fim de linha tratados. |
 | Identidade | **Mente Eleitoral**, com a identidade 03A (petróleo/terracota), símbolo M/conexões e frase “Um olhar único sobre votação e população”. Marca aplicada ao site, ícones, banner inicial, compartilhamento e README (§37). |
 | Robustez e rastreabilidade | Isolamento por ano/cargo; downloads de relatórios/originais, inclusive GeoPackage; distinção entre falha técnica e ausência na fonte; dependências versionadas e publicação bloqueada por divergência. |
-| Última verificação da aplicação | 86 testes, typecheck/build, nove smokes, 31 regressões HTTP e 60 avaliações automáticas em Chrome/Firefox aprovados em 19/10; nove reexecuções idempotentes e duas comparações integrais das 11 tabelas, com dados anteriores preservados (§28). Fase A (§33): 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox, com os envios dos formulários com e sem JavaScript. Fase C (§34): 106 testes, typecheck/build, nove smokes, 31 regressões e `check:ui` completo nos dois navegadores, com novo cenário de acessibilidade de detalhes abertos. D2 (§43): typecheck, testes, build, nove smokes, `check:data`, `check:regressions`, `check:publication` e `check:ui` com `/propostas`. Revisão e auditoria de 20/10 (§§44–47): typecheck e testes (123 no §47); no §47, também os nove smokes; sem `check:ui`. |
+| Última verificação da aplicação | 86 testes, typecheck/build, nove smokes, 31 regressões HTTP e 60 avaliações automáticas em Chrome/Firefox aprovados em 19/10; nove reexecuções idempotentes e duas comparações integrais das 11 tabelas, com dados anteriores preservados (§28). Fase A (§33): 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox, com os envios dos formulários com e sem JavaScript. Fase C (§34): 106 testes, typecheck/build, nove smokes, 31 regressões e `check:ui` completo nos dois navegadores, com novo cenário de acessibilidade de detalhes abertos. D2 (§43): typecheck, testes, build, nove smokes, `check:data`, `check:regressions`, `check:publication` e `check:ui` com `/propostas`. Revisão e auditoria de 20/10 (§§44–47): typecheck e testes (123 no §47); no §47, também os nove smokes; sem `check:ui`. V2 das propostas (§48): typecheck, 128 testes, build, nove smokes, `check:data`, `check:regressions`, `check:publication` e `check:ui`. |
 | Operação | npm workspaces, Node 24.21.0, Next.js/NestJS, PostgreSQL/PostGIS e `pg_trgm`. Acesso por `pg`, sem Prisma. API/web temporárias encerradas no fim da verificação; banco preservado. |
 
 ### Pendências vigentes
 
 - **Antes de declarar acessibilidade completa:** leitor de tela humano, Safari e dispositivos reais, zoom de texto/alto contraste do sistema. Chrome/Firefox e verificações automáticas já foram realizados; não substituem esses ensaios.
-- **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
-- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 depende de definir a revisão humana e a E segue sem decisão. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) estão pendentes; a auditoria do §47 dá a evidência das quatro primeiras.
+- **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. O importador das propostas depende de pacotes do sistema (`poppler-utils`, `tesseract-ocr`, `tesseract-ocr-por`), que a API e a web não usam: importar localmente e levar o banco com `data/originals` e `data/audit`, ou criar uma imagem do importador com Ubuntu 24.04 para reproduzir as versões da publicação (§48). A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
+- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 depende de definir a revisão humana e a E segue sem decisão. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
 - **Manutenção registrada, sem execução autorizada nesta etapa:** limpeza de armazenamento; renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
 
@@ -639,3 +639,38 @@ A pedido de Rafael, em dois commits locais no `main`, sem push: correção do `S
 Pendente:
 - decisões 1–5 da seção 19 (Rafael);
 - depois delas, implementação da v2, carga e validação.
+
+## 48. `proposals-2022-v2` da busca nas propostas: implementação, carga e verificação — 20/10/2026
+
+Rafael decidiu seguir as cinco recomendações da seção 19 do [plano de melhorias](docs/plano-postgis-propostas.md):
+1. extração pela remontagem do `-bbox-layout`, conferida com o modo padrão do `pdftotext`;
+2. hífen de fim de linha como marcador opcional, só entre letras depois de linha em branco;
+3. mapeamentos de caracteres, com o travessão de fora;
+4. páginas ilegíveis medidas e bloqueantes, sem migração nem mudança na interface;
+5. 503 explícito na busca enquanto a publicação ativa for de outra normalização.
+
+- **Implementação** (detalhes no andamento da seção 19):
+  - normalização `proposals-search-v2` e expressão de busca nos contratos;
+  - importador `proposals-2022-v2` com a remontagem conferida e o limite de qualidade;
+  - API com a mesma expressão no banco e nos trechos, texto só das cinco primeiras páginas de cada documento e 503 para outra normalização;
+  - web com título próprio em `/propostas`, cabeçalhos dos grupos corrigidos e a situação de cada candidatura sem votos;
+  - auditoria comparando a normalização da v1, congelada, com o código de produção.
+- **Carga:** `e2c6e07e…` publicada em 357 s, com os mesmos totais da v1 (438 páginas, 388 com o texto do PDF, 50 por OCR). A v1 (`cce780ce…`) ficou preservada, despublicada; as tabelas das propostas passaram de 1,6 MB para 3,0 MB. A API local não estava no ar entre a troca de código e a carga, então o 503 de transição não chegou a ser servido.
+- **Validação** (auditoria depois da carga): páginas nativas da v1 iguais ao `-layout` (388/388) e da v2 iguais à remontagem (388/388); OCR da v2 idêntico ao da v1 (50/50); nenhum `search_text` divergente. Busca: tudo o que só a v1 encontrava eram palavras coladas entre colunas; "acessibilidade" encontra as mesmas páginas da v1; "inflação" passa a aparecer no nº 22 (6 páginas) e "responsabilização" no nº 30 (p. 33), que a v1 não encontrava.
+- **Pergunta de Rafael sobre o Tesseract na hospedagem:** `poppler-utils`, `tesseract-ocr` e `tesseract-ocr-por` são pacotes do sistema (apt), que o `npm ci` não instala, e só o importador os usa; a API e a web leem o texto do banco. Para hospedar, importar localmente e levar o banco com `data/originals` e `data/audit` dispensa as ferramentas no servidor. Importar no servidor exige uma imagem do importador com as versões fixadas: elas entram na identidade da publicação, e o Ubuntu 24.04 tem as atuais (Poppler 24.02.0, Tesseract 5.3.4, dados `por` 4.1.0). Decisão junto com a hospedagem; README e AGENTS passam a listar os pacotes.
+
+Verificação:
+- typecheck e 128 testes (16 nos contratos, 30 na API, 41 no importador e 41 na web);
+- builds dos contratos, da API e da web;
+- PostgreSQL e JavaScript com o mesmo resultado para 15 expressões de busca, inclusive caracteres especiais;
+- nove smokes contra API/web compiladas nas portas 3101/3100 (o `smoke:context`, com 117 requisições, cobre a v2), `check:data`, `check:regressions` e `check:publication`;
+- `check:ui` em Chrome 151 e Firefox 158: 96 avaliações de axe e refluxo sem violações, 12 delas em `/propostas` com e sem busca (1280, 375 e 320 px); servidores de teste encerrados ao final.
+
+Não verificados, como nas etapas anteriores: leitor de tela humano, Safari e dispositivos reais.
+
+A pedido de Rafael, em commit local no `main`, sem push.
+
+Pendente:
+- decisão da hospedagem, com o caminho do importador;
+- D3 (revisão humana) e E, sem decisão.
+

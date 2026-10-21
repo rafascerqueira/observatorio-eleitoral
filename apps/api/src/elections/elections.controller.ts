@@ -5,7 +5,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, incomeBandOf, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, tractMapQuerySchema, tractMapSchema, type TractMap, proposalsQuerySchema, proposalsResponseSchema, proposalsDatasetSchema, searchNormalize, searchText, type ProposalsResponse, URBAN_INDICATORS, urbanIndicatorCounts, type UrbanIndicator, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, incomeBandOf, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, tractMapQuerySchema, tractMapSchema, type TractMap, proposalsQuerySchema, proposalsResponseSchema, proposalsDatasetSchema, PROPOSALS_NORMALIZATION, SEARCH_HYPHEN_MARKER, searchNormalize, searchPattern, searchText, type ProposalsResponse, URBAN_INDICATORS, urbanIndicatorCounts, type UrbanIndicator, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { checkDependencies } from './dependencies';
 import { nationalSummary } from './national-summary';
@@ -519,7 +519,8 @@ export class ElectionsController {
 
   /**
    * Propostas de governo (fase D2): todas as candidaturas pela ordem do número, com a cobertura da extração; com `q`, as páginas com
-   * ocorrência literal (texto normalizado) e trechos do texto original. Nenhuma ordenação ou contagem por menções.
+   * ocorrência literal (texto normalizado, hífen de fim de linha opcional) e trechos do texto original. Nenhuma ordenação ou
+   * contagem por menções. Só busca numa publicação com a normalização deste código; outra (a v1, por exemplo) responde 503.
    */
   @Get('proposals')
   async proposals(@Query() query: Record<string, unknown>) {
@@ -536,22 +537,27 @@ export class ElectionsController {
     const rows = (await this.database.query<{ number: string; ballot_name: string; party: string; situation: string; listing: 'candidate' | 'no-votes' | 'same-document'; sha256: string | null; file: string | null; pages: number | null; native_pages: number | null; ocr_pages: number | null; empty_pages: number | null }>(
       `SELECT c.number, c.ballot_name, c.party, c.situation, c.listing, c.document_sha256 AS sha256, d.file, d.pages, d.native_pages, d.ocr_pages, d.empty_pages
       FROM proposal_candidacies c LEFT JOIN proposal_documents d ON d.batch_id=c.batch_id AND d.sha256=c.document_sha256 WHERE c.batch_id=$1 ORDER BY c.number::integer, c.sq_candidato`, [batch.id])).rows;
-    const term = parsed.data.q?.trim() ? searchText(parsed.data.q) : null;
-    // Busca no texto normalizado; o trecho é recortado do texto original pelo mapa de posições da normalização.
+    const term = parsed.data.q?.trim() ? searchText(parsed.data.q).replaceAll(SEARCH_HYPHEN_MARKER, '') : null;
+    if (term && dataset.data.method.normalization !== PROPOSALS_NORMALIZATION) throw new ServiceUnavailableException('Publicação das propostas com normalização anterior; reimportar.');
+    // Mesma expressão no banco e aqui; o trecho é recortado do texto original pelo mapa de posições da normalização. O texto só vem
+    // das primeiras páginas de cada documento, as que têm trecho.
     type Excerpt = { page: number; method: 'native' | 'ocr' | 'empty'; before: string; match: string; after: string };
     const found = new Map<string, { pages: number[]; excerpts: Excerpt[] }>();
     if (term) {
-      const pages = (await this.database.query<{ sha256: string; page: number; method: Excerpt['method']; text: string }>(
-        'SELECT sha256, page, method, text FROM proposal_pages WHERE batch_id=$1 AND strpos(search_text, $2) > 0 ORDER BY sha256, page', [batch.id, term])).rows;
+      const pattern = searchPattern(term), expression = new RegExp(pattern, 'u');
+      const pages = (await this.database.query<{ sha256: string; page: number; method: Excerpt['method']; text: string | null }>(
+        `SELECT sha256, page, method, CASE WHEN row_number() OVER (PARTITION BY sha256 ORDER BY page) <= $3 THEN text END AS text
+        FROM proposal_pages WHERE batch_id=$1 AND search_text ~ $2 ORDER BY sha256, page`, [batch.id, pattern, PROPOSAL_EXCERPTS])).rows;
       const clean = (text: string) => text.replace(/\s+/g, ' ');
       for (const page of pages) {
         const entry = found.get(page.sha256) ?? { pages: [], excerpts: [] };
         entry.pages.push(page.page);
         if (entry.excerpts.length < PROPOSAL_EXCERPTS) {
+          if (page.text === null) throw new ServiceUnavailableException('Texto das propostas inconsistente.');
           const { normalized, map } = searchNormalize(page.text);
-          const at = normalized.indexOf(term);
-          if (at < 0) throw new ServiceUnavailableException('Texto das propostas inconsistente.');
-          const start = map[at]!, end = map[at + term.length - 1]! + 1;
+          const match = expression.exec(normalized);
+          if (!match) throw new ServiceUnavailableException('Texto das propostas inconsistente.');
+          const start = map[match.index]!, end = map[match.index + match[0].length - 1]! + 1;
           entry.excerpts.push({ page: page.page, method: page.method, before: clean(page.text.slice(Math.max(0, start - EXCERPT_CONTEXT), start)).trimStart(), match: clean(page.text.slice(start, end)), after: clean(page.text.slice(end, end + EXCERPT_CONTEXT)).trimEnd() });
         }
         found.set(page.sha256, entry);

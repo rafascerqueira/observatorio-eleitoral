@@ -686,26 +686,53 @@ export function percent(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : numerator / denominator * 100;
 }
 
+/** Versão da normalização da busca nas propostas: vai no `method` da publicação, e a API só busca numa publicação desta versão. */
+export const PROPOSALS_NORMALIZATION = 'proposals-search-v2';
+/** Marcador do hífen de fim de linha no texto normalizado: hífen que pode ou não pertencer à palavra (casa com nada ou com "-"). */
+export const SEARCH_HYPHEN_MARKER = '­';
+const SEARCH_REPLACEMENTS: Record<string, string> = {
+  'ﬀ': 'ff', 'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬃ': 'ffi', 'ﬄ': 'ffl', 'ﬅ': 'st', 'ﬆ': 'st', '‐': '-', '‑': '-',
+  '‘': "'", '’': "'", '‛': "'", 'ʼ': "'", '“': '"', '”': '"', '„': '"', '‟': '"',
+};
+const SEARCH_INVISIBLE = /[­​-‍⁠﻿]/;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 /**
- * Normalização da busca literal nas propostas (importador e API usam a mesma): minúsculas sem acentos, espaços colapsados e
- * palavra partida por hífen no fim da linha reunida ("prote-\nção" → "protecao"). `map[i]` é a posição, no texto original, do
- * caractere `i` normalizado, para recortar os trechos do original.
+ * Se o hífen de fim de linha entre `before` e `after` é reunido: com uma quebra, entre letras ou dígitos; depois de linha em branco
+ * (fim de fluxo no texto do PDF, de bloco no OCR), só entre letras, porque o que segue um hífen no fim da página costuma ser o
+ * número dela (auditoria de 20/10/2026).
+ */
+export const joinsAtLineEnd = (before: string, gap: string, after: string) =>
+  (gap.match(/\n/g) ?? []).length > 1 ? /\p{L}/u.test(before) && /\p{L}/u.test(after) : LETTER_OR_DIGIT.test(before) && LETTER_OR_DIGIT.test(after);
+
+/**
+ * Normalização da busca literal nas propostas (`proposals-search-v2`; importador e API usam a mesma): minúsculas sem acentos,
+ * espaços colapsados, ligaduras em letras, invisíveis removidos sem virar espaço, hífens e aspas Unicode nos equivalentes ASCII
+ * e hífen de fim de linha (`joinsAtLineEnd`) guardado como `SEARCH_HYPHEN_MARKER`, em vez de descartado. Sem NFKD: "nº" e "²"
+ * ficam como estão. `map[i]` é a posição, no texto original, do caractere `i` normalizado, para recortar os trechos do original.
  */
 export function searchNormalize(text: string): { normalized: string; map: number[] } {
   const out: string[] = [], map: number[] = [];
-  const lineBreakHyphen = /-[ \t]*\r?\n\s*/y, space = /\s+/y;
+  const lineBreakHyphen = /[-­‐‑][ \t]*(\r?\n\s*)/y, space = /\s+/y;
   for (let index = 0; index < text.length;) {
     lineBreakHyphen.lastIndex = index;
-    if (index > 0 && /\p{L}/u.test(text[index - 1]!) && lineBreakHyphen.test(text) && /\p{L}/u.test(text[lineBreakHyphen.lastIndex] ?? '')) { index = lineBreakHyphen.lastIndex; continue; }
+    const join = index > 0 ? lineBreakHyphen.exec(text) : null;
+    if (join && joinsAtLineEnd(text[index - 1]!, join[1]!, text[lineBreakHyphen.lastIndex] ?? '')) { out.push(SEARCH_HYPHEN_MARKER); map.push(index); index = lineBreakHyphen.lastIndex; continue; }
+    if (SEARCH_INVISIBLE.test(text[index]!)) { index++; continue; }
     space.lastIndex = index;
     if (space.test(text)) { if (out.length && out[out.length - 1] !== ' ') { out.push(' '); map.push(index); } index = space.lastIndex; continue; }
-    for (const char of text[index]!.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()) { out.push(char); map.push(index); }
+    for (const char of (SEARCH_REPLACEMENTS[text[index]!] ?? text[index]!).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()) { out.push(char); map.push(index); }
     index++;
   }
   if (out[out.length - 1] === ' ') { out.pop(); map.pop(); }
   return { normalized: out.join(''), map };
 }
 export const searchText = (text: string) => searchNormalize(text).normalized;
+/**
+ * Expressão da busca literal, a mesma no PostgreSQL (`~`) e no JavaScript: o termo normalizado com o marcador opcional entre
+ * caracteres e o "-" do termo casando "-" ou o marcador. Caracteres especiais escapados; marcador no próprio termo ignorado.
+ */
+export const searchPattern = (term: string) => [...term.replaceAll(SEARCH_HYPHEN_MARKER, '')]
+  .map((char) => char === '-' ? `[-${SEARCH_HYPHEN_MARKER}]` : char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join(`${SEARCH_HYPHEN_MARKER}?`);
 
 /** Propostas de governo (fase D2, `2022/proposals/president`): documentos do TSE, texto por página e método de extração. */
 export const PROPOSAL_METHODS = ['native', 'ocr', 'empty'] as const;
@@ -714,7 +741,11 @@ export const PROPOSAL_LISTINGS = ['candidate', 'no-votes', 'same-document'] as c
 export const proposalsDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('proposals'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(), notes: z.array(z.string()),
-  method: z.object({ textPageMinChars: nonnegative, pdftotext: z.string(), tesseract: z.string(), ocrLanguage: z.string(), ocrDpi: nonnegative }),
+  // Da v2 em diante: extração em ordem de leitura, distância mínima entre palavras, versão da normalização e limiares de texto
+  // ilegível. Ausentes na v1 (texto do `-layout`, normalização anterior), nunca presumidos.
+  method: z.object({ textPageMinChars: nonnegative, pdftotext: z.string(), tesseract: z.string(), ocrLanguage: z.string(), ocrDpi: nonnegative,
+    extraction: z.literal('bbox-layout').optional(), wordSpace: z.number().positive().optional(), normalization: z.string().optional(),
+    quality: z.object({ maxBadRatio: z.number().positive(), maxVowellessRatio: z.number().positive() }).optional() }),
   totals: z.object({ candidacies: nonnegative, documents: nonnegative, pages: nonnegative, nativePages: nonnegative, ocrPages: nonnegative, emptyPages: nonnegative }),
 });
 export type ProposalsDataset = z.infer<typeof proposalsDatasetSchema>;

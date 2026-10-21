@@ -5,19 +5,20 @@ import { basename, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
-import { searchText } from '@observatorio/contracts';
+import { PROPOSALS_NORMALIZATION, SEARCH_HYPHEN_MARKER as HYPHEN_MARKER, searchPattern, searchText } from '@observatorio/contracts';
 import { entries, rows } from './csv';
 import { ROOT, sourceFile } from './sources';
-import { bboxPages, bigrams, characterCounts, defaultModeText, findableForms, HYPHEN_MARKER, hyphenJoins, JOIN_CLASSES, joinClass, midLineTokens, otherCharacters, pageQuality, proposedNormalize, proposedSearchPattern, tokens, WORD_SPACE, type CharacterCounts, type WordGaps } from './proposals-text';
+import { bboxPages, bigrams, characterCounts, defaultModeText, findableForms, hyphenJoins, JOIN_CLASSES, joinClass, midLineTokens, otherCharacters, pageQuality, tokens, v1SearchText, WORD_SPACE, type CharacterCounts, type WordGaps } from './proposals-text';
 
 /**
- * Auditoria do texto das propostas para a v2 (plano de melhorias, seção 19), sem publicação e sem escrita no banco. Compara, por
- * documento e pelas candidaturas que o apresentaram, o texto da v1 (`pdftotext -layout` + `searchText`) com o proposto
- * (`-bbox-layout` remontado + `proposedNormalize`): colunas, hífens de fim de linha, caracteres a normalizar, sinais de texto
+ * Auditoria do texto das propostas (plano de melhorias, seção 19), sem publicação e sem escrita no banco. Compara, por documento e
+ * pelas candidaturas que o apresentaram, o texto da v1 (`pdftotext -layout` + `v1SearchText`, a normalização da v1 congelada) com o
+ * da v2 (`-bbox-layout` remontado + `searchText` dos contratos): colunas, hífens de fim de linha, caracteres a normalizar, sinais de texto
  * ilegível e palavras e pares de palavras que a busca encontraria em cada um. A remontagem é conferida, página a página, contra o
  * modo padrão do pdftotext (o mesmo texto, com o hífen de fim de linha descartado). Os PDFs são dados não confiáveis: extraídos num
  * diretório próprio, lidos só por pdfinfo/pdftotext/pdftoppm em processo separado, sem shell e com tempo limite; nada do texto é
- * executado nem tratado como instrução. Com banco disponível, confere só por leitura que o texto `-layout` reproduz a v1 publicada.
+ * executado nem tratado como instrução. Com banco disponível, confere só por leitura as publicações: a v1 com o texto do `-layout`; a
+ * v2 com o da remontagem, com o `searchText` atual e com o mesmo OCR da v1.
  */
 const exec = promisify(execFile);
 /** Mesmo limiar da v1: abaixo dele a página vai para o OCR e fica fora da comparação de extração. */
@@ -93,15 +94,15 @@ export async function auditDocuments(documents: readonly AuditDocument[], option
   // com o marcador opcional. Termos: todas as palavras de 3+ caracteres do corpus, na grafia em que seriam digitadas. O que só a v1
   // encontra é procurado também no texto `-raw`: se não estiver lá, é palavra colada pela v1, não texto do PDF.
   const searchable = read.map(({ pages }) => pages.filter((page) => page.native).map((page) => {
-    const v2 = proposedNormalize(page.bbox);
-    return { page: page.page, v1: searchText(page.layout), v2, v2Joined: v2.replaceAll(HYPHEN_MARKER, ''), raw: proposedNormalize(page.raw).replaceAll(HYPHEN_MARKER, '') };
+    const v2 = searchText(page.bbox);
+    return { page: page.page, v1: v1SearchText(page.layout), v2, v2Joined: v2.replaceAll(HYPHEN_MARKER, ''), raw: searchText(page.raw).replaceAll(HYPHEN_MARKER, '') };
   }));
   const query = (term: string) => {
-    const v1 = searchText(term), v2 = proposedNormalize(term);
+    const v1 = v1SearchText(term), v2 = searchText(term);
     return { v1: v1.length >= 3 ? v1 : null, v2: v2.length >= 3 ? v2 : null };
   };
-  const queries = [...new Set(searchable.flat().flatMap((page) => [...tokens(page.v1).map((token) => proposedNormalize(token).replaceAll(HYPHEN_MARKER, '')), ...tokens(page.v2).flatMap(findableForms)]))]
-    .map((term) => { const { v1, v2 } = query(term); return { term, v1, v2, pattern: v2?.includes('-') ? proposedSearchPattern(v2) : null }; });
+  const queries = [...new Set(searchable.flat().flatMap((page) => [...tokens(page.v1).map((token) => searchText(token).replaceAll(HYPHEN_MARKER, '')), ...tokens(page.v2).flatMap(findableForms)]))]
+    .map((term) => { const { v1, v2 } = query(term); return { term, v1, v2, pattern: v2?.includes('-') ? new RegExp(searchPattern(v2), 'u') : null }; });
   const search = searchable.map((pages) => {
     const onlyV1: Array<{ text: string; pages: number[]; inRaw: number[] }> = [], onlyV2: Array<{ text: string; pages: number[] }> = [];
     for (const { term, v1, v2, pattern } of queries) {
@@ -118,7 +119,7 @@ export async function auditDocuments(documents: readonly AuditDocument[], option
   });
   // Ocorrências de termos escolhidos, v1 e proposta, por documento (nulo: termo curto demais para a busca).
   const terms = (options.terms ?? []).map((term) => {
-    const { v1, v2 } = query(term), pattern = v2 ? proposedSearchPattern(v2, 'gu') : null;
+    const { v1, v2 } = query(term), pattern = v2 ? new RegExp(searchPattern(v2), 'gu') : null;
     return { term, documents: read.map(({ document }, index) => ({ numbers: document.candidacies.map((item) => item.number),
       v1: v1 ? searchable[index]!.reduce((sum, page) => sum + page.v1.split(v1).length - 1, 0) : null,
       v2: pattern ? searchable[index]!.reduce((sum, page) => sum + (page.v2.match(pattern) ?? []).length, 0) : null })) };
@@ -128,12 +129,12 @@ export async function auditDocuments(documents: readonly AuditDocument[], option
   const columnPages: Array<{ sha256: string; file: string; page: number; onlyLayout: number; onlyBbox: number; examples: { onlyLayout: string[]; onlyBbox: string[] }; image: string | null }> = [];
   const qualityPages: Array<{ sha256: string; file: string; page: number; quality: ReturnType<typeof pageQuality>; image: string | null }> = [];
   const others: string[] = [];
-  // Texto -layout de cada página (chave sha256/página), para conferir com a v1 publicada.
-  const layoutTexts = new Map<string, string>();
+  // Texto -layout e remontado de cada página (chave sha256/página), para conferir com as publicações.
+  const layoutTexts = new Map<string, string>(), bboxTexts = new Map<string, string>();
   const report = read.map(({ document, pages }, index) => {
     const native = pages.filter((page) => page.native);
     // Efeito da extração, com a mesma normalização da v1 nos dois textos.
-    const layoutV1 = native.map((page) => tokens(searchText(page.layout))), bboxV1 = native.map((page) => tokens(searchText(page.bbox)));
+    const layoutV1 = native.map((page) => tokens(v1SearchText(page.layout))), bboxV1 = native.map((page) => tokens(v1SearchText(page.bbox)));
     native.forEach((page, index) => {
       const a = new Set(bigrams(layoutV1[index]!)), b = new Set(bigrams(bboxV1[index]!));
       const onlyLayout = [...a].filter((pair) => !b.has(pair)), onlyBbox = [...b].filter((pair) => !a.has(pair));
@@ -141,7 +142,7 @@ export async function auditDocuments(documents: readonly AuditDocument[], option
     });
     // Efeito da normalização, sobre o texto proposto; e o efeito total, v1 contra a proposta. As grafias com hífen que o marcador
     // acrescenta ficam à parte, para não encobrir as palavras recuperadas (colunas, ligaduras, invisíveis).
-    const bboxV2 = native.map((page) => tokens(proposedNormalize(page.bbox)));
+    const bboxV2 = native.map((page) => tokens(searchText(page.bbox)));
     const joined = (words: readonly string[]) => words.map((word) => word.replaceAll(HYPHEN_MARKER, ''));
     const v1Tokens = tally(layoutV1.flat()), bboxV1Tokens = tally(bboxV1.flat()), v2Forms = tally(bboxV2.flat().flatMap(findableForms)), v2Joined = tally(bboxV2.flatMap(joined));
     const v2Hyphenated = tally(bboxV2.flat().filter((word) => word.includes(HYPHEN_MARKER)).map((word) => word.replaceAll(HYPHEN_MARKER, '-')));
@@ -155,7 +156,7 @@ export async function auditDocuments(documents: readonly AuditDocument[], option
     const qualities = native.map((page) => ({ sha256: document.sha256, file: document.file, page: page.page, quality: pageQuality(page.bbox), image: null }));
     qualityPages.push(...qualities);
     for (const page of native) others.push(...otherCharacters(page.bbox));
-    for (const page of pages) layoutTexts.set(`${document.sha256}/${page.page}`, page.layout);
+    for (const page of pages) { layoutTexts.set(`${document.sha256}/${page.page}`, page.layout); bboxTexts.set(`${document.sha256}/${page.page}`, page.bbox); }
     return {
       sha256: document.sha256, file: document.file, candidacies: document.candidacies, pages: pages.length, nativePages: native.length,
       belowThreshold: pages.filter((page) => !page.native).map((page) => page.page),
@@ -212,25 +213,40 @@ export async function auditDocuments(documents: readonly AuditDocument[], option
     terms,
     review: { columns: byColumns, quality: byQuality },
     otherCharacters: [...tally(others)].sort(([x, m], [y, n]) => n - m || x.localeCompare(y)).slice(0, 40).map(([char, count]) => ({ code: `U+${char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`, char, count })),
-    layoutTexts,
+    layoutTexts, bboxTexts,
   };
 }
 
-/** Só leitura: o texto `-layout` reproduz o da v1 publicada? E o efeito da normalização proposta no texto do OCR da v1. */
-async function compareWithV1(texts: ReadonlyMap<string, string>, zipSha256: string) {
+/**
+ * Só leitura: confere as publicações das propostas com o texto extraído agora. V1: páginas nativas com o texto do `-layout`. V2:
+ * páginas nativas com o da remontagem, `search_text` igual ao `searchText` atual e OCR igual ao da v1. E o efeito da normalização
+ * da v2 no texto do OCR da v1.
+ */
+async function compareWithPublications(texts: { layout: ReadonlyMap<string, string>; bbox: ReadonlyMap<string, string> }, zipSha256: string) {
   if (!process.env.DATABASE_URL) return { compared: false, reason: 'DATABASE_URL ausente.' };
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000, options: '-c default_transaction_read_only=on' });
   try {
-    const batch = (await pool.query<{ id: string; metadata: { sources?: Array<{ file: string; sha256: string }> } }>("SELECT id, metadata FROM import_batches WHERE published AND scope='2022/proposals/president' LIMIT 1")).rows[0];
-    if (!batch) return { compared: false, reason: 'Nenhuma publicação de 2022/proposals/president.' };
-    const pages = (await pool.query<{ sha256: string; page: number; method: string; text: string }>('SELECT sha256, page, method, text FROM proposal_pages WHERE batch_id=$1 ORDER BY sha256, page', [batch.id])).rows;
-    const native = pages.filter((page) => page.method === 'native'), ocr = pages.filter((page) => page.method === 'ocr');
-    const different = native.filter((page) => texts.get(`${page.sha256}/${page.page}`) !== page.text).map((page) => `${page.sha256.slice(0, 12)}/${page.page}`);
-    const v1 = tally(ocr.flatMap((page) => tokens(searchText(page.text)))), v2 = ocr.map((page) => tokens(proposedNormalize(page.text)));
-    const v2Forms = tally(v2.flat().flatMap(findableForms)), v2Joined = tally(v2.flat().map((word) => word.replaceAll(HYPHEN_MARKER, '')));
-    return { compared: true, batchId: batch.id, sameZip: batch.metadata.sources?.find((source) => source.file === 'proposta_governo_2022_BR.zip')?.sha256 === zipSha256,
-      nativePages: native.length, nativeIdentical: native.length - different.length, nativeDifferent: different.slice(0, REVIEW.examples),
-      ocrPages: ocr.length, ocrNormalization: { tokensOnlyV1: only(v1, v2Forms), tokensOnlyV2: only(v2Joined, v1) } };
+    type Batch = { id: string; published: boolean; metadata: { importerVersion?: string; sources?: Array<{ file: string; sha256: string }> } };
+    type Page = { sha256: string; page: number; method: string; text: string; search_text: string };
+    const batches = (await pool.query<Batch>("SELECT id, published, metadata FROM import_batches WHERE scope='2022/proposals/president' ORDER BY published DESC, imported_at DESC")).rows;
+    const latest = (version: string) => batches.find((batch) => batch.metadata.importerVersion === version) ?? null;
+    const pagesOf = async (batch: Batch | null) => batch ? (await pool.query<Page>('SELECT sha256, page, method, text, search_text FROM proposal_pages WHERE batch_id=$1 ORDER BY sha256, page', [batch.id])).rows : [];
+    const sameZip = (batch: Batch) => batch.metadata.sources?.find((source) => source.file === 'proposta_governo_2022_BR.zip')?.sha256 === zipSha256;
+    const different = (pages: Page[], expected: ReadonlyMap<string, string>) => pages.filter((page) => expected.get(`${page.sha256}/${page.page}`) !== page.text).map((page) => `${page.sha256.slice(0, 12)}/${page.page}`);
+    const v1Batch = latest('proposals-2022-v1'), v2Batch = latest('proposals-2022-v2');
+    const v1Pages = await pagesOf(v1Batch), v2Pages = await pagesOf(v2Batch);
+    const v1Native = v1Pages.filter((page) => page.method === 'native'), v1Ocr = v1Pages.filter((page) => page.method === 'ocr');
+    const v2Native = v2Pages.filter((page) => page.method === 'native'), v2Ocr = v2Pages.filter((page) => page.method === 'ocr');
+    const v1NativeDifferent = different(v1Native, texts.layout), v2NativeDifferent = different(v2Native, texts.bbox);
+    const v2OcrDifferent = different(v2Ocr, new Map(v1Ocr.map((page) => [`${page.sha256}/${page.page}`, page.text])));
+    const a = tally(v1Ocr.flatMap((page) => tokens(v1SearchText(page.text)))), b = v1Ocr.map((page) => tokens(searchText(page.text)));
+    return { compared: true,
+      v1: v1Batch && { batchId: v1Batch.id, published: v1Batch.published, sameZip: sameZip(v1Batch), nativePages: v1Native.length, nativeIdentical: v1Native.length - v1NativeDifferent.length,
+        nativeDifferent: v1NativeDifferent.slice(0, REVIEW.examples), ocrPages: v1Ocr.length,
+        ocrNormalization: { tokensOnlyV1: only(a, tally(b.flat().flatMap(findableForms))), tokensOnlyV2: only(tally(b.flat().map((word) => word.replaceAll(HYPHEN_MARKER, ''))), a) } },
+      v2: v2Batch && { batchId: v2Batch.id, published: v2Batch.published, sameZip: sameZip(v2Batch), nativePages: v2Native.length, nativeIdentical: v2Native.length - v2NativeDifferent.length,
+        nativeDifferent: v2NativeDifferent.slice(0, REVIEW.examples), ocrPages: v2Ocr.length, ocrIdenticalToV1: v1Batch ? v2Ocr.length - v2OcrDifferent.length : null,
+        ocrDifferentFromV1: v1Batch ? v2OcrDifferent.slice(0, REVIEW.examples) : null, searchTextDifferent: v2Pages.filter((page) => page.search_text !== searchText(page.text)).length } };
   } catch (error) { return { compared: false, reason: `Banco indisponível: ${error instanceof Error ? error.message.split('\n')[0] : 'erro'}` }; }
   finally { await pool.end(); }
 }
@@ -269,21 +285,22 @@ async function main() {
   const stamp = new Date().toISOString().replaceAll(':', '-');
   const directory = resolve(ROOT, 'data/analysis', `propostas-texto-${stamp}`);
   await mkdir(directory, { recursive: true });
-  const { layoutTexts, ...audit } = await auditDocuments(ordered, { images: images ? resolve(directory, 'paginas') : null, terms });
-  const v1Publication = await compareWithV1(layoutTexts, proposals.sha256);
+  const { layoutTexts, bboxTexts, ...audit } = await auditDocuments(ordered, { images: images ? resolve(directory, 'paginas') : null, terms });
+  const publications = await compareWithPublications({ layout: layoutTexts, bbox: bboxTexts }, proposals.sha256);
   const extractor = (await exec('pdftotext', ['-v'], { timeout: 10_000 }).catch((error: { stdout?: string; stderr?: string }) => error)).stderr?.split('\n')[0] ?? null;
   const report = {
-    generatedAt: new Date().toISOString(), scope: 'Propostas de governo da Presidência, Eleições 2022 (TSE): auditoria do texto para a proposals-2022-v2, sem publicação.',
+    generatedAt: new Date().toISOString(), scope: 'Propostas de governo da Presidência, Eleições 2022 (TSE): auditoria do texto da busca (v1 × v2), sem publicação.',
     plan: 'docs/plano-postgis-propostas.md, seção 19',
     sources: [proposals, registry].map(({ file, url, sha256, sizeBytes, lastModified, downloadedAt }) => ({ file, url, sha256, sizeBytes, lastModified, downloadedAt })),
-    method: { extractor, textPageMinChars: TEXT_PAGE_MIN_CHARS, review: REVIEW, bboxWordSpace: WORD_SPACE, v1: 'pdftotext -layout + searchText (contratos)',
-      proposed: 'pdftotext -bbox-layout remontado (espaço entre palavras a partir de bboxWordSpace da altura da linha; conferido contra o modo padrão) + proposedNormalize (protótipo em proposals-text.ts)',
+    method: { extractor, textPageMinChars: TEXT_PAGE_MIN_CHARS, review: REVIEW, bboxWordSpace: WORD_SPACE, normalization: PROPOSALS_NORMALIZATION,
+      v1: 'pdftotext -layout + v1SearchText (normalização da v1, congelada em proposals-text.ts)',
+      v2: 'pdftotext -bbox-layout remontado (espaço entre palavras a partir de bboxWordSpace da altura da linha; conferido contra o modo padrão) + searchText e searchPattern dos contratos',
       tokens: 'Palavras do texto normalizado sem pontuação nas pontas; aproximação do que a busca literal encontra. Com o marcador, contam as grafias sem e com hífen.', staging },
-    ...audit, v1Publication,
+    ...audit, publications,
     sideEffects: 'Download e preservação dos ZIPs do TSE, se ausentes; PDFs extraídos em data/staging/proposta_governo_2022-auditoria; imagens de páginas no diretório do relatório; nenhuma escrita no banco nem publicação.',
   };
   await writeFile(resolve(directory, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
-  console.log(JSON.stringify({ report: resolve(directory, 'report.json'), summary: audit.summary, v1Publication: { ...v1Publication, ocrNormalization: undefined },
+  console.log(JSON.stringify({ report: resolve(directory, 'report.json'), summary: audit.summary, publications: publications.compared ? { v1: publications.v1 && { ...publications.v1, ocrNormalization: undefined }, v2: publications.v2 } : publications,
     documents: audit.documents.map((item) => ({ candidacies: item.candidacies.map((candidacy) => `${candidacy.number} ${candidacy.ballotName}`).join(' / '), pages: item.pages, native: item.nativePages,
       defaultModeDifferent: item.defaultMode.different.length, searchOnlyV1: item.search.onlyV1.pairs, searchOnlyV1InRaw: item.search.onlyV1.inRaw, searchOnlyV2: item.search.onlyV2.pairs, joins: item.hyphens.lineEndJoins,
       pairsOnlyLayout: item.extraction.pairsOnlyLayout.distinct, pairsOnlyBbox: item.extraction.pairsOnlyBbox.distinct, tokensOnlyV1: item.total.tokensOnlyV1.distinct, tokensOnlyV2: item.total.tokensOnlyV2.distinct, flagged: item.quality.flagged.length })) }, null, 2));

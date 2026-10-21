@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { hasControlCharacters } from '@observatorio/contracts';
 import { getProposals } from '../../lib/results';
@@ -5,6 +6,7 @@ import { QueryForm } from '../../components/query-form';
 import { CandidacyEntry } from '../../components/proposal-entry';
 
 export const dynamic = 'force-dynamic';
+export const metadata: Metadata = { title: 'Busca nas propostas de governo' };
 /**
  * Busca literal nas propostas de governo da Presidência (fase D2). Todas as candidaturas aparecem sempre, pela ordem do número;
  * nada é ordenado, pontuado ou resumido pelo conteúdo. Ausência de ocorrência não é ausência de proposta.
@@ -32,8 +34,8 @@ export default async function Proposals({ searchParams }: { searchParams: Promis
           : <>
             <p className="query-note">{data.query ? <>Resultados para “{data.query}”, em todas as candidaturas, pela ordem do número.</> : 'Candidaturas pela ordem do número, com a cobertura do texto de cada documento.'} O texto vem do próprio PDF; nas páginas em imagem, de OCR ({data.method.tesseract}), que pode errar letras e palavras.</p>
             {listed.map((item) => <CandidacyEntry key={`${item.number}-${item.listing}`} item={item} query={data.query} />)}
-            {withoutVotes.length > 0 && <><h3 className="proposal-group">Candidaturas sem votos</h3><p className="query-note">Registraram documento, mas a candidatura foi considerada inapta e não recebeu votos.</p>
-              {withoutVotes.map((item) => <CandidacyEntry key={`${item.number}-${item.listing}`} item={item} query={data.query} />)}</>}
+            {withoutVotes.length > 0 && <><h3 className="proposal-group">Candidaturas sem votos</h3><p className="query-note">Sem votos nos resultados publicados, aparecem à parte; a situação de cada uma vem do cadastro do TSE.</p>
+              {withoutVotes.map((item) => <CandidacyEntry key={`${item.number}-${item.listing}`} item={item} query={data.query} level={4} />)}</>}
             <p className="source-note">Fonte: Tribunal Superior Eleitoral, Portal de Dados Abertos, licença Creative Commons Atribuição. <a href={`/arquivos/sources/${data.source.sha256}/${data.source.file}`}>Baixar o arquivo original preservado ({data.source.file})</a> · <Link href="/fontes#propostas">Fontes</Link>. Publicação {data.batchId.slice(0, 12)}….</p>
           </>}
       </div>

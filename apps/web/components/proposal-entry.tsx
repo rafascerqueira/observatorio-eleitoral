@@ -9,11 +9,15 @@ function coverage(document: NonNullable<Candidacy['document']>) {
   return `${number(document.pages)} páginas: ${parts.join(', ')}.`;
 }
 
-/** Uma candidatura: cobertura do documento e, com busca, páginas e trechos (texto do PDF tratado como texto, nunca como marcação). */
-export function CandidacyEntry({ item, query }: { item: Candidacy; query: string | null }) {
-  const title = `${item.number} · ${item.ballotName} (${item.party})`;
+/**
+ * Uma candidatura: cobertura do documento e, com busca, páginas e trechos (texto do PDF tratado como texto, nunca como marcação).
+ * `level`: 4 quando a entrada fica sob o título de um grupo (candidaturas sem votos).
+ */
+export function CandidacyEntry({ item, query, level = 3 }: { item: Candidacy; query: string | null; level?: 3 | 4 }) {
+  const title = `${item.number} · ${item.ballotName} (${item.party})`, Heading = level === 4 ? 'h4' : 'h3';
   return <article className="proposal-entry" aria-labelledby={`candidatura-${item.number}-${item.listing}`}>
-    <h3 id={`candidatura-${item.number}-${item.listing}`}>{title}</h3>
+    <Heading id={`candidatura-${item.number}-${item.listing}`}>{title}</Heading>
+    {item.listing === 'no-votes' && <p className="source-note">Situação no cadastro do TSE: {item.situation.toLowerCase()}; sem votos nos resultados publicados.</p>}
     {item.document ? <p className="source-note">{coverage(item.document)}</p> : <p className="source-note">Sem documento no arquivo do TSE.</p>}
     {item.sameDocumentAs.map((other) => <p key={other.ballotName} className="source-note">O mesmo arquivo foi registrado também pela candidatura {other.number} · {other.ballotName} (situação no cadastro: {other.situation.toLowerCase()}); ele aparece uma vez, aqui.</p>)}
     {query && item.matches && (item.matches.pages.length === 0

@@ -26,3 +26,11 @@ test('propostas: trecho do PDF é texto, não marcação; OCR identificado e pá
   assert.match(html, /páginas 2, 7, 9/); assert.match(html, /Trechos das 1 primeiras/); assert.match(html, /p\. 2 \(OCR\)/);
   assert.match(html, /<mark>Saúde<\/mark>/); assert.doesNotMatch(html, /<script>/); assert.match(html, /&lt;script&gt;/);
 });
+
+test('propostas: candidatura sem votos com a própria situação e cabeçalho sob o título do grupo', () => {
+  const noVotes: Candidacy = { ...base, number: '90', ballotName: 'CANDIDATURA D', situation: 'INAPTO', listing: 'no-votes', sameDocumentAs: [] };
+  const html = renderToStaticMarkup(createElement(CandidacyEntry, { item: noVotes, query: null, level: 4 }));
+  assert.match(html, /<h4 id="candidatura-90-no-votes">90 · CANDIDATURA D \(P2\)<\/h4>/);
+  assert.match(html, /Situação no cadastro do TSE: inapto; sem votos nos resultados publicados\./);
+  assert.match(render(base, null), /<h3 id="candidatura-14-candidate">/); assert.doesNotMatch(render(base, null), /Situação no cadastro/);
+});

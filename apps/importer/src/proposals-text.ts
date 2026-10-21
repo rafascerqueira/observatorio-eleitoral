@@ -1,8 +1,8 @@
-import { searchText } from '@observatorio/contracts';
+import { joinsAtLineEnd, SEARCH_HYPHEN_MARKER as HYPHEN_MARKER, searchText } from '@observatorio/contracts';
 
 /**
- * Texto das propostas para a auditoria da v2 (plano de melhorias, seção 19): leitura do `pdftotext -bbox-layout`, protótipo da
- * normalização proposta e medidas por página. Nada daqui entra numa publicação; a busca publicada continua com `searchText`.
+ * Texto das propostas: leitura e remontagem do `pdftotext -bbox-layout` e sinais de texto ilegível, usados pelo importador desde a
+ * `proposals-2022-v2`; para a auditoria (plano de melhorias, seção 19), a normalização da v1 congelada e medidas por página.
  */
 
 /**
@@ -88,40 +88,19 @@ export function bboxPages(xhtml: string): BboxPage[] {
 export const defaultModeText = (page: Pick<BboxPage, 'flowLines'>) => page.flowLines.map((lines) =>
   `${lines.map((line, index) => line.endsWith('-') && index < lines.length - 1 ? line.slice(0, -1) : `${line}\n`).join('')}\n`).join('');
 
-/** Marcador do hífen de fim de linha na normalização proposta: hífen que pode ou não pertencer à palavra. */
-export const HYPHEN_MARKER = '­';
-const REPLACEMENTS: Record<string, string> = {
-  'ﬀ': 'ff', 'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬃ': 'ffi', 'ﬄ': 'ffl', 'ﬅ': 'st', 'ﬆ': 'st',
-  '‐': '-', '‑': '-', '‘': "'", '’': "'", '‛': "'", 'ʼ': "'", '“': '"', '”': '"', '„': '"', '‟': '"',
-};
-const INVISIBLE = /[­​-‍⁠﻿]/;
-const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 /**
- * Se o hífen de fim de linha entre `before` e `after` é reunido: com uma quebra, entre letras ou dígitos; depois de linha em branco
- * (fim de fluxo no texto do PDF, de bloco no OCR), só entre letras. No OCR do nº 12, "aprimora-" e "deter-" fecham a página e
- * são seguidos, depois de uma linha em branco, do número da página.
+ * Normalização da v1 (`proposals-2022-v1`), congelada só para a auditoria comparar as versões: minúsculas sem acentos, espaços
+ * colapsados e hífen de fim de linha entre letras sempre descartado. A busca usa `searchText` dos contratos.
  */
-const joinsAtLineEnd = (before: string, gap: string, after: string) =>
-  (gap.match(/\n/g) ?? []).length > 1 ? /\p{L}/u.test(before) && /\p{L}/u.test(after) : LETTER_OR_DIGIT.test(before) && LETTER_OR_DIGIT.test(after);
-
-/**
- * Normalização proposta para a v2 (protótipo, só para a auditoria): a de `searchNormalize` mais ligaduras em letras, invisíveis
- * removidos sem virar espaço, hífens e aspas Unicode nos equivalentes ASCII e hífen de fim de linha (`joinsAtLineEnd`) guardado
- * como `HYPHEN_MARKER` em vez de descartado.
- */
-export function proposedNormalize(text: string): string {
+export function v1SearchText(text: string): string {
   const out: string[] = [];
-  const lineBreakHyphen = /[-­‐‑][ \t]*(\r?\n\s*)/y, space = /\s+/y;
+  const lineBreakHyphen = /-[ \t]*\r?\n\s*/y, space = /\s+/y;
   for (let index = 0; index < text.length;) {
     lineBreakHyphen.lastIndex = index;
-    const join = index > 0 ? lineBreakHyphen.exec(text) : null;
-    if (join && joinsAtLineEnd(text[index - 1]!, join[1]!, text[lineBreakHyphen.lastIndex] ?? '')) {
-      out.push(HYPHEN_MARKER); index = lineBreakHyphen.lastIndex; continue;
-    }
-    if (INVISIBLE.test(text[index]!)) { index++; continue; }
+    if (index > 0 && /\p{L}/u.test(text[index - 1]!) && lineBreakHyphen.test(text) && /\p{L}/u.test(text[lineBreakHyphen.lastIndex] ?? '')) { index = lineBreakHyphen.lastIndex; continue; }
     space.lastIndex = index;
     if (space.test(text)) { if (out.length && out[out.length - 1] !== ' ') out.push(' '); index = space.lastIndex; continue; }
-    out.push(...(REPLACEMENTS[text[index]!] ?? text[index]!).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase());
+    out.push(...text[index]!.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase());
     index++;
   }
   if (out[out.length - 1] === ' ') out.pop();
@@ -130,14 +109,11 @@ export function proposedNormalize(text: string): string {
 
 /** Palavras de um texto normalizado, sem pontuação nas pontas (aproximação do que uma busca encontra). */
 export const tokens = (normalized: string) => normalized.split(' ').map((token) => token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')).filter(Boolean);
-/** Grafias que a busca proposta encontra para uma palavra com marcador: sem o hífen e com ele (combinações mistas não contadas). */
+/** Grafias que a busca encontra para uma palavra com marcador: sem o hífen e com ele (combinações mistas não contadas). */
 export const findableForms = (token: string) => token.includes(HYPHEN_MARKER) ? [token.replaceAll(HYPHEN_MARKER, ''), token.replaceAll(HYPHEN_MARKER, '-')] : [token];
 export const bigrams = (words: readonly string[]) => words.slice(1).map((word, index) => `${words[index]} ${word}`);
-/** Busca proposta (protótipo, só para a auditoria): o termo normalizado com o marcador opcional entre caracteres e o "-" casando "-" ou o marcador. */
-export const proposedSearchPattern = (term: string, flags = 'u') =>
-  new RegExp([...term].map((char) => char === '-' ? `[-${HYPHEN_MARKER}]` : char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join(`${HYPHEN_MARKER}?`), flags);
 
-/** Hífen + quebra de linha que a normalização proposta reúne (`joinsAtLineEnd`). */
+/** Hífen + quebra de linha que a normalização da busca reúne (`joinsAtLineEnd`, nos contratos). */
 const LINE_BREAK_JOIN = /([\p{L}\p{N}]+)[-­‐‑][ \t]*(\r?\n\s*)([\p{L}\p{N}]+)/gu;
 export type HyphenJoin = { left: string; right: string; digits: boolean; blankLine: boolean };
 export function hyphenJoins(text: string): HyphenJoin[] {
@@ -146,7 +122,7 @@ export function hyphenJoins(text: string): HyphenJoin[] {
   }));
 }
 /** Palavras escritas no meio da linha (sem as reunidas por hífen de fim de linha), para saber se uma junção é palavra composta ou partida. */
-export const midLineTokens = (text: string) => tokens(proposedNormalize(text.replace(LINE_BREAK_JOIN, '$1 $3')));
+export const midLineTokens = (text: string) => tokens(searchText(text.replace(LINE_BREAK_JOIN, '$1 $3')));
 export const JOIN_CLASSES = ['compound', 'split', 'both', 'unknown'] as const;
 /** `compound`: só a forma com hífen aparece no meio da linha; `split`: só a forma reunida; `both`; `unknown`: nenhuma das duas. */
 export function joinClass(join: HyphenJoin, midLine: ReadonlySet<string>): typeof JOIN_CLASSES[number] {
@@ -179,3 +155,7 @@ export function pageQuality(text: string) {
   return { visible: visible.length, bad, letters, words: words.length, vowelless,
     badRatio: visible.length ? bad / visible.length : null, letterRatio: visible.length ? letters / visible.length : null, vowellessRatio: words.length ? vowelless / words.length : null };
 }
+export type QualityLimits = { maxBadRatio: number; maxVowellessRatio: number };
+/** Se a página passa de algum limiar de texto ilegível; medida sem base (`null`) não passa de nada. */
+export const exceedsQuality = (quality: ReturnType<typeof pageQuality>, limits: QualityLimits) =>
+  (quality.badRatio !== null && quality.badRatio >= limits.maxBadRatio) || (quality.vowellessRatio !== null && quality.vowellessRatio >= limits.maxVowellessRatio);

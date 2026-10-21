@@ -4,9 +4,10 @@ import { spawnSync } from 'node:child_process';
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { searchText } from '@observatorio/contracts';
-import { bboxPages, characterCounts, defaultModeText, findableForms, hyphenJoins, joinClass, midLineTokens, pageQuality, proposedNormalize, proposedSearchPattern, tokens, HYPHEN_MARKER as M } from '../src/proposals-text';
+import { SEARCH_HYPHEN_MARKER as M, searchText } from '@observatorio/contracts';
+import { bboxPages, characterCounts, defaultModeText, exceedsQuality, findableForms, hyphenJoins, joinClass, midLineTokens, pageQuality, tokens, v1SearchText } from '../src/proposals-text';
 import { auditDocuments } from '../src/proposals-text-audit';
+import { documentPages } from '../src/proposals';
 import { syntheticPdf } from './synthetic-pdf';
 
 const available = (command: string) => spawnSync(command, ['-v']).error === undefined;
@@ -41,32 +42,18 @@ test('-bbox-layout: estrutura do modo padrão, espaço só entre palavras distan
   }
 });
 
-test('normalização proposta: hífen de fim de linha vira marcador; ligaduras, invisíveis, hífens e aspas Unicode normalizados', () => {
-  const cases: Array<[string, string]> = [
-    ['Prote-\nção social', `prote${M}cao social`], ['pré-\nsal', `pre${M}sal`], ['2022-\n2026', `2022${M}2026`], ['educa­\nção', `educa${M}cao`],
-    ['texto-\n\nseguinte', `texto${M}seguinte`], ['aprimora-\n\n18\n', 'aprimora- 18'], ['educa­ção', 'educacao'], ['ﬁnanciamento e ﬂuxo', 'financiamento e fluxo'],
-    ['zero​width', 'zerowidth'], ['a﻿b', 'ab'], ['pré‐sal', 'pre-sal'], ['pré-sal', 'pre-sal'], ['d’Avila', "d'avila"],
-    ['“Saúde”', '"saude"'], ['fim -\nlinha', 'fim - linha'], ['nº 12', 'nº 12'], ['  Várias   linhas\n\n ', 'varias linhas'],
-  ];
-  for (const [input, expected] of cases) assert.equal(proposedNormalize(input), expected, JSON.stringify(input));
-  // Diferenças que motivam a v2, na normalização publicada.
-  assert.equal(searchText('pré-\nsal'), 'presal');
-  assert.equal(searchText('a﻿b'), 'a b');
-  assert.equal(searchText('ﬁnanciamento'), 'ﬁnanciamento');
+test('normalização da v1, congelada para a auditoria: hífen de fim de linha descartado, ligaduras e invisíveis intactos', () => {
+  // Diferenças que motivaram a v2 (a normalização atual, nos contratos, tem os próprios testes).
+  const cases: Array<[string, string]> = [['Prote-\nção social', 'protecao social'], ['pré-\nsal', 'presal'], ['2022-\n2026', '2022- 2026'], ['a\uFEFFb', 'a b'],
+    ['\uFB01nanciamento', '\uFB01nanciamento'], ['d\u2019Avila', 'd\u2019avila'], ['pala-\n\nvra', 'palavra']];
+  for (const [input, expected] of cases) assert.equal(v1SearchText(input), expected, JSON.stringify(input));
+  assert.equal(searchText('pré-\nsal'), `pre${M}sal`);
 });
 
 test('palavras sem pontuação nas pontas; com marcador, grafias sem e com hífen', () => {
-  assert.deepEqual(tokens(proposedNormalize('(Saúde), educação. — pré-sal!')), ['saude', 'educacao', 'pre-sal']);
+  assert.deepEqual(tokens(searchText('(Saúde), educação. — pré-sal!')), ['saude', 'educacao', 'pre-sal']);
   assert.deepEqual(findableForms(`pre${M}sal`), ['presal', 'pre-sal']);
   assert.deepEqual(findableForms('saude'), ['saude']);
-});
-
-test('busca proposta: marcador opcional entre caracteres, "-" do termo casa "-" ou marcador, caracteres especiais literais', () => {
-  const text = `a prote${M}cao social, o pre${M}sal, o pre-sal e o (ver) item 1.5`;
-  assert.ok(proposedSearchPattern('protecao').test(text) && proposedSearchPattern('prote-cao').test(text));
-  assert.equal(text.match(proposedSearchPattern('pre-sal', 'gu'))?.length, 2);
-  assert.equal(text.match(proposedSearchPattern('presal', 'gu'))?.length, 1, 'hífen no meio da linha continua literal');
-  assert.ok(proposedSearchPattern('(ver)').test(text) && proposedSearchPattern('1.5').test(text) && !proposedSearchPattern('1x5').test(text));
 });
 
 test('junções de fim de linha classificadas pelo que aparece escrito no meio da linha', () => {
@@ -90,6 +77,10 @@ test('contagem de caracteres a decidir e sinais de texto ilegível, com null qua
   const quality = pageQuality('abc � xyz bcd');
   assert.deepEqual([quality.visible, quality.bad, quality.letters, quality.words, quality.vowelless], [11, 2, 9, 3, 1]);
   assert.equal(quality.vowellessRatio, 1 / 3);
+  const limits = { maxBadRatio: 0.01, maxVowellessRatio: 0.2 };
+  assert.equal(exceedsQuality(quality, limits), true);
+  assert.equal(exceedsQuality(pageQuality('Texto legível, com vogais em todas as palavras.'), limits), false);
+  assert.equal(exceedsQuality(pageQuality(' \n '), limits), false, 'Sem base, sem bloqueio');
 });
 
 test('auditoria com PDF sintético: colunas misturadas no -layout, hífens preservados no -bbox-layout e página abaixo do limiar à parte', { skip: !available('pdftotext') && 'pdftotext ausente' }, async () => {
@@ -131,5 +122,22 @@ test('auditoria com PDF sintético: colunas misturadas no -layout, hífens prese
     assert.deepEqual(audit.terms.map((item) => [item.term, item.documents[0]!.v1, item.documents[0]!.v2]), [['proteção', 2, 3], ['pré-sal', 1, 2], ['ab', null, null]]);
     assert.equal(audit.layoutTexts.size, 3);
     if (images) assert.ok((await readdir(images)).includes(audit.review.columns[0]!.image!));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('importador v2: texto do PDF em ordem de leitura, com o hífen de fim de linha, conferido com o modo padrão e com qualidade medida', { skip: !available('pdftotext') && 'pdftotext ausente' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'propostas-v2-'));
+  try {
+    const path = join(directory, 'sintetico.pdf');
+    await writeFile(path, syntheticPdf([
+      [{ x: 72, y: 720, text: 'O petróleo do pré-' }, { x: 72, y: 706, text: 'sal é estratégico e a proteção social também.' }],
+      [{ x: 72, y: 720, text: 'Coluna esquerda linha um' }, { x: 320, y: 720, text: 'Coluna direita linha um' }, { x: 72, y: 706, text: 'esquerda fala de prote-' },
+        { x: 320, y: 706, text: 'direita fala de saude' }, { x: 72, y: 692, text: 'ção social na sequência' }, { x: 320, y: 692, text: 'pública na sequência' }],
+    ]));
+    const pages = await documentPages(path, directory);
+    assert.deepEqual(pages.map((page) => [page.page, page.method]), [[1, 'native'], [2, 'native']]);
+    assert.ok(pages[1]!.text.includes('esquerda fala de prote-\nção social na sequência'), 'Coluna da esquerda inteira, antes da direita');
+    assert.ok(searchText(pages[0]!.text).includes(`pre${M}sal`) && searchText(pages[1]!.text).includes(`prote${M}cao`));
+    assert.ok(pages.every((page) => page.quality && !exceedsQuality(page.quality, { maxBadRatio: 0.01, maxVowellessRatio: 0.2 })));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

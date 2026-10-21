@@ -301,7 +301,7 @@ Conferência do OCR por amostra (imagem da página × texto gravado): nº 12, p.
 - Falha encontrada na verificação e corrigida: com a publicação no banco, o catálogo respondia 500, porque o escopo `2022/proposals/` caía na lista de publicações eleitorais; agora fica em `proposalsDatasets`, com teste.
 - Verificação: typecheck, testes (API com o catálogo e a busca; web com ausência ≠ não propõe, aviso do OCR só para documentos com OCR e trecho do PDF tratado como texto), build; `smoke:context` (113 requisições, com o bloco das propostas e o ZIP original), os demais oito smokes, `check:data`, `check:regressions`, `check:publication` e `check:ui` com `/propostas` (com e sem busca, 12 avaliações, sem violações) contra API/web compiladas nas portas 3100/3101. Link na navegação adicionado depois, no commit `443c0d1`, sem registro da verificação feita nele (plan.md §44).
 
-## 19. Plano — `proposals-2022-v2` da busca nas propostas (proposto e auditado em 20/10/2026, aguardando decisões)
+## 19. Plano — `proposals-2022-v2` da busca nas propostas (proposto, auditado, decidido e publicado em 20/10/2026)
 
 Origem: revisão de código de 20/10/2026 (plan.md §44). A v1 perde ocorrências que estão nos PDFs, e a perda varia com o PDF de cada candidatura:
 1. `pdftotext -layout` põe as colunas lado a lado na mesma linha. Cria adjacências falsas entre colunas e impede reunir a palavra partida no fim da linha.
@@ -329,16 +329,16 @@ A auditoria nos PDFs reais rodou em 20/10/2026, na máquina de Rafael; o resulta
 
 ### Passo 1 — auditoria do texto, sem publicação (`npm run audit:proposals-text`)
 
-Script só de leitura, como o inventário da D1. Lê o ZIP preservado (`1c8853cc…`), extrai os PDFs em `data/staging/proposta_governo_2022-auditoria/` (diretório próprio, para não apagar o de uma importação em andamento), roda `pdftotext -layout` e `-bbox-layout` por página e não escreve no banco. Relatório em `data/analysis/propostas-texto-<data>/report.json`, por documento e pelas candidaturas que o apresentaram, para que o efeito seja comparável entre candidaturas.
+Script só de leitura, como o inventário da D1. Lê o ZIP preservado (`1c8853cc…`), extrai os PDFs em `data/staging/proposta_governo_2022-auditoria/` (diretório próprio, para não apagar o de uma importação em andamento), roda `pdftotext -layout`, `-bbox-layout`, o modo padrão e `-raw` em cada documento e não escreve no banco. Relatório em `data/analysis/propostas-texto-<data>/report.json`, por documento e pelas candidaturas que o apresentaram, para que o efeito seja comparável entre candidaturas.
 
 Implementado e executado em 20/10/2026:
-- **Arquivos:** `apps/importer/src/proposals-text-audit.ts`; funções em `proposals-text.ts`: leitor restrito do `-bbox-layout`, remontagem, protótipo `proposedNormalize` (não usado em publicação) e medidas.
+- **Arquivos:** `apps/importer/src/proposals-text-audit.ts`; funções em `proposals-text.ts`: leitor restrito do `-bbox-layout` e remontagem (usados pelo importador desde a v2), normalização da v1 congelada para a comparação e medidas. A normalização e a expressão da busca da v2 estão nos contratos.
 - **Execução:** `npm run audit:proposals-text`; `-- --sem-imagens` dispensa as imagens e `-- --termos=a,b` conta as ocorrências desses termos na v1 e na proposta, por documento.
 - **Remontagem conferida:** o texto do `-bbox-layout`, com o descarte do hífen de fim de linha refeito como o Poppler faz, precisa ser o do modo padrão do `pdftotext`, página a página (`defaultMode` no relatório).
 - **Imagens:** as páginas listadas para conferência são gravadas em `paginas/` (80 dpi, cinza): por colunas, as duas de maior diferença em cada documento; por qualidade, as 12 de pior medida.
-- **Comparação com a v1:** com `DATABASE_URL`, só por leitura (`default_transaction_read_only`), confere que o texto `-layout` reproduz o das páginas nativas da v1 publicada. Também mede o efeito da normalização proposta no texto do OCR da v1. Sem banco, registra o motivo.
+- **Comparação com as publicações:** com `DATABASE_URL`, só por leitura (`default_transaction_read_only`), confere que as páginas nativas da v1 têm o texto do `-layout` e as da v2, o da remontagem; que o `search_text` da v2 é o `searchText` atual; e que o OCR da v2 é igual ao da v1. Também mede o efeito da normalização da v2 no texto do OCR da v1. Sem banco, registra o motivo.
 - **Verificação:**
-  - 6 testes: leitor, normalização, junções, contagens e uma auditoria de ponta a ponta com PDF sintético no `pdftotext` real;
+  - testes do leitor, da remontagem, das junções, das contagens, da extração do importador e uma auditoria de ponta a ponta com PDF sintético no `pdftotext` real; a normalização e a expressão da busca têm testes próprios nos contratos;
   - execução do script inteiro numa cópia do repositório, com ZIPs sintéticos no lugar dos do TSE (documento repetido em duas candidaturas, `leiame.pdf`, página abaixo do limiar);
   - execução contra um PostgreSQL 16 temporário com uma v1 simulada: mesmo ZIP, página idêntica e página alterada detectadas, ligadura do OCR recuperada.
 
@@ -491,6 +491,8 @@ A v1 trata as candidaturas de forma desigual: no documento do nº 22, palavras c
 
 ### Decisões para Rafael
 
+Decididas por Rafael em 20/10/2026: seguir as cinco recomendações.
+
 1. **Extração:** `-bbox-layout` remontado, com espaço pela distância entre palavras e conferência contra o modo padrão (recomendado). A auditoria confirmou: 438/438 páginas conferem, e tudo o que só a v1 encontra é palavra colada entre colunas.
 2. **Hífen de fim de linha:** marcador opcional, só entre letras depois de linha em branco (recomendado). A alternativa é manter a regra da v1 (descartar sempre) e declarar o limite em `/metodologia`. Na regra da v1, perdem a grafia com hífen as 23 compostas confirmadas e as compostas entre as 73 sem evidência ("licença-maternidade", "passe-livre").
 3. **Caracteres:** lista de mapeamentos acima, com o travessão de fora (nenhum entre letras). As ligaduras são o caso mais grave: 334, todas no documento do nº 22.
@@ -498,6 +500,24 @@ A v1 trata as candidaturas de forma desigual: no documento do nº 22, palavras c
 5. **Transição:**
    - Recomendado: 503 explícito enquanto a publicação ativa for de outra normalização. O ambiente é local e a carga leva minutos.
    - Alternativa: manter a normalização da v1 congelada no código, para continuar servindo a v1 até a carga.
+
+### Andamento — implementação e carga da v2 (20/10/2026)
+
+Implementada conforme as recomendações acima, com as decisões de Rafael (plan.md §48):
+- **Contratos:** `searchNormalize`/`searchText` passam a ser a normalização `proposals-search-v2` (constante `PROPOSALS_NORMALIZATION`), com o marcador `SEARCH_HYPHEN_MARKER`, a regra `joinsAtLineEnd` e o mapa de posições também para o marcador e as ligaduras. `searchPattern` gera a expressão da busca. O `method` das propostas ganha `extraction`, `wordSpace`, `normalization` e `quality`, opcionais para a v1 continuar legível.
+- **Importador** (`proposals-2022-v2`): texto do PDF pela remontagem do `-bbox-layout`, conferida página a página com o modo padrão do `pdftotext` (bloqueia na diferença); medidas de qualidade nas páginas com texto do PDF, com bloqueio acima dos limiares e máximos por documento no relatório da publicação; mensagens de ferramenta ausente com o pacote certo e falha clara sem versão.
+- **API:** busca por `search_text ~ searchPattern(termo)` e trecho pela mesma expressão sobre `searchNormalize` do texto; texto só das cinco primeiras páginas de cada documento (`row_number()`); 503 explícito na busca em publicação de outra normalização, com a cobertura respondendo.
+- **Web:** título próprio em `/propostas`; candidaturas sem votos com cabeçalho `h4` sob o título do grupo e a situação do cadastro em cada uma; `/metodologia#propostas` e `/fontes#propostas` atualizadas.
+- **Auditoria:** passa a comparar a normalização da v1, congelada em `proposals-text.ts`, com o código de produção da v2, e confere as duas publicações no banco.
+
+Carga em 20/10/2026: `proposals-2022-v2` publicada (`e2c6e07e…`), 357 s. Totais iguais aos da v1: 438 páginas, 388 com o texto do PDF e 50 por OCR (os mesmos por documento), nenhuma sem texto. A v1 (`cce780ce…`) ficou preservada, despublicada. As tabelas das propostas passaram de 1,6 MB para 3,0 MB. Qualidade medida em 365 páginas: maiores valores 0,4 % (nº 16) e 9,9 % (nº 30), abaixo dos limiares.
+
+Validação depois da carga (auditoria em `data/analysis/propostas-texto-2026-10-21T00-14-24.792Z/`):
+- v1: 388 de 388 páginas nativas iguais ao `-layout`; v2: 388 de 388 iguais à remontagem; as 50 páginas de OCR da v2 idênticas às da v1; nenhum `search_text` divergente do `searchText` atual;
+- simulação da busca: os mesmos números do protótipo (151 pares só na v1, nenhum no `-raw`; 1.300 só na v2);
+- API: "acessibilidade" encontra as mesmas páginas da v1 em todas as candidaturas; "inflação" passa a aparecer em 6 páginas do nº 22 e "responsabilização" na p. 33 do nº 30 (trecho "responsabiliza- ção"), que a v1 não encontrava; "bemestar" encontra a quebra "bem-/estar" (nº 13, p. 14 e sete páginas do nº 22); "presal" não encontra "pré-sal" escrito no meio da linha.
+
+Verificação: typecheck, 128 testes, builds, nove smokes (o `smoke:context` com o bloco da v2), `check:data`, `check:regressions`, `check:publication` e `check:ui` (Chrome e Firefox, `/propostas` com e sem busca em três larguras, sem violações). Detalhes no plan.md §48.
 
 Fora da v2, sem reimportação, feitos em 20/10 (plan.md §47):
 - `SITE_URL` vazia ou ausente vale o padrão local; inválida interrompe a compilação com mensagem própria. O valor vai como argumento de build da imagem da web e fica nela, para páginas pré-renderizadas e dinâmicas.

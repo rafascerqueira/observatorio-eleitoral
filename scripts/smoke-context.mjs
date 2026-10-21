@@ -277,9 +277,10 @@ if (catalog.tractDisplayDatasets?.length) {
   }
 }
 if (catalog.proposalsDatasets?.length) {
-  // Propostas de governo (fase D2): cobertura por método, ordem pelo número, documento compartilhado do nº 14 e busca literal.
+  // Propostas de governo (fase D2; v2 de 20/10/2026): cobertura por método, ordem pelo número, documento compartilhado do nº 14 e busca literal.
   const [proposals] = catalog.proposalsDatasets;
-  assert.equal(proposals.importerVersion, 'proposals-2022-v1');
+  assert.equal(proposals.importerVersion, 'proposals-2022-v2');
+  assert.deepEqual([proposals.method.extraction, proposals.method.normalization], ['bbox-layout', 'proposals-search-v2']);
   assert.deepEqual(proposals.totals, { candidacies: 13, documents: 12, pages: 438, nativePages: 388, ocrPages: 50, emptyPages: 0 });
   const found = await json(`/elections/proposals?q=${encodeURIComponent('Acessibilidade')}`);
   assert.equal(found.query, 'acessibilidade');
@@ -290,10 +291,20 @@ if (catalog.proposalsDatasets?.length) {
   assert.deepEqual([ciro.document.pages, ciro.document.ocrPages, ciro.matches.excerpts[0].method], [26, 26, 'ocr'], 'Documento em imagem lido por OCR');
   const kelmon = found.candidacies.find((item) => item.number === '14' && item.listing === 'candidate');
   assert.deepEqual(kelmon.sameDocumentAs.map((item) => item.situation), ['INAPTO']);
+  // V2: palavra com ligadura no PDF do nº 22 e palavra partida no fim da linha em duas colunas no nº 30, que a v1 não encontrava;
+  // hífen de fim de linha opcional ("bem-/estar") e, no meio da linha, literal ("pré-sal" não casa com "presal").
+  const searchFor = async (q) => (await json(`/elections/proposals?q=${encodeURIComponent(q)}`)).candidacies;
+  const pagesIn = (candidacies, number) => candidacies.find((item) => item.number === number && item.listing === 'candidate').matches.pages;
+  assert.deepEqual(pagesIn(await searchFor('inflação'), '22'), [6, 10, 17, 32, 35, 45]);
+  const split = await searchFor('responsabilização');
+  assert.deepEqual(pagesIn(split, '30'), [33]); assert.equal(split.find((item) => item.number === '30').matches.excerpts[0].match, 'responsabiliza- ção');
+  assert.deepEqual(pagesIn(await searchFor('bemestar'), '13'), [14]);
+  assert.ok((await searchFor('presal')).every((item) => item.matches === null || item.matches.pages.length === 0));
   await request(api, '/elections/proposals?q=ab', 400);
   await request(web, `/arquivos/sources/${proposals.sources[0].sha256}/${proposals.sources[0].file}`); // ZIP original preservado, sem PDFs avulsos
-  for (const [path, texts] of [['/propostas?q=acessibilidade', ['Resultados para “acessibilidade”', 'Nenhuma ocorrência literal de “acessibilidade” no texto extraído', 'Candidaturas sem votos', 'registrado também pela candidatura 14', '(OCR)']],
-    ['/metodologia', ['Propostas de governo', 'reconhecimento óptico de caracteres']], ['/fontes', ['Propostas de governo (TSE)', 'proposta_governo_2022_BR.zip']]]) {
+  for (const [path, texts] of [['/propostas?q=acessibilidade', ['<title>Busca nas propostas de governo · Mente Eleitoral</title>', 'Resultados para “acessibilidade”', 'Nenhuma ocorrência literal de “acessibilidade” no texto extraído', 'Candidaturas sem votos',
+      'Situação no cadastro do TSE: inapto', 'registrado também pela candidatura 14', '(OCR)']],
+    ['/metodologia', ['Propostas de governo', 'reconhecimento óptico de caracteres', 'encontrada inteira ou com o hífen']], ['/fontes', ['Propostas de governo (TSE)', 'proposta_governo_2022_BR.zip', 'busca: proposals-search-v2']]]) {
     const page = await html(path);
     for (const text of texts) assert.ok(page.includes(text), `${path}: ${text}`);
   }

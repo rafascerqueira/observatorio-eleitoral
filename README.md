@@ -36,11 +36,11 @@ Verificação concluída em **19/10/2026**, consolidada no commit `825dffb` e en
 - 60 avaliações automáticas de acessibilidade/refluxo em Chrome e Firefox, sem violações do axe ou rolagem horizontal fora das tabelas; isso não certifica toda a acessibilidade.
 - Nove reexecuções idempotentes e duas comparações integrais das 11 tabelas derivadas: conteúdo idêntico ao anterior, versões antigas e 57 publicações eleitorais preservadas.
 
-Evidências, versões/IDs e limites em [reimportações de 18–19/10](docs/reimportacoes-2026-10-18.md). Depois disso, a fase A do [plano de melhorias](docs/plano-postgis-propostas.md) (setor de cada local, série comparada com dispersão e exportação em `/mapa`) foi verificada localmente em 19/10: 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox ([plano](plan.md), §33). A fase C (entorno dos domicílios, `import:urban-surroundings`) e a fase B2 (malha de setores com a geometria exata, `import:tract-geometries`, ~1,4 GB no banco) estão publicadas no banco local e verificadas (§§34 e 39). A fase B3 (mapa dos setores e dos locais, `/municipios/[code]/setores`), o inventário das propostas de governo (D1, sem publicação) e a busca literal nas propostas da Presidência (D2, `/propostas`, com OCR) também foram verificados (§§41–43). Esses commits, a revisão de código e o plano da `proposals-2022-v2` (§§44–46) estão em `upstream/main`. O volume Docker do PostgreSQL e o diretório `data/` (originais, backups e artefatos) **não acompanham o Git**; um clone novo exige importar os dados ou restaurar um backup próprio.
+Evidências, versões/IDs e limites em [reimportações de 18–19/10](docs/reimportacoes-2026-10-18.md). Depois disso, a fase A do [plano de melhorias](docs/plano-postgis-propostas.md) (setor de cada local, série comparada com dispersão e exportação em `/mapa`) foi verificada localmente em 19/10: 98 testes, typecheck/build, nove smokes, 31 regressões e 66 avaliações automáticas em Chrome/Firefox ([plano](plan.md), §33). A fase C (entorno dos domicílios, `import:urban-surroundings`) e a fase B2 (malha de setores com a geometria exata, `import:tract-geometries`, ~1,4 GB no banco) estão publicadas no banco local e verificadas (§§34 e 39). A fase B3 (mapa dos setores e dos locais, `/municipios/[code]/setores`), o inventário das propostas de governo (D1, sem publicação) e a busca literal nas propostas da Presidência (D2, `/propostas`, com OCR) também foram verificados (§§41–43). Esses commits, a revisão de código e o plano da `proposals-2022-v2` (§§44–46) estão em `upstream/main`. A `proposals-2022-v2` (texto das propostas em ordem de leitura, ligaduras e hífens de fim de linha tratados na busca) foi publicada no banco local e verificada em 20/10 (§§47–48). O volume Docker do PostgreSQL e o diretório `data/` (originais, backups e artefatos) **não acompanham o Git**; um clone novo exige importar os dados ou restaurar um backup próprio.
 
 ## Iniciar localmente
 
-Requisitos: Node.js 24.21.0 (veja `.nvmrc`), npm 11 ou superior (desenvolvido com npm 12.2.0), Docker, Docker Compose e `unzip` para o importador.
+Requisitos: Node.js 24.21.0 (veja `.nvmrc`), npm 11 ou superior (desenvolvido com npm 12.2.0), Docker, Docker Compose e `unzip` para o importador. Só para as propostas de governo (`import:proposals`, `inventory:proposals`, `audit:proposals-text`), também os pacotes de sistema `poppler-utils` e `tesseract-ocr` com `tesseract-ocr-por`; as versões entram na identidade da publicação (a atual usa as do Ubuntu 24.04: Poppler 24.02.0 e Tesseract 5.3.4). A API e a web não usam essas ferramentas: leem o texto já extraído do banco.
 
 ```sh
 test -f .env || cp .env.example .env
@@ -111,7 +111,7 @@ Execute sequencialmente, após a Presidência nacional e os resultados estaduais
   npm run import:urban-surroundings  # entorno dos domicílios (calçada, rampa, iluminação...)
   npm run import:tract-geometries    # malha de setores com a geometria exata (~1,4 GB)
   npm run import:tract-display       # desenho simplificado dos setores para o mapa local → setor
-  npm run import:proposals           # propostas de governo da Presidência (exige tesseract-ocr e tesseract-ocr-por)
+  npm run import:proposals           # propostas de governo da Presidência (exige poppler-utils, tesseract-ocr e tesseract-ocr-por)
   npm run import:place-groups        # grupos de locais para os resultados publicados
   npm run import:tract-sensitivity   # grupos alternativos nos três raios
 )
@@ -131,7 +131,7 @@ Pare ao primeiro erro; não trate uma cadeia parcial como concluída. A troca é
 | `import:urban-surroundings` | `urban-surroundings-2022-v1` | Contexto + associação aos setores |
 | `import:tract-geometries` | `tract-geometries-2022-v1` | Nenhuma (confere com a associação aos setores publicada) |
 | `import:tract-display` | `tract-display-2022-v1` | Malha de setores |
-| `import:proposals` | `proposals-2022-v1` | Presidência nacional e exterior |
+| `import:proposals` | `proposals-2022-v2` | Presidência nacional e exterior |
 | `import:place-groups` | `place-groups-2022-v5` | Resultados publicados + perfil por local + associação aos setores |
 | `import:tract-sensitivity` | `tract-sensitivity-2022-v2` | Entradas dos grupos + publicação dos grupos |
 
