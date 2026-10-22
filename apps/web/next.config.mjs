@@ -8,4 +8,5 @@ export default {
   outputFileTracingRoot: root,
   turbopack: { root },
   poweredByHeader: false,
+  experimental: { agentUpgrade: 'security' },
 };

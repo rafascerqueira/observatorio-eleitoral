@@ -713,3 +713,22 @@ Pendente:
 - D3: quem codifica e como se adjudica; aprovação do livro de códigos; concordância mínima; publicação e canal de contestação;
 - E: seguir ou não; qual pesquisa; cadastro no CESOP ou contrato do LAPOP, ambos com Rafael;
 - hospedagem.
+
+## 50. Next.js 16.4.0 → 16.4.2 por aviso de segurança — 22/10/2026
+
+O Next.js avisou que a 16.4.0 tem um alerta de segurança publicado. A pedido de Rafael, segui `next upgrade --agent=security`, que escolheu a 16.4.2 (mesma major, sem codemod).
+
+Mudanças:
+- `next` fixado em 16.4.2 em `apps/web/package.json` e no `package-lock.json`;
+- `experimental.agentUpgrade: 'security'` em `apps/web/next.config.mjs`, para o Next.js voltar a avisar só de atualizações de segurança.
+
+Antes de mudar, procurei trabalho equivalente: nenhuma branch local ou remota com a atualização e nenhum PR aberto.
+
+Verificação, numa worktree separada (branch `next-16.4.2-security`):
+- `npm ci` e `next --version` = 16.4.2;
+- typecheck, 133 testes e build;
+- web da 16.4.2 com a API e o banco locais: `smoke`, `smoke:pilot`, `smoke:places`, `smoke:national`, `smoke:summary`, `smoke:exterior`, `smoke:governor`, `smoke:senator`, `smoke:context` e `check:ui`, todos passando.
+
+Nada mudou nos dados nem na API. Sem push nem PR.
+
+Pendente: levar a branch ao `main` (merge) e apagar a worktree.
