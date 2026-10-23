@@ -30,7 +30,9 @@ export const RUBRIC_EXCLUDED_TERMS = [
   { term: 'urbana, urbano', reason: 'amplos demais (população urbana, violência urbana)' },
 ] as const;
 
-type Value = { code: string; label: string; evidence: boolean };
+export type Value = { code: string; label: string; evidence: boolean };
+/** Critério (ou afirmação, na bússola): código, pergunta e valores permitidos; os com evidência exigem página e trecho. */
+export type Criterion = { code: string; question: string; values: readonly Value[] };
 const NOT_FOUND: Value = { code: 'nao-localizado', label: 'Não localizado no texto revisado', evidence: false };
 const NOT_APPLICABLE: Value = { code: 'nao-se-aplica', label: 'Não se aplica: tema não localizado no documento', evidence: false };
 const declared = (code: string, label: string): Value[] => [{ code, label, evidence: true }, NOT_FOUND, NOT_APPLICABLE];
@@ -64,7 +66,7 @@ export type CodingRow = { documento: string; criterio: string; valor: string; pa
 /** CSV para Excel e LibreOffice em português: UTF-8 com BOM, `;`, todos os campos entre aspas, CRLF. */
 export const csv = (rows: ReadonlyArray<ReadonlyArray<string | number>>) => `﻿${rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(';')).join('\r\n')}\r\n`;
 /** Modelo da planilha: uma linha por documento e critério, na ordem dos documentos e dos critérios. */
-export const codingTemplate = (documents: readonly RubricDocument[]) => csv([CODING_COLUMNS, ...documents.flatMap((document) => RUBRIC_CRITERIA.map((criterion) =>
+export const codingTemplate = (documents: readonly RubricDocument[], criteria: readonly Criterion[] = RUBRIC_CRITERIA) => csv([CODING_COLUMNS, ...documents.flatMap((document) => criteria.map((criterion) =>
   [document.id, document.candidacies, criterion.code, criterion.question, criterion.values.map((value) => value.code).join(' | '), '', '', '', '']))]);
 
 /** Lê uma planilha preenchida. Erro de leitura (formato, colunas) interrompe; os problemas de conteúdo vêm de `validateCoding`. */
@@ -78,24 +80,26 @@ export function readCoding(text: string): CodingRow[] {
 }
 
 const key = (row: { documento: string; criterio: string }) => `${row.documento}/${row.criterio}`;
+type PageText = (sha256: string, page: number) => string | null;
 /**
- * Problemas de uma planilha: linhas ausentes ou repetidas, valor fora dos permitidos, "nao-se-aplica" incoerente com o tema,
+ * Problemas de uma planilha: linhas ausentes ou repetidas, valor fora dos permitidos, regra própria do livro de códigos (`rule`),
  * evidência ausente, página inexistente ou trecho que não está na página citada (pela mesma normalização da busca).
  * `pageText(documento, página)` devolve o `search_text` publicado, ou nulo.
  */
-export function validateCoding(rows: readonly CodingRow[], documents: readonly RubricDocument[], pageText: (sha256: string, page: number) => string | null) {
+export function validateRows(rows: readonly CodingRow[], documents: readonly RubricDocument[], pageText: PageText, criteria: readonly Criterion[],
+  rule?: (row: CodingRow, value: Value, byKey: ReadonlyMap<string, CodingRow>) => string | null) {
   const problems: string[] = [], byKey = new Map<string, CodingRow>();
   for (const row of rows) {
     if (byKey.has(key(row))) problems.push(`${key(row)}: linha repetida.`);
     byKey.set(key(row), row);
   }
-  for (const document of documents) for (const criterion of RUBRIC_CRITERIA) {
+  for (const document of documents) for (const criterion of criteria) {
     const row = byKey.get(`${document.id}/${criterion.code}`);
     if (!row) { problems.push(`${document.id}/${criterion.code}: linha ausente.`); continue; }
-    const value = (criterion.values as readonly Value[]).find((item) => item.code === row.valor);
+    const value = criterion.values.find((item) => item.code === row.valor);
     if (!value) { problems.push(`${key(row)}: valor "${row.valor}" fora dos permitidos (${criterion.values.map((item) => item.code).join(', ')}).`); continue; }
-    const theme = byKey.get(`${document.id}/tema`)?.valor;
-    if (criterion.code !== 'tema' && (theme === 'nao-localizado') !== (value.code === 'nao-se-aplica')) problems.push(`${key(row)}: "nao-se-aplica" só quando o tema não foi localizado, e sempre nesse caso.`);
+    const broken = rule?.(row, value, byKey);
+    if (broken) problems.push(`${key(row)}: ${broken}`);
     if (!value.evidence) continue;
     if (!row.paginas.length || !row.trecho) { problems.push(`${key(row)}: valor "${value.code}" exige página e trecho.`); continue; }
     const invalid = row.paginas.filter((page) => !Number.isInteger(page) || page < 1 || page > document.pages);
@@ -105,9 +109,13 @@ export function validateCoding(rows: readonly CodingRow[], documents: readonly R
     const expression = new RegExp(searchPattern(term), 'u');
     if (!row.paginas.some((page) => expression.test(pageText(document.sha256, page) ?? ''))) problems.push(`${key(row)}: trecho não encontrado na página ${row.paginas.join(', ')} do texto publicado.`);
   }
-  for (const row of rows) if (!documents.some((document) => document.id === row.documento) || !RUBRIC_CRITERIA.some((criterion) => criterion.code === row.criterio)) problems.push(`${key(row)}: documento ou critério desconhecido.`);
+  for (const row of rows) if (!documents.some((document) => document.id === row.documento) || !criteria.some((criterion) => criterion.code === row.criterio)) problems.push(`${key(row)}: documento ou critério desconhecido.`);
   return problems;
 }
+/** Validação da rubrica de acessibilidade e mobilidade: além das regras gerais, "nao-se-aplica" só quando o tema não foi localizado. */
+export const validateCoding = (rows: readonly CodingRow[], documents: readonly RubricDocument[], pageText: PageText) => validateRows(rows, documents, pageText, RUBRIC_CRITERIA,
+  (row, value, byKey) => row.criterio !== 'tema' && (byKey.get(`${row.documento}/tema`)?.valor === 'nao-localizado') !== (value.code === 'nao-se-aplica')
+    ? '"nao-se-aplica" só quando o tema não foi localizado, e sempre nesse caso.' : null);
 
 /**
  * Concordância entre duas pessoas sobre os mesmos itens: proporção observada e kappa de Cohen. Kappa nulo quando a concordância
@@ -121,10 +129,10 @@ export function cohenKappa(pairs: ReadonlyArray<readonly [string, string]>) {
   return { items, agreements, observed, expected, kappa: expected === 1 ? null : (observed - expected) / (1 - expected) };
 }
 /** Concordância por critério e no conjunto (categorias distintas por critério), e a lista de divergências, na ordem da planilha. */
-export function agreement(a: readonly CodingRow[], b: readonly CodingRow[]) {
+export function agreement(a: readonly CodingRow[], b: readonly CodingRow[], criteria: readonly Criterion[] = RUBRIC_CRITERIA) {
   const other = new Map(b.map((row) => [key(row), row]));
   const pairs = a.flatMap((row) => other.has(key(row)) ? [{ row, peer: other.get(key(row))! }] : []);
-  const byCriterion = Object.fromEntries(RUBRIC_CRITERIA.map((criterion) => [criterion.code, cohenKappa(pairs.filter(({ row }) => row.criterio === criterion.code).map(({ row, peer }) => [row.valor, peer.valor] as const))]));
+  const byCriterion = Object.fromEntries(criteria.map((criterion) => [criterion.code, cohenKappa(pairs.filter(({ row }) => row.criterio === criterion.code).map(({ row, peer }) => [row.valor, peer.valor] as const))]));
   return { byCriterion, overall: cohenKappa(pairs.map(({ row, peer }) => [`${row.criterio}:${row.valor}`, `${peer.criterio}:${peer.valor}`] as const)),
     divergences: pairs.filter(({ row, peer }) => row.valor !== peer.valor).map(({ row, peer }) => ({ a: row, b: peer })) };
 }

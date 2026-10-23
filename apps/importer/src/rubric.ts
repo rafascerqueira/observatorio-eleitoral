@@ -9,7 +9,7 @@ import { parse } from 'csv-parse/sync';
 import { PROPOSALS_NORMALIZATION, searchNormalize, searchPattern, searchText } from '@observatorio/contracts';
 import { ROOT, sourceFile } from './sources';
 import { adjudicationTemplate, agreement, consolidate, CODING_COLUMNS, codingTemplate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, RUBRIC_THEME, RUBRIC_VERSION,
-  validateCoding, type RubricDocument } from './rubric-core';
+  validateCoding, type CodingRow, type Criterion, type RubricDocument } from './rubric-core';
 
 /**
  * Fase D3, preparação da rubrica (livro de códigos em docs/rubrica-propostas.md), sem publicação e com o banco só em leitura.
@@ -24,6 +24,23 @@ const SCOPE = '2022/proposals/president', EXCERPT_CONTEXT = 140;
 const option = (name: string) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
 const sha256 = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 type Manifest = { rubric: string; publication: { batchId: string }; documents: Array<RubricDocument & { file: string; pdf: string; text: string; candidatePages: number[] }> };
+type Final = ReturnType<typeof consolidate>['final'];
+/**
+ * Livro de códigos aplicado pelo pacote e pela concordância: a rubrica de acessibilidade e mobilidade (D3) e a bússola política
+ * usam o mesmo fluxo. `terms` pode marcar a que critérios cada termo pertence (coluna `criterios` dos trechos candidatos).
+ */
+export type CodebookDefinition = {
+  version: string; theme: string; codebook: string; dataDirectory: string; command: string;
+  terms: ReadonlyArray<{ term: string; criteria?: readonly string[] }>; excludedTerms: ReadonlyArray<{ term: string; reason: string }>; criteria: readonly Criterion[];
+  validate: (rows: readonly CodingRow[], documents: readonly RubricDocument[], pageText: (sha256: string, page: number) => string | null) => string[];
+  readingHint: string; manifestExtra?: Record<string, unknown>;
+  /** Medidas a mais na concordância e arquivos a mais com a codificação final (a bússola grava as posições calculadas). */
+  report?: (a: readonly CodingRow[], b: readonly CodingRow[]) => Record<string, unknown>;
+  afterFinal?: (final: Final, documents: Manifest['documents'], output: string) => Promise<void>;
+};
+const ACCESSIBILITY: CodebookDefinition = { version: RUBRIC_VERSION, theme: RUBRIC_THEME, codebook: 'docs/rubrica-propostas.md', dataDirectory: 'data/rubric', command: 'rubric:agreement',
+  terms: RUBRIC_TERMS.map((term) => ({ term })), excludedTerms: RUBRIC_EXCLUDED_TERMS, criteria: RUBRIC_CRITERIA, validate: validateCoding,
+  readingHint: 'Use trechos-candidatos.csv como ponto de partida e leia também as seções do documento sobre cidades, transporte, infraestrutura e pessoas com deficiência (documentos/).' };
 
 function pool() {
   config({ path: resolve(ROOT, '.env'), quiet: true });
@@ -31,7 +48,7 @@ function pool() {
   return new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000, options: '-c default_transaction_read_only=on' });
 }
 
-async function packet() {
+export async function packet(definition: CodebookDefinition) {
   const database = pool();
   try {
     const batch = (await database.query<{ id: string; metadata: { importerVersion: string; method: { normalization?: string; pdftotext: string; tesseract: string } } }>(
@@ -50,8 +67,8 @@ async function packet() {
 
     // Trechos candidatos: uma linha por documento, página e termo, com o trecho da primeira ocorrência na página.
     const clean = (text: string) => text.replace(/\s+/g, ' ');
-    const candidates: Array<{ document: typeof documents[number]; page: number; method: string; term: string; excerpt: string; order: number }> = [];
-    for (const [order, term] of RUBRIC_TERMS.entries()) {
+    const candidates: Array<{ document: typeof documents[number]; page: number; method: string; term: string; criteria: string; excerpt: string; order: number }> = [];
+    for (const [order, { term, criteria = [] }] of definition.terms.entries()) {
       const pattern = searchPattern(searchText(term)), expression = new RegExp(pattern, 'u');
       for (const page of (await database.query<{ sha256: string; page: number; method: string; text: string }>(
         'SELECT sha256, page, method, text FROM proposal_pages WHERE batch_id=$1 AND search_text ~ $2', [batch.id, pattern])).rows) {
@@ -59,14 +76,14 @@ async function packet() {
         const document = documents.find((item) => item.sha256 === page.sha256);
         if (!match || !document) throw new Error('Texto das propostas inconsistente.');
         const start = map[match.index]!, end = map[match.index + match[0].length - 1]! + 1;
-        candidates.push({ document, page: page.page, method: page.method === 'ocr' ? 'OCR' : 'texto do PDF', term, order,
+        candidates.push({ document, page: page.page, method: page.method === 'ocr' ? 'OCR' : 'texto do PDF', term, criteria: criteria.join(', '), order,
           excerpt: `…${clean(page.text.slice(Math.max(0, start - EXCERPT_CONTEXT), start)).trimStart()}«${clean(page.text.slice(start, end))}»${clean(page.text.slice(end, end + EXCERPT_CONTEXT)).trimEnd()}…` });
       }
     }
     candidates.sort((a, b) => documents.indexOf(a.document) - documents.indexOf(b.document) || a.page - b.page || a.order - b.order);
 
     const stamp = new Date().toISOString().replaceAll(':', '-');
-    const directory = resolve(ROOT, 'data/rubric', RUBRIC_VERSION, `pacote-${stamp}`);
+    const directory = resolve(ROOT, definition.dataDirectory, definition.version, `pacote-${stamp}`);
     await mkdir(resolve(directory, 'documentos'), { recursive: true }); await mkdir(resolve(directory, 'textos'), { recursive: true });
     // PDFs do ZIP preservado, conferidos pelo SHA-256 publicado.
     const proposals = await sourceFile({ file: 'proposta_governo_2022_BR.zip', entry: 'BR/2022BR<SQ_CANDIDATO>.pdf', directory: 'proposta_governo' });
@@ -82,33 +99,34 @@ async function packet() {
         .map((page) => `=== Página ${page.page} (${page.method === 'ocr' ? 'OCR' : page.method === 'empty' ? 'sem texto' : 'texto do PDF'}) ===\n${page.text.trim()}\n`).join('\n'));
       manifestDocuments.push({ ...document, pdf, text, candidatePages: [...new Set(candidates.filter((item) => item.document === document).map((item) => item.page))].sort((a, b) => a - b) });
     }
-    await writeFile(resolve(directory, 'trechos-candidatos.csv'), csv([['documento', 'candidaturas', 'pagina', 'metodo', 'termo', 'trecho'],
-      ...candidates.map((item) => [item.document.id, item.document.candidacies, item.page, item.method, item.term, item.excerpt])]));
-    await writeFile(resolve(directory, 'codificacao-modelo.csv'), codingTemplate(documents));
-    const manifest = { rubric: RUBRIC_VERSION, theme: RUBRIC_THEME, codebook: 'docs/rubrica-propostas.md', generatedAt: new Date().toISOString(),
+    const labelled = definition.terms.some((item) => item.criteria?.length);
+    await writeFile(resolve(directory, 'trechos-candidatos.csv'), csv([['documento', 'candidaturas', 'pagina', 'metodo', 'termo', ...(labelled ? ['criterios'] : []), 'trecho'],
+      ...candidates.map((item) => [item.document.id, item.document.candidacies, item.page, item.method, item.term, ...(labelled ? [item.criteria] : []), item.excerpt])]));
+    await writeFile(resolve(directory, 'codificacao-modelo.csv'), codingTemplate(documents, definition.criteria));
+    const manifest = { rubric: definition.version, theme: definition.theme, codebook: definition.codebook, generatedAt: new Date().toISOString(),
       publication: { scope: SCOPE, batchId: batch.id, importerVersion: batch.metadata.importerVersion, normalization: batch.metadata.method.normalization, pdftotext: batch.metadata.method.pdftotext, tesseract: batch.metadata.method.tesseract },
-      source: { file: proposals.file, sha256: proposals.sha256 }, terms: RUBRIC_TERMS, excludedTerms: RUBRIC_EXCLUDED_TERMS,
-      criteria: RUBRIC_CRITERIA.map((criterion) => ({ code: criterion.code, question: criterion.question, values: criterion.values })),
-      documents: manifestDocuments, totals: { documents: documents.length, candidateRows: candidates.length, candidatePages: manifestDocuments.reduce((sum, item) => sum + item.candidatePages.length, 0), codingRows: documents.length * RUBRIC_CRITERIA.length } };
+      source: { file: proposals.file, sha256: proposals.sha256 }, terms: labelled ? definition.terms : definition.terms.map((item) => item.term), excludedTerms: definition.excludedTerms,
+      criteria: definition.criteria.map((criterion) => ({ code: criterion.code, question: criterion.question, values: criterion.values })), ...definition.manifestExtra,
+      documents: manifestDocuments, totals: { documents: documents.length, candidateRows: candidates.length, candidatePages: manifestDocuments.reduce((sum, item) => sum + item.candidatePages.length, 0), codingRows: documents.length * definition.criteria.length } };
     await writeFile(resolve(directory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     await writeFile(resolve(directory, 'LEIA-ME.txt'), [
-      `Pacote de codificação — ${RUBRIC_THEME} (${RUBRIC_VERSION})`, '',
-      'O mesmo pacote vai para as duas pessoas que codificam. Regras completas no livro de códigos: docs/rubrica-propostas.md.', '',
+      `Pacote de codificação — ${definition.theme} (${definition.version})`, '',
+      `O mesmo pacote vai para as duas pessoas que codificam. Regras completas no livro de códigos: ${definition.codebook}.`, '',
       '1. Copie codificacao-modelo.csv para codificacao-<suas iniciais>.csv e preencha valor, paginas, trecho e observacao em todas as linhas.',
       '2. Não converse sobre a codificação nem veja a planilha da outra pessoa até as duas terminarem.',
-      '3. Use trechos-candidatos.csv como ponto de partida e leia também as seções do documento sobre cidades, transporte, infraestrutura e pessoas com deficiência (documentos/).',
-      '4. Valores que afirmam algo exigem página e trecho copiado do texto publicado (textos/), sem resumir nem corrigir; nas páginas por OCR, registre na observação o que o OCR leu errado. "nao-localizado" quer dizer não encontrado no texto revisado, não que o documento não proponha.',
+      `3. ${definition.readingHint}`,
+      `4. Valores que afirmam algo exigem página e trecho copiado do texto publicado (textos/), sem resumir nem corrigir; nas páginas por OCR, registre na observação o que o OCR leu errado. ${definition.criteria[0]!.values.some((value) => value.code === 'nao-localizado') ? '"nao-localizado" quer dizer não encontrado no texto revisado, não que o documento não proponha.' : '"sem-posicao" quer dizer posição não encontrada no texto revisado, não que a candidatura não tenha posição.'}`,
       '5. Salve como CSV UTF-8 com separador ";" (Excel: "CSV UTF-8"; LibreOffice: conjunto de caracteres UTF-8, separador ponto e vírgula).',
       '', `Texto: publicação ${batch.id.slice(0, 12)}… (${batch.metadata.importerVersion}, ${batch.metadata.method.normalization}). Documentos: ${documents.length}; linhas da planilha: ${manifest.totals.codingRows}.`, ''].join('\n'));
     console.log(JSON.stringify({ packet: directory, ...manifest.totals }, null, 2));
   } finally { await database.end(); }
 }
 
-async function agreementReport() {
+export async function agreementReport(definition: CodebookDefinition) {
   const directory = option('pacote'), fileA = option('a'), fileB = option('b'), fileDecisions = option('adjudicacao');
-  if (!directory || !fileA || !fileB) throw new Error('Uso: npm run rubric:agreement -- --pacote=<diretório> --a=<planilha> --b=<planilha> [--adjudicacao=<planilha>]');
+  if (!directory || !fileA || !fileB) throw new Error(`Uso: npm run ${definition.command} -- --pacote=<diretório> --a=<planilha> --b=<planilha> [--adjudicacao=<planilha>]`);
   const manifest = JSON.parse(await readFile(resolve(directory, 'manifest.json'), 'utf8')) as Manifest;
-  if (manifest.rubric !== RUBRIC_VERSION) throw new Error(`Pacote da ${manifest.rubric}; este código aplica a ${RUBRIC_VERSION}.`);
+  if (manifest.rubric !== definition.version) throw new Error(`Pacote da ${manifest.rubric}; este código aplica a ${definition.version}.`);
   const database = pool();
   const texts = new Map<string, string>();
   try {
@@ -119,28 +137,29 @@ async function agreementReport() {
   const files = [fileA, fileB, ...(fileDecisions ? [fileDecisions] : [])];
   const raw = await Promise.all(files.map((file) => readFile(file, 'utf8')));
   const [a, b] = [readCoding(raw[0]!), readCoding(raw[1]!)];
-  const problems = [...validateCoding(a, manifest.documents, pageText).map((item) => `A (${basename(fileA)}): ${item}`), ...validateCoding(b, manifest.documents, pageText).map((item) => `B (${basename(fileB)}): ${item}`)];
+  const problems = [...definition.validate(a, manifest.documents, pageText).map((item) => `A (${basename(fileA)}): ${item}`), ...definition.validate(b, manifest.documents, pageText).map((item) => `B (${basename(fileB)}): ${item}`)];
   if (problems.length) { console.error(problems.join('\n')); throw new Error(`${problems.length} problema(s) nas planilhas; concordância não calculada.`); }
 
-  const result = agreement(a, b);
+  const result = agreement(a, b, definition.criteria);
   const output = resolve(directory, `resultado-${new Date().toISOString().replaceAll(':', '-')}`);
   await mkdir(output, { recursive: true });
   const inputs = files.map((file, index) => ({ role: ['a', 'b', 'adjudicacao'][index], file: basename(file), sha256: sha256(raw[index]!) }));
-  const report = { rubric: RUBRIC_VERSION, publication: manifest.publication, generatedAt: new Date().toISOString(), inputs, byCriterion: result.byCriterion, overall: result.overall, divergences: result.divergences.length };
+  const report = { rubric: definition.version, publication: manifest.publication, generatedAt: new Date().toISOString(), inputs, byCriterion: result.byCriterion, overall: result.overall, ...definition.report?.(a, b), divergences: result.divergences.length };
   await writeFile(resolve(output, 'concordancia.json'), `${JSON.stringify(report, null, 2)}\n`);
   await writeFile(resolve(output, 'adjudicacao-modelo.csv'), adjudicationTemplate(result.divergences, manifest.documents));
   if (fileDecisions) {
     const decisions = parse(raw[2]!, { delimiter: ';', columns: true, bom: true, skip_empty_lines: true, trim: true }) as Array<Record<string, string>>;
     const { final, problems: pending } = consolidate(a, b, decisions);
-    const invalid = validateCoding(final, manifest.documents, pageText);
+    const invalid = definition.validate(final, manifest.documents, pageText);
     if (pending.length || invalid.length) { console.error([...pending, ...invalid.map((item) => `Final: ${item}`)].join('\n')); throw new Error('Adjudicação incompleta ou inválida; codificação final não gravada.'); }
     const documentOf = new Map(manifest.documents.map((document) => [document.id, document]));
     await writeFile(resolve(output, 'codificacao-final.csv'), csv([[...CODING_COLUMNS.filter((column) => !['pergunta', 'valores_permitidos'].includes(column)), 'origem', 'justificativa'],
       ...final.map((row) => [row.documento, documentOf.get(row.documento)!.candidacies, row.criterio, row.valor, row.paginas.join(', '), row.trecho, row.observacao, row.origem, row.justificativa])]));
+    await definition.afterFinal?.(final, manifest.documents, output);
   }
   console.log(JSON.stringify({ output, divergences: result.divergences.length, overall: result.overall, final: Boolean(fileDecisions) }, null, 2));
 }
 
 const command = process.argv[2];
-if (require.main === module) (command === 'pacote' ? packet() : command === 'concordancia' ? agreementReport() : Promise.reject(new Error('Comando: pacote ou concordancia.')))
+if (require.main === module) (command === 'pacote' ? packet(ACCESSIBILITY) : command === 'concordancia' ? agreementReport(ACCESSIBILITY) : Promise.reject(new Error('Comando: pacote ou concordancia.')))
   .catch((error: unknown) => { console.error(error instanceof Error ? error.message : 'Rubrica: falha.'); process.exitCode = 1; });

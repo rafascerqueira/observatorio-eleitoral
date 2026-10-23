@@ -1,14 +1,14 @@
 # Contexto do projeto — Mente Eleitoral
 
-Criado em 12/10/2026 e revisado em **20/10/2026**. Fonte de verdade sobre finalidade, princípios, decisões e continuidade do projeto. O resumo abaixo descreve o estado vigente; os registros a partir do §12 preservam o estado de cada marco, inclusive pendências depois resolvidas. Nome definido: **Mente Eleitoral**, identidade 03A (petróleo e terracota), conforme §37. Licença continua sem decisão.
+Criado em 12/10/2026 e revisado em **22/10/2026**. Fonte de verdade sobre finalidade, princípios, decisões e continuidade do projeto. O resumo abaixo descreve o estado vigente; os registros a partir do §12 preservam o estado de cada marco, inclusive pendências depois resolvidas. Nome definido: **Mente Eleitoral**, identidade 03A (petróleo e terracota), conforme §37. Licença continua sem decisão.
 
 ## Estado atual
 
-Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). A rubrica da D3 está preparada, sem codificação, à espera de quem revisa, e a pesquisa documental da E está feita (§49). Próximo: decisões de Rafael sobre revisores e livro de códigos (D3), sobre seguir com o ESEB ou o LAPOP (E) e sobre a hospedagem.
+Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). A rubrica da D3 está preparada, sem codificação, à espera de quem revisa, e a pesquisa documental da E está feita (§49). Next.js em 16.4.2 por aviso de segurança (§50). Bússola política no modelo Kieskompas (§§51–53): 24 afirmações aprovadas, concordância mínima decidida (kappa ponderado ≥ 0,70 por eixo), pacote gerado e cálculo pronto, à espera de quem codifica. 2026 avaliado e adiado para depois do 2º turno (§§51–52). Próximo: quem codifica e adjudica (D3 e bússola, **pendente por decisão de Rafael em 22/10**), ESEB ou LAPOP (E), hospedagem e, depois de 25/10, a carga de 2026.
 
 | Frente | Situação em 20/10/2026 |
 | --- | --- |
-| Resultados eleitorais | Presidência 2022 nacional e exterior; Governador e Senador nas 27 UFs, com turnos e categorias não válidas auditados. Deputados fora do escopo; 2026 e suplementar de RR não importados. |
+| Resultados eleitorais | Presidência 2022 nacional e exterior; Governador e Senador nas 27 UFs, com turnos e categorias não válidas auditados. Deputados fora do escopo; 2026 e suplementar de RR não importados. 2026: avaliação do 1º turno em [avaliação de 2026](docs/avaliacao-2026-primeiro-turno.md); carga dos dois turnos depois de 25/10, com o Senado de duas vagas listado por votos e eleitas destacadas pela situação do TSE (§52). |
 | IBGE e perfis TSE | Contexto municipal, mapas, associação local → setor, perfil por local, faixas de renda, participação por perfil, demografia, grupos, sensibilidade e entorno dos domicílios (§34) publicados no banco local. Nove versões atuais e ordem de importação no [README](README.md); IDs e auditorias em [reimportações](docs/reimportacoes-2026-10-18.md). |
 | Interface | Busca com sugestões, listagem municipal compacta/paginada, detalhe de todas as candidaturas, formulários GET sem JS, participação por município/estado civil e mapas por candidatura concluídos. Fase A (§33): setor censitário em cada local e quadro do município por situação; em `/mapa`, abstenção do cargo ou candidatura à escolha, dispersão e exportação CSV. Fase C (§34): entorno dos domicílios no painel do município, no cartão do local e em oito indicadores de `/mapa`. Fase B3 (§41): setores e locais em `/municipios/[code]/setores`. Fase D2 (§43): busca literal nas propostas da Presidência em `/propostas`; na v2 (§48), texto em ordem de leitura das colunas, ligaduras e hífens de fim de linha tratados. |
 | Identidade | **Mente Eleitoral**, com a identidade 03A (petróleo/terracota), símbolo M/conexões e frase “Um olhar único sobre votação e população”. Marca aplicada ao site, ícones, banner inicial, compartilhamento e README (§37). |
@@ -22,7 +22,9 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 - **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. O importador das propostas depende de pacotes do sistema (`poppler-utils`, `tesseract-ocr`, `tesseract-ocr-por`), que a API e a web não usam: importar localmente e levar o banco com `data/originals` e `data/audit`, ou criar uma imagem do importador com Ubuntu 24.04 para reproduzir as versões da publicação (§48). A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
 - **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas) à espera de quem revisa, e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
-- **Manutenção registrada, sem execução autorizada nesta etapa:** limpeza de armazenamento; renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
+- **Bússola política (§53):** livro de códigos aprovado; pendente quem codifica e quem adjudica (a mesma pendência da D3, deixada em aberto por Rafael em 22/10); depois, publicação `compass-2022-v1`, conferência externa e página `/propostas/bussola`.
+- **Limpeza dos lotes não publicados (§52):** autorizada para o início da carga de 2026, com backup antes; 52 lotes inventariados, nenhum citado pelas publicações vigentes.
+- **Manutenção registrada, sem execução autorizada nesta etapa:** renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
 
 A página longa, autocomplete, relatório em modo dev, participação por município/estado civil, sensibilidade e mapas por candidatura **já foram resolvidos**. Não recolocá-los na fila com base em listas antigas. O §11 organiza a continuidade; o histórico registra como as decisões foram tomadas.
 
@@ -39,6 +41,7 @@ O projeto começa pequeno com dados oficiais do TSE e IBGE. Não deve partir de 
 - Independência partidária e mesmos recursos, filtros e fórmulas para todas as candidaturas e partidos.
 - Não produzir conclusões editoriais automáticas ou orientar o visitante para uma interpretação política.
 - Mostrar distribuições e valores; não classificar pessoas ou lugares automaticamente como de direita, de esquerda, apolíticos, ricos ou pobres.
+- Posições de candidaturas (bússola política, decisão de 22/10/2026, §53) só por codificação humana documentada dos próprios planos de governo, com método, trechos e incerteza publicados; sem afinidade com o visitante, recomendação ou rótulos pejorativos.
 - Abstenção, brancos e nulos não identificam motivação nem condição apolítica.
 - Fontes, definição de variável, ano de referência, cobertura e denominador sempre consultáveis.
 - Ausência absoluta de viés não pode ser garantida: escolhas metodológicas devem ser explícitas, testadas e revisáveis.
@@ -732,3 +735,75 @@ Verificação, numa worktree separada (branch `next-16.4.2-security`):
 Nada mudou nos dados nem na API. Sem push nem PR.
 
 Pendente: levar a branch ao `main` (merge) e apagar a worktree.
+## 51. Avaliação de 2026 (1º turno) e pesquisa sobre espectro político — 22/10/2026
+
+A pedido de Rafael, duas avaliações sem importação nem código:
+
+- **2026, 1º turno** ([avaliação](docs/avaliacao-2026-primeiro-turno.md)): o TSE publicou Presidente, Governador e Senador. As colunas são as de 2022; mudam as aspas e a caixa dos textos. Exterior no arquivo `BR` (o ZIP `ZZ` de seções está vazio). Senado com votos = 2 × comparecimento, o que bloquearia a regra atual (`model.ts:189`). Muitos votos sub judice, nominal regerado em 22/10 e 2º turno da Presidência em 25/10. Estimativa de ~11–13 GB entre originais, staging e banco, com 59 GB livres. Recomendação: esperar o 2º turno e a estabilização e carregar os dois turnos em versões novas. Achados laterais: 7,3 mi de linhas de publicações antigas em `national_section_votes`; nominal de 2022 regerado pelo TSE com outro tamanho.
+- **Espectro político** ([pesquisa](docs/pesquisa-espectro-politico.md)): Nolan, bússola e VAAs descartados (contrariam o §2, o resultado depende do método e há a Res. TSE 23.755/2026, que precisa de leitura jurídica). Proposta construtiva: quadro de posições documentadas por tema, continuação da D3, sem eixo nem afinidade. Partidos posicionados por pesquisas acadêmicas citadas ficam como opção separada.
+
+Verificação: catálogo e cabeçalhos HTTP do TSE, leitura parcial dos ZIPs, detalhe por zona e relatório de totalização da Presidência baixados fora do repositório, contagens no banco em modo só leitura. Sem testes: nada mudou no código.
+
+Pendente (decisões de Rafael): esperar ou não o 2º turno; apresentação do Senado com duas vagas; limpeza das publicações antigas; opção D/C da pesquisa; merge da branch `next-16.4.2-security` (§50, na worktree `../observatorio-eleitoral-next-upgrade`) no `main`.
+
+## 52. Decisões sobre 2026 e bússola política — 22/10/2026
+
+Rafael decidiu:
+1. esperar o 2º turno de 2026;
+2. Senado com duas vagas apresentado de forma simples, pela quantidade de votos e com as eleitas destacadas, explicando a escolha de duas candidaturas;
+3. limpar as publicações antigas antes da carga;
+4. refletir sobre a pesquisa do espectro e planejar, se for construtivo;
+5. merge da atualização do Next.js.
+
+Detalhes em [avaliação de 2026](docs/avaliacao-2026-primeiro-turno.md).
+
+Sobre o espectro, Rafael também decidiu:
+- esquerda e direita não ferem o §2 quando não há indução;
+- o problema são rótulos pejorativos;
+- a Res. TSE 23.755/2026 não se aplica ao projeto, que não recomenda candidaturas.
+
+A pesquisa ganhou outros modelos além de Nolan, e há um rascunho de [plano da bússola política](docs/plano-bussola-politica.md): dois eixos (economia esquerda–direita × costumes progressista–conservador), posições por codificação humana em dupla dos planos de governo de 2022, incerteza e cobertura publicadas, sem afinidade nem recomendação. O texto do §2 e do `AGENTS.md` só muda quando o plano for aprovado (proposta no próprio plano).
+
+Feito: fast-forward do `main` para a branch do §50 (o conflito entre os registros §50 e §51 no fim do `plan.md` foi resolvido mantendo os dois), worktree removida, branch apagada e `npm ci` no `main` (`next --version` = 16.4.2). Inventário somente de leitura dos 52 lotes não publicados.
+
+Pendente:
+- aprovar o plano da bússola (fase P0);
+- limpeza, quando a carga de 2026 começar;
+- carga de 2026 depois do 2º turno.
+
+## 53. Bússola política no modelo Kieskompas: livro de códigos, pacote e cálculo — 22/10/2026
+
+Rafael escolheu o Kieskompas ("vamos por ele") e autorizou seguir sem novas perguntas. Feito (detalhes no [plano](docs/plano-bussola-politica.md) e no [livro de códigos](docs/bussola-livro-de-codigos.md)):
+
+- **Modelo:** eixos economia (esquerda–direita) × costumes (progressista–conservador) e escala de cinco pontos, como no Kieskompas, com o método da família documentado pelo Volebný Kompas (2024). Diferenças declaradas:
+  - sem autoposicionamento das campanhas;
+  - fonte única: o plano de governo;
+  - "sem posição" fora da média, nunca neutro;
+  - mínimo de 4 afirmações por eixo.
+- **`bussola-kieskompas-v1`:** 24 afirmações, 6 por polo em cada eixo, com termos medidos no corpus de 2022 e 10 termos excluídos por colisão ou amplitude.
+- **Código:**
+  - o fluxo da rubrica da D3 foi generalizado (`rubric-core.ts`: `validateRows` e critérios por parâmetro; `rubric.ts`: `packet` e `agreementReport` recebem a definição do livro de códigos);
+  - `compass-core.ts`: afirmações, escala, kappa ponderado, posições, intervalo por reamostragem com semente fixa e sensibilidade;
+  - `compass.ts`, com `npm run compass:packet` e `compass:agreement`.
+- **Pacote real:** `data/compass/bussola-kieskompas-v1/pacote-2026-10-23T00-14-13.878Z/` (12 documentos, 288 linhas, 636 trechos candidatos em 218 páginas).
+- **§2 e `AGENTS.md`:** passam a trazer a regra da bússola.
+
+Verificação:
+- typecheck e 137 testes (4 novos da bússola);
+- pacote da D3 regerado depois da refatoração, idêntico ao de 21/10 salvo o `generatedAt` (a cópia de verificação foi apagada);
+- fluxo da concordância ensaiado com planilhas fictícias fora do repositório, até as posições; o ensaio revelou um arredondamento no kappa ponderado, já corrigido com teste. As planilhas e o resultado do ensaio foram apagados.
+
+Sem smokes nem `check:ui`: nada mudou na API, na web ou nos dados publicados.
+
+Pendente:
+- aprovação do livro de códigos;
+- quem codifica e quem adjudica (com a D3);
+- concordância mínima;
+- importação `compass-2022-v1`, conferência externa e página `/propostas/bussola` depois da codificação real;
+- carga de 2026 e limpeza dos lotes antigos depois do 2º turno (§52).
+
+Sem commit.
+
+Atualização (22/10/2026): Rafael leu e aprovou as 24 afirmações da seção 4 do livro de códigos, que podem ser ampliadas em versões futuras (cada ampliação é uma nova versão, com novo pacote). Seguem pendentes quem codifica e quem adjudica, e a concordância mínima.
+
+Atualização (22/10/2026): concordância mínima decidida — kappa ponderado da escala ≥ 0,70 em cada eixo para publicá-lo (Rafael também considerou razoável 0,75). Abaixo disso, o eixo não é publicado e as afirmações com mais divergência voltam para revisão numa nova versão. `compass:agreement` marca `publishable` em cada eixo (`MIN_AXIS_KAPPA` em `compass-core.ts`). Segue pendente quem codifica e quem adjudica.
