@@ -14,6 +14,7 @@ Rafael escolheu o modelo **Kieskompas** e autorizou seguir sem novas perguntas. 
   - quem revisa o livro de códigos continua aberto, junto com quem codifica.
 - **P1:** livro de códigos `bussola-kieskompas-v1` em [bussola-livro-de-codigos.md](bussola-livro-de-codigos.md), com 24 afirmações (6 por polo em cada eixo) e termos medidos no corpus. Aguarda aprovação.
 - **P2:**
+  - codificação A feita pelo Claude em 22/10/2026, por decisão de Rafael (`codificacao-claude.csv` no pacote): 185 posições em 288 linhas, todos os trechos conferidos pelo validador; codificação B (uma pessoa) e adjudicação pendentes;
   - pacote gerado em `data/compass/bussola-kieskompas-v1/pacote-2026-10-23T00-14-13.878Z/`: 12 documentos, 288 linhas, 636 trechos candidatos em 218 páginas;
   - aguarda as duas pessoas que codificam.
 - **P3 (parte):**
@@ -71,4 +72,4 @@ Da **codificação dos planos de governo** já publicados (`proposals-2022-v2`),
 
 ## Fora do plano
 
-Afinidade com o visitante, ranking, recomendação, posição atribuída por modelo de linguagem, rótulos pejorativos e posição inferida do partido sem leitura do plano.
+Afinidade com o visitante, ranking, recomendação, posição atribuída só por modelo de linguagem (sem codificação independente de uma pessoa e adjudicação humana), rótulos pejorativos e posição inferida do partido sem leitura do plano.

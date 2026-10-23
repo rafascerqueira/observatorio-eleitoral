@@ -19,7 +19,7 @@ Regras inegociáveis (detalhes em `plan.md` §2–6 e §9):
 - Nulo/ausente não vira zero; denominador zero gera `null`, não percentual. Campos novos opcionais não podem ser lidos como zero em versões antigas.
 - Divergências (votos, chaves, duplicatas, tipo de voto não auditado) **bloqueiam a publicação**; não descartar nem "corrigir" silenciosamente.
 - Agregar somando votos e denominadores, nunca pela média de percentuais. Liderança ≠ maioria absoluta.
-- Neutralidade: mesmos critérios para todas as candidaturas; sem rótulos ideológicos, de classe ou interpretações políticas automáticas. Abstenção/brancos/nulos não indicam motivação. Exceção declarada: a bússola política (esquerda–direita × progressista–conservador) situa planos de governo só por codificação humana em dupla, com trechos e incerteza, sem afinidade, recomendação ou rótulos pejorativos (`docs/bussola-livro-de-codigos.md`).
+- Neutralidade: mesmos critérios para todas as candidaturas; sem rótulos ideológicos, de classe ou interpretações políticas automáticas. Abstenção/brancos/nulos não indicam motivação. Exceção declarada: a bússola política (esquerda–direita × progressista–conservador) situa planos de governo só por duas codificações independentes (uma delas pode ser feita por modelo de linguagem, declarada como tal — decisão de Rafael, 22/10/2026) e adjudicação humana, com trechos e incerteza, sem afinidade, recomendação ou rótulos pejorativos (`docs/bussola-livro-de-codigos.md`).
 - Seção ≠ local ≠ zona ≠ bairro/setor censitário. Endereço do local não é residência do eleitor.
 - Não publicar, implantar ou contratar serviços externos sem instrução explícita. Recorte novo de dados (cargo, ano, UF piloto) é decidido com o Rafael antes de carga extensa.
 

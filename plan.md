@@ -41,7 +41,7 @@ O projeto começa pequeno com dados oficiais do TSE e IBGE. Não deve partir de 
 - Independência partidária e mesmos recursos, filtros e fórmulas para todas as candidaturas e partidos.
 - Não produzir conclusões editoriais automáticas ou orientar o visitante para uma interpretação política.
 - Mostrar distribuições e valores; não classificar pessoas ou lugares automaticamente como de direita, de esquerda, apolíticos, ricos ou pobres.
-- Posições de candidaturas (bússola política, decisão de 22/10/2026, §53) só por codificação humana documentada dos próprios planos de governo, com método, trechos e incerteza publicados; sem afinidade com o visitante, recomendação ou rótulos pejorativos.
+- Posições de candidaturas (bússola política, decisões de 22/10/2026, §§53–54) só por duas codificações independentes e documentadas dos próprios planos de governo (uma pode ser feita por modelo de linguagem, declarada na publicação) e adjudicação humana, com método, trechos e incerteza publicados; sem afinidade com o visitante, recomendação ou rótulos pejorativos.
 - Abstenção, brancos e nulos não identificam motivação nem condição apolítica.
 - Fontes, definição de variável, ano de referência, cobertura e denominador sempre consultáveis.
 - Ausência absoluta de viés não pode ser garantida: escolhas metodológicas devem ser explícitas, testadas e revisáveis.
@@ -807,3 +807,26 @@ Sem commit.
 Atualização (22/10/2026): Rafael leu e aprovou as 24 afirmações da seção 4 do livro de códigos, que podem ser ampliadas em versões futuras (cada ampliação é uma nova versão, com novo pacote). Seguem pendentes quem codifica e quem adjudica, e a concordância mínima.
 
 Atualização (22/10/2026): concordância mínima decidida — kappa ponderado da escala ≥ 0,70 em cada eixo para publicá-lo (Rafael também considerou razoável 0,75). Abaixo disso, o eixo não é publicado e as afirmações com mais divergência voltam para revisão numa nova versão. `compass:agreement` marca `publishable` em cada eixo (`MIN_AXIS_KAPPA` em `compass-core.ts`). Segue pendente quem codifica e quem adjudica.
+
+## 54. Codificação A da bússola pelo Claude — 22/10/2026
+
+Rafael decidiu que o Claude faz uma das duas codificações da bússola, e a divergência será vista depois. A regra muda no §2, no `AGENTS.md`, no livro de códigos e no plano: duas codificações independentes, uma delas podendo ser de modelo de linguagem, declarada como tal na publicação, e adjudicação humana.
+
+Feito:
+- **Codificação A:** `data/compass/bussola-kieskompas-v1/pacote-2026-10-23T00-14-13.878Z/codificacao-claude.csv`, somente leitura, SHA-256 `3ada9942868463da8f18354c72d121c766ad904a527b8cd92adfd9d5f4949d4f`.
+- **Contagem:** 288 linhas, com 185 posições (79 concorda totalmente, 35 tende a concordar, 25 neutra, 19 tende a discordar, 27 discorda totalmente) e 103 sem posição.
+- **Cobertura por plano** (afirmações com posição, economia/costumes): 12: 9/7, 13: 12/7, 14: 7/8, 15: 10/7, 16: 10/8, 21: 12/10, 22: 9/8, 27: 2/4, 30: 8/5, 44: 6/5, 80: 12/8, 90: 6/5. Só o nº 27 fica abaixo do mínimo, em economia.
+- **Posições não calculadas** de propósito, para não influenciar a codificação B.
+- **Leitura:**
+  - texto inteiro em 8 planos;
+  - nos nº 22, 30, 44 e 90 (os mais longos), sumário, títulos e seções de cada tema localizadas por busca ampla;
+  - limitação declarada no livro de códigos (seção 10), com outras quatro lacunas para a próxima versão.
+
+Verificação: os trechos dos 12 documentos passaram pela validação do `compass:agreement` (mesma função, `validateCompass`, contra o texto publicado).
+
+Pendente:
+- codificação B por uma pessoa, sem ver a A;
+- adjudicação humana;
+- depois, `compass:agreement` com as duas planilhas e a publicação.
+
+Sem commit.

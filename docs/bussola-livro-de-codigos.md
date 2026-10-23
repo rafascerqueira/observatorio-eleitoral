@@ -10,6 +10,7 @@ A bússola situa cada plano de governo da Presidência de 2022 em dois eixos, a 
 - Não há afinidade com o visitante, ranking nem recomendação. A página mostra onde cada plano fica e por quê, com os trechos.
 - "Sem posição" quer dizer posição não localizada no texto revisado. Nunca vira neutro nem zero.
 - Rótulos dos eixos sem termos pejorativos (decisão de Rafael, 22/10/2026).
+- **Quem codifica (decisão de Rafael, 22/10/2026):** a codificação A foi feita pelo Claude (modelo de linguagem), declarada como tal; a codificação B será de uma pessoa, sem ver a A; a adjudicação das divergências é humana. A publicação informa quem fez cada codificação.
 - São 12 documentos, como na rubrica da D3: o nº 14 tem um documento para duas candidaturas, e o nº 90, inapto e sem votos, entra na codificação e é listado à parte.
 
 ## 2. Modelo
@@ -148,6 +149,16 @@ Mudar afirmações, polos, escala, termos, mínimo ou reamostragem cria uma nova
 ## 9. Decisões pendentes de Rafael
 
 1. ~~Aprovar as afirmações~~: aprovadas em 22/10/2026, com possibilidade de ampliação em versões futuras.
-2. Quem codifica e quem adjudica (a mesma pendência da D3; as duas codificações podem ser feitas pelas mesmas pessoas, em pacotes separados).
+2. ~~Quem codifica~~: codificação A pelo Claude em 22/10/2026 (`codificacao-claude.csv` no pacote, SHA-256 `3ada9942…`). Pendentes: quem faz a codificação B e quem adjudica.
+
+## 10. Lacunas encontradas na codificação A, para a próxima versão
+
+Registradas durante a codificação A, sem mudar a v1:
+
+1. **Afirmações com "e"** ("estatais **e** bancos públicos", "família **e** fé", "indígenas **e** quilombolas"): o livro não diz o que fazer quando o plano se compromete com só uma das partes. Na codificação A, `tende-a-concordar` (ou `tende-a-discordar`), com a explicação na observação.
+2. **Trechos em direções opostas × trecho mais explícito:** a seção 3 traz as duas regras sem ordem de precedência. Na codificação A, valeu o mais explícito quando um lado era compromisso nomeado e o outro, menção genérica (exemplo: oposição nomeada a privatizações ao lado de "concessões" para investimento privado); quando os dois lados eram compromissos, `neutra`.
+3. **`e02` e PPPs em serviços:** parcerias público-privadas em saúde ou serviços contam como "serviços concedidos"? Na codificação A, `tende-a-concordar`.
+4. **`k02` e excludente de ilicitude:** proteção jurídica de agentes de segurança não trata de penas de infratores. Na codificação A, `sem-posicao`, com observação.
+5. **Leitura dos planos longos:** nos nº 22, 30, 44 e 90, a codificação A leu o sumário, os títulos e as seções de cada tema, localizadas por busca ampla, em vez do texto corrido; nos demais, o texto inteiro. A codificação B deve ler os documentos inteiros.
 3. ~~Concordância mínima~~: kappa ponderado ≥ 0,70 por eixo (22/10/2026); Rafael também considerou razoável 0,75.
 4. Publicação, página e canal de contestação (fases P3 e P4 do plano).
