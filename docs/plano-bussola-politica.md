@@ -11,12 +11,12 @@ Rafael escolheu o modelo **Kieskompas** e autorizou seguir sem novas perguntas. 
   - escala de cinco pontos;
   - mínimo de 4 afirmações por eixo;
   - piloto na Presidência de 2022;
-  - quem revisa o livro de códigos continua aberto; quem codifica foi decidido em 22/10 (P2).
-- **P1:** livro de códigos `bussola-kieskompas-v1` em [bussola-livro-de-codigos.md](bussola-livro-de-codigos.md), com 24 afirmações (6 por polo em cada eixo) e termos medidos no corpus. Afirmações aprovadas por Rafael em 22/10/2026.
+  - quem revisa o livro de códigos continua aberto; quem codifica foi decidido em 22 e 24/10 (P2).
+- **P1:** livro de códigos em [bussola-livro-de-codigos.md](bussola-livro-de-codigos.md), com 24 afirmações (6 por polo em cada eixo) e termos medidos no corpus. Afirmações aprovadas por Rafael em 22/10/2026. Em 24/10/2026 o livro passou à `bussola-kieskompas-v2`, à espera de aprovação: mesmas afirmações e termos, mais as regras que vieram das lacunas da v1 e o procedimento novo.
 - **P2:**
-  - pacote gerado em `data/compass/bussola-kieskompas-v1/pacote-2026-10-23T00-14-13.878Z/`: 12 documentos, 288 linhas, 636 trechos candidatos em 218 páginas; só material comum às duas codificações;
-  - codificação A pelo Claude (modelo de linguagem), por decisão de Rafael em 22/10/2026, refeita em 24/10/2026 com leitura integral dos 12 documentos; guardada fora do pacote, em `data/compass/bussola-kieskompas-v1/codificacao-a/`, com as notas, que não vão para quem faz a B;
-  - aguarda a codificação B e a adjudicação, por contribuidores do projeto (decisão de Rafael, 24/10/2026); quem faz a B não vê a A.
+  - **v1** (registro): pacote em `data/compass/bussola-kieskompas-v1/pacote-2026-10-23T00-14-13.878Z/` (12 documentos, 288 linhas, 636 trechos candidatos em 218 páginas) e uma codificação pelo Claude (modelo de linguagem), feita em 22/10/2026 e refeita em 24/10/2026 com leitura integral, guardada em `data/compass/bussola-kieskompas-v1/codificacao-a/`;
+  - **mudança de 24/10/2026:** manter essa codificação escondida de quem faria a segunda contrariava a transparência do projeto, e o commit `9c493d9`, público, já mostrava a contagem e as decisões dela. Rafael decidiu: nova versão, a pessoa codifica primeiro, em público, e o modelo depois, isolado (livro de códigos, seção 6). A codificação da v1 não entra na concordância; o conteúdo dela é publicado quando a pessoa terminar a v2;
+  - **v2:** aguarda a aprovação do livro, o pacote novo, a codificação da pessoa, a do modelo e a adjudicação.
 - **P3 (parte):**
   - cálculo pronto e testado com dados sintéticos: kappa ponderado, posições, intervalo por reamostragem, sensibilidade e contribuições;
   - roda na concordância e grava `posicoes.json` e `posicoes.csv`, sem publicação;
@@ -31,7 +31,7 @@ O §2 do `plan.md` e o `AGENTS.md` já trazem a regra da bússola.
 - O problema são rótulos muito negativos, como "autoritário". Um gráfico que funcione como bússola, situando cada candidatura numa direção, não deve ser descartado.
 - A Res. TSE 23.755/2026 não se aplica ao projeto (decisão de Rafael).
 
-Consequência para este plano: o §2 do `plan.md` proíbe classificar "automaticamente". A bússola usa duas codificações independentes, documentadas, reprodutíveis e contestáveis, com adjudicação humana, e não oferece "afinidade" nem recomendação. A regra aplicada ao §2 do `plan.md` e ao `AGENTS.md` (22/10/2026, §§53–54 do `plan.md`) admite que uma das duas codificações seja feita por modelo de linguagem, declarada como tal; a outra é sempre de uma pessoa.
+Consequência para este plano: o §2 do `plan.md` proíbe classificar "automaticamente". A bússola usa duas codificações independentes, documentadas, reprodutíveis e contestáveis, com adjudicação humana, e não oferece "afinidade" nem recomendação. A regra aplicada ao §2 do `plan.md` e ao `AGENTS.md` (22/10/2026, §§53–54 do `plan.md`) admite que uma das duas codificações seja feita por modelo de linguagem, declarada como tal; a outra é sempre de uma pessoa. Desde 24/10/2026 (§59), a da pessoa vem primeiro, em público, e a do modelo depois, isolada.
 
 ## Modelo do gráfico
 
@@ -59,7 +59,7 @@ Da **codificação dos planos de governo** já publicados (`proposals-2022-v2`),
 | --- | --- | --- |
 | P0 | Decisões: eixos e rótulos; mínimo de itens; quem revisa o livro de códigos | Rafael |
 | P1 | Livro de códigos `bussola-v1` em `docs/`, com afirmações, direções, regras e exemplos | P0 |
-| P2 | Pacote e duas codificações independentes para a Presidência de 2022 (12 documentos, 288 julgamentos por codificação) | P1; codificação B e adjudicação |
+| P2 | Pacote e duas codificações independentes para a Presidência de 2022 (12 documentos, 288 julgamentos por codificação): pessoa em público, depois modelo isolado | P1; aprovação da v2, codificações e adjudicação |
 | P3 | Importação `compass-2022-v1`: coordenadas, cobertura, intervalos, sensibilidade, conferência externa e testes com dados sintéticos | P2 |
 | P4 | Página `/propostas/bussola`: gráfico SVG no servidor, tabela equivalente, página de trechos por candidatura, método e canal de contestação; `check:ui` | P3 |
 | P5 | Extensões: Presidência de 2026 (exige antes o inventário e a extração dos planos de 2026, como D1/D2) e Governador (mais de 200 planos em 2022; avaliar o custo antes) | P4 |
@@ -67,7 +67,7 @@ Da **codificação dos planos de governo** já publicados (`proposals-2022-v2`),
 ## Complexidade
 
 - **Técnica: média.** Reaproveita a busca, a rubrica, o pacote e a concordância. O gráfico é simples (SVG estático com tabela).
-- **Humana: o gargalo.** Contribuidores do projeto para a codificação B (a A é do modelo de linguagem) e para adjudicar. Planos de governo são vagos em muitos temas, então é provável haver cobertura baixa em costumes. Isso será mostrado, não preenchido.
+- **Humana: o gargalo.** Contribuidores do projeto para a codificação da pessoa e para adjudicar; a do modelo vem depois, isolada. Planos de governo são vagos em muitos temas, então é provável haver cobertura baixa em costumes. Isso será mostrado, não preenchido.
 - **Metodológica: a escolha das afirmações define o resultado** (Louwerse e Rosema mostraram que mudar o método muda a recomendação para a maioria). Por isso: afirmações publicadas antes da codificação, equilíbrio entre os polos, sensibilidade publicada e versão nova a cada mudança.
 
 ## Fora do plano

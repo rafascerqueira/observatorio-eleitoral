@@ -3,10 +3,10 @@ import { cohenKappa, quantile, random, validateRows, type CodingRow, type Criter
 /**
  * Bússola política das candidaturas no modelo Kieskompas (livro de códigos em docs/bussola-livro-de-codigos.md): afirmações
  * atribuídas a dois eixos, posição de cada plano de governo em cada afirmação numa escala de cinco pontos, em duas codificações
- * independentes (ao menos uma de pessoa) com página e trecho, e coordenada do eixo pela média das afirmações com posição documentada. "Sem posição" fica fora
+ * independentes (a de uma pessoa, em público, e depois a de um modelo, isolado) com página e trecho, e coordenada do eixo pela média das afirmações com posição documentada. "Sem posição" fica fora
  * da média e nunca vira neutro; abaixo do mínimo de afirmações a candidatura não é situada no eixo.
  */
-export const COMPASS_VERSION = 'bussola-kieskompas-v1';
+export const COMPASS_VERSION = 'bussola-kieskompas-v2';
 export const COMPASS_THEME = 'Bússola política (modelo Kieskompas)';
 
 /** Eixos: −1 no primeiro polo, +1 no segundo. Rótulos sem termos pejorativos (decisão de Rafael, 22/10/2026). */

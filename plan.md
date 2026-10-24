@@ -4,7 +4,7 @@ Criado em 12/10/2026 e revisado em **22/10/2026**. Fonte de verdade sobre finali
 
 ## Estado atual
 
-Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). A rubrica da D3 está preparada, sem codificação; codificam e adjudicam os contribuidores do projeto, e uma das codificações pode ser de modelo (§§57–58), e a pesquisa documental da E está feita (§49). Next.js em 16.4.2 por aviso de segurança (§50). Bússola política no modelo Kieskompas (§§51–53): 24 afirmações aprovadas, concordância mínima decidida (kappa ponderado ≥ 0,70 por eixo), pacote gerado, codificação A feita e cálculo pronto, à espera da codificação B e da adjudicação pelos contribuidores (§58). 2026 avaliado e adiado para depois do 2º turno (§§51–52). Próximo: codificações e adjudicação pelos contribuidores (D3 e bússola; antes, na D3, a aprovação da versão pela comunidade de contribuidores), ESEB ou LAPOP (E), hospedagem e, depois de 25/10, a carga de 2026.
+Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). A rubrica da D3 está preparada, sem codificação; codificam e adjudicam os contribuidores do projeto, e uma das codificações pode ser de modelo (§§57–58), e a pesquisa documental da E está feita (§49). Next.js em 16.4.2 por aviso de segurança (§50). Bússola política no modelo Kieskompas (§§51–53): 24 afirmações aprovadas, concordância mínima decidida (kappa ponderado ≥ 0,70 por eixo), cálculo pronto; livro em `bussola-kieskompas-v2` (§59), à espera da aprovação, e a v1 como registro. 2026 avaliado e adiado para depois do 2º turno (§§51–52). Próximo: aprovação dos livros pela comunidade; depois, codificação da pessoa em público, do modelo isolado e adjudicação (D3 e bússola v2, §59); ESEB na fase E (escolhido em 24/10, §59) e, na semana de 26/10, a carga de 2026. Hospedagem fora da pauta (§59).
 
 | Frente | Situação em 20/10/2026 |
 | --- | --- |
@@ -19,10 +19,10 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 ### Pendências vigentes
 
 - **Antes de declarar acessibilidade completa:** leitor de tela humano, Safari e dispositivos reais, zoom de texto/alto contraste do sistema. Chrome/Firefox e verificações automáticas já foram realizados; não substituem esses ensaios.
-- **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. O importador das propostas depende de pacotes do sistema (`poppler-utils`, `tesseract-ocr`, `tesseract-ocr-por`), que a API e a web não usam: importar localmente e levar o banco com `data/originals` e `data/audit`, ou criar uma imagem do importador com Ubuntu 24.04 para reproduzir as versões da publicação (§48). A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
-- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas), com codificação e adjudicação pelos contribuidores do projeto (§58), e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
+- **Hospedagem: fora da pauta** (decisão de Rafael, 24/10/2026, §59): é questão de custo do projeto, não de finalidade. O que segue fica como registro para quando voltar. O importador das propostas depende de pacotes do sistema (`poppler-utils`, `tesseract-ocr`, `tesseract-ocr-por`), que a API e a web não usam: importar localmente e levar o banco com `data/originals` e `data/audit`, ou criar uma imagem do importador com Ubuntu 24.04 para reproduzir as versões da publicação (§48). A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
+- **Decisões abertas:** licença específica (Rafael decidiu em 24/10/2026 por licença livre copyleft, §59) e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas), com codificação e adjudicação pelos contribuidores do projeto (§58), e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
-- **Bússola política (§53):** livro de códigos aprovado; codificação B e adjudicação pelos contribuidores do projeto (§58); depois, publicação `compass-2022-v1`, conferência externa e página `/propostas/bussola`.
+- **Bússola política (§53):** livro na v2, à espera da aprovação; a pessoa codifica em público e o modelo depois, isolado (§59); depois, publicação `compass-2022-v1`, conferência externa e página `/propostas/bussola`.
 - **Limpeza dos lotes não publicados (§52):** autorizada para o início da carga de 2026, com backup antes; 52 lotes inventariados, nenhum citado pelas publicações vigentes.
 - **Manutenção registrada, sem execução autorizada nesta etapa:** renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
 
@@ -956,7 +956,43 @@ Pendente:
 - abrir o pull request de aprovação da rubrica (exige push, que só Rafael autoriza);
 - forma e página de publicação (D3 e bússola);
 - se a bússola, aprovada por Rafael em 22/10, também passa a seguir a aprovação pela comunidade nas próximas versões;
-- quem faz cada codificação entre os contribuidores, e o prazo para responder contestações;
-- o rótulo `contestação` precisa existir no repositório do GitHub para ser aplicado.
+- quem faz cada codificação entre os contribuidores.
+
+Commitado em 24/10/2026, sem push.
+
+Respostas seguintes de Rafael (24/10/2026): ele avalia cada pull request antes do merge (seção 8 do livro da rubrica); contestações não têm prazo fixo de resposta (passo 7 da seção 6). O rótulo `contestação` foi criado no repositório do GitHub, a pedido dele. Rafael também apontou que o sigilo temporário da codificação A da bússola complica o projeto, em que a transparência é fundamental: o modelo de independência da bússola será revisto antes da codificação B.
+
+## 59. Transparência na codificação: pessoa primeiro, em público; modelo depois, isolado — 24/10/2026
+
+Rafael apontou que esconder a codificação A da bússola de quem faria a B complica o projeto, em que a transparência é fundamental. Além disso, o commit `9c493d9`, já no `upstream/main` (repositório público), mostra a contagem e as decisões daquela codificação. Pela proposta do Claude, Rafael decidiu:
+1. **Ordem:** a pessoa codifica primeiro, em público, num pull request em `codificacoes/<versão>/`, que ele avalia; o modelo codifica depois, numa execução isolada que recebe só o pacote e o livro. A independência que precisa ser garantida passa a ser a do modelo, que pode ser controlada e registrada: instruções publicadas antes, saída sem edição, correções só pedidas ao próprio modelo, identificador exato e conhecimento anterior à publicação da planilha da pessoa. Duas execuções medem a consistência.
+2. **Isolamento:** por `api` (requisição e resposta exatas gravadas) ou por `sessao` (sessão aberta só no diretório do pacote). As duas valem; a `sessao` é menos verificável, e a publicação declara a limitação.
+3. **Bússola v2:** `bussola-kieskompas-v2`, com as mesmas afirmações, escala, termos, mínimo e reamostragem, mais as regras que vieram das lacunas da v1 (precedência entre trechos, afirmações com "e", meio diferente do exemplo, PPPs em `e02` e `e12`, arrecadação em `e04`, excludente de ilicitude em `k02`), propostas para aprovação pelo mérito. Com elas no livro, o que o `9c493d9` mostra deixa de favorecer qualquer codificação.
+4. **v1 como registro:** a codificação da v1 não entra na concordância; o SHA-256 já é público neste arquivo, e o conteúdo, com as notas, é publicado quando a pessoa terminar a v2.
+5. **Rubrica:** mesma ordem. A concordância passa a exigir uma pessoa e um modelo.
+
+E também: **hospedagem fora da pauta**, por ser questão de custo do projeto, não de finalidade (`docs/hospedagem-inicial.md` fica como registro).
+
+**Código:**
+- `authorship` (`rubric-core.ts`): exige `--isolamento-<a|b>=api|sessao` para codificação de modelo, recusa isolamento para pessoa e, fora do modo de consistência, exige uma pessoa e um modelo; o isolamento entra em `concordancia.json`;
+- `COMPASS_VERSION` passou a `bussola-kieskompas-v2`: o pacote da v1 não é mais aceito pela concordância;
+- o `LEIA-ME.txt` gerado descreve a ordem; o do pacote da rubrica foi atualizado no lugar (não entra no `manifest.json`).
+
+**Documentos:** livros da rubrica (seções 1, 6 e 9) e da bússola (cabeçalho e seções 1, 3, 4, 5, 6, 8, 9 e 10), plano da bússola, `AGENTS.md`, `docs/operacao.md` e as notas da v1 em `data/` (fora do Git).
+
+Verificação: typecheck sem erros; 54 testes do importador passando (os de autoria refeitos para o isolamento e para a exigência de uma pessoa e um modelo).
+
+Pendente:
+- gerar o pacote da v2 da bússola depois da aprovação do livro;
+- escrever as instruções do modelo (`modelo-instrucoes.md`) antes da execução;
+- gerar o pacote da v2 da bússola e anexar os pacotes ao release, quando autorizado.
+
+Respostas de Rafael na mesma data:
+1. **Aprovação da bússola v2:** a mesma regra da rubrica (pull request, uma aprovação de outro contribuidor, nenhuma objeção sem resposta em 7 dias e avaliação dele).
+2. **Pacote para os contribuidores:** perguntou quais arquivos seriam publicados; a lista foi apresentada e a publicação aguarda a resposta dele.
+3. **Ordem:** a rubrica é codificada primeiro.
+4. **API:** opcional; a `sessao` basta, com a limitação declarada.
+5. **Publicação e página:** continuam pendentes.
+6. **Licença:** livre, copyleft (a licença específica ainda será escolhida). **Fase E:** modelo ESEB. **Carga de 2026:** na semana que vem (a partir de 26/10).
 
 Commitado em 24/10/2026, sem push.

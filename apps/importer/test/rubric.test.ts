@@ -90,13 +90,17 @@ test('consolidação: valor comum quando concordam; decisão com justificativa q
   assert.equal(final.filter((row) => row.origem === 'concordancia').length, a.length - 1);
 });
 
-test('autoria: pessoa ou modelo com identificador, declarada nas duas codificações e nunca as duas de modelo', () => {
-  assert.deepEqual(authorship('modelo:claude-opus-5-5', 'pessoa'), [{ kind: 'modelo', model: 'claude-opus-5-5' }, { kind: 'pessoa' }]);
-  assert.deepEqual(authorship('pessoa', 'pessoa'), [{ kind: 'pessoa' }, { kind: 'pessoa' }]);
+test('autoria: uma pessoa e um modelo com identificador e execução isolada declarada', () => {
+  assert.deepEqual(authorship('pessoa', 'modelo:claude-opus-5-5', { isolation: [null, 'api'] }), [{ kind: 'pessoa' }, { kind: 'modelo', model: 'claude-opus-5-5', isolation: 'api' }]);
+  assert.deepEqual(authorship('modelo:x', 'pessoa', { isolation: ['sessao', null] })[0], { kind: 'modelo', model: 'x', isolation: 'sessao' });
+  assert.throws(() => authorship('pessoa', 'modelo:x'), /--isolamento-b=api/);
+  assert.throws(() => authorship('pessoa', 'modelo:x', { isolation: [null, 'local'] }), /--isolamento-b=api/);
+  assert.throws(() => authorship('pessoa', 'modelo:x', { isolation: ['api', 'api'] }), /--isolamento-a vale só para codificação de modelo/);
   assert.throws(() => authorship(null, 'pessoa'), /--autoria-a=pessoa/);
   assert.throws(() => authorship('pessoa', 'modelo:'), /codificação b ausente ou inválida/);
   assert.throws(() => authorship('Fulano', 'pessoa'), /codificação a ausente ou inválida/);
-  assert.throws(() => authorship('modelo:x', 'modelo:y'), /ao menos uma tem de ser de uma pessoa/);
+  assert.throws(() => authorship('pessoa', 'pessoa'), /uma pessoa com a de um modelo/);
+  assert.throws(() => authorship('modelo:x', 'modelo:y', { isolation: ['api', 'api'] }), /uma pessoa com a de um modelo/);
 });
 
 test('AC1 de Gwet: alto quando quase tudo concorda numa categoria, onde o kappa fica em zero', () => {
@@ -121,8 +125,9 @@ test('confiabilidade por critério: sem pares de "nao-se-aplica", intervalo repr
 });
 
 test('consistência do modelo: duas codificações do mesmo modelo, e só com --consistencia', () => {
-  assert.deepEqual(authorship('modelo:claude-opus-5-5', 'modelo:claude-opus-5-5', true), [{ kind: 'modelo', model: 'claude-opus-5-5' }, { kind: 'modelo', model: 'claude-opus-5-5' }]);
-  assert.throws(() => authorship('modelo:x', 'modelo:y', true), /mesmo identificador/);
-  assert.throws(() => authorship('modelo:x', 'pessoa', true), /mesmo modelo/);
-  assert.throws(() => authorship('modelo:x', 'modelo:x'), /ao menos uma tem de ser de uma pessoa/);
+  const both = { consistency: true, isolation: ['api', 'sessao'] } as const;
+  assert.deepEqual(authorship('modelo:claude-opus-5-5', 'modelo:claude-opus-5-5', both), [{ kind: 'modelo', model: 'claude-opus-5-5', isolation: 'api' }, { kind: 'modelo', model: 'claude-opus-5-5', isolation: 'sessao' }]);
+  assert.throws(() => authorship('modelo:x', 'modelo:y', both), /mesmo identificador/);
+  assert.throws(() => authorship('modelo:x', 'pessoa', { consistency: true, isolation: ['api', null] }), /mesmo modelo/);
+  assert.throws(() => authorship('modelo:x', 'modelo:x', { isolation: ['api', 'api'] }), /uma pessoa com a de um modelo/);
 });

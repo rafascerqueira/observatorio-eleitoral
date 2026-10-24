@@ -113,7 +113,7 @@ export async function packet(definition: CodebookDefinition) {
     await writeFile(resolve(directory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     await writeFile(resolve(directory, 'LEIA-ME.txt'), [
       `Pacote de codificação — ${definition.theme} (${definition.version})`, '',
-      `O mesmo pacote vai para as duas codificações independentes (A e B); a autoria de cada uma (pessoa ou modelo de linguagem) é declarada na concordância e na publicação. Regras completas no livro de códigos: ${definition.codebook}.`, '',
+      `O mesmo pacote vai para as duas codificações independentes: primeiro a de uma pessoa, em público; depois a de um modelo de linguagem, numa execução isolada que recebe só este pacote e o livro de códigos. A autoria de cada uma é declarada na concordância e na publicação. Regras completas no livro de códigos: ${definition.codebook}.`, '',
       '1. Copie codificacao-modelo.csv para codificacao-<a ou b>.csv, fora deste diretório, e preencha valor, paginas, trecho e observacao em todas as linhas.',
       '2. Não converse sobre a codificação nem veja a outra planilha, ou notas sobre ela, até as duas terminarem. Este diretório só tem o material comum: nenhuma planilha preenchida fica aqui.',
       `3. ${definition.readingHint}`,
@@ -126,12 +126,12 @@ export async function packet(definition: CodebookDefinition) {
 
 export async function agreementReport(definition: CodebookDefinition) {
   const directory = option('pacote'), fileA = option('a'), fileB = option('b'), fileDecisions = option('adjudicacao');
-  if (!directory || !fileA || !fileB) throw new Error(`Uso: npm run ${definition.command} -- --pacote=<diretório> --a=<planilha> --autoria-a=<pessoa|modelo:id> --b=<planilha> --autoria-b=<pessoa|modelo:id> [--adjudicacao=<planilha> | --consistencia]`);
+  if (!directory || !fileA || !fileB) throw new Error(`Uso: npm run ${definition.command} -- --pacote=<diretório> --a=<planilha> --autoria-a=<pessoa|modelo:id> [--isolamento-a=<api|sessao>] --b=<planilha> --autoria-b=<pessoa|modelo:id> [--isolamento-b=<api|sessao>] [--adjudicacao=<planilha> | --consistencia]`);
   // Consistência do modelo: duas codificações do mesmo modelo, só para medir. O resultado fica ao lado da planilha A, fora do
   // pacote (que vai para quem ainda codifica), e não gera planilha de adjudicação.
   const consistency = process.argv.includes('--consistencia');
   if (consistency && fileDecisions) throw new Error('--consistencia só mede a concordância do modelo consigo mesmo; não aceita --adjudicacao.');
-  const authors = authorship(option('autoria-a'), option('autoria-b'), consistency);
+  const authors = authorship(option('autoria-a'), option('autoria-b'), { consistency, isolation: [option('isolamento-a'), option('isolamento-b')] });
   const manifest = JSON.parse(await readFile(resolve(directory, 'manifest.json'), 'utf8')) as Manifest;
   if (manifest.rubric !== definition.version) throw new Error(`Pacote da ${manifest.rubric}; este código aplica a ${definition.version}.`);
   const database = pool();

@@ -1,6 +1,6 @@
 # Bússola política: livro de códigos
 
-Versão `bussola-kieskompas-v1`, proposta em 22/10/2026 a partir do [plano da bússola política](plano-bussola-politica.md), no modelo do Kieskompas escolhido por Rafael. **As 24 afirmações da seção 4 foram aprovadas por Rafael em 22/10/2026**; acréscimos futuros entram em novas versões (seção 8). A codificação A está feita (seção 9); a B e a adjudicação, não; nada foi publicado. Afirmações, escala, termos, mínimo e reamostragem estão no código em `apps/importer/src/compass-core.ts`; mudar qualquer um deles exige nova versão.
+Versão `bussola-kieskompas-v2`, proposta em 24/10/2026 a partir da v1 (22/10/2026) e do [plano da bússola política](plano-bussola-politica.md), no modelo do Kieskompas escolhido por Rafael. **As 24 afirmações da seção 4 foram aprovadas por Rafael em 22/10/2026** e não mudaram; acréscimos futuros entram em novas versões (seção 8). A v2 acrescenta as regras que vieram das lacunas encontradas na codificação da v1 (seções 3 e 4, marcadas "v2") e o procedimento da seção 6: a pessoa codifica primeiro, em público, e o modelo depois, isolado. Nada foi codificado na v2 nem publicado. Afirmações, escala, termos, mínimo e reamostragem estão no código em `apps/importer/src/compass-core.ts`; mudar qualquer um deles exige nova versão.
 
 ## 1. Finalidade e limites
 
@@ -10,7 +10,7 @@ A bússola situa cada plano de governo da Presidência de 2022 em dois eixos, a 
 - Não há afinidade com o visitante, ranking nem recomendação. A página mostra onde cada plano fica e por quê, com os trechos.
 - "Sem posição" quer dizer posição não localizada no texto revisado. Nunca vira neutro nem zero.
 - Rótulos dos eixos sem termos pejorativos (decisão de Rafael, 22/10/2026).
-- **Quem codifica (decisão de Rafael, 22/10/2026):** a codificação A foi feita pelo Claude (modelo de linguagem), declarada como tal; a codificação B será de uma pessoa entre os contribuidores do projeto, sem ver a A nem notas sobre ela; a adjudicação das divergências é humana, também por contribuidores do projeto (decisão de Rafael, 24/10/2026; regra da seção 6 para quem adjudica tendo codificado). A autoria de cada codificação é declarada na concordância (seção 6) e informada na publicação.
+- **Quem codifica e quem adjudica (decisões de Rafael, 22 e 24/10/2026):** como na [rubrica da D3](rubrica-propostas.md), seção 1: primeiro a codificação de uma pessoa entre os contribuidores do projeto, em público; depois a de um modelo de linguagem, numa execução isolada que não vê a da pessoa (seção 6). A adjudicação é humana, por contribuidores do projeto. A autoria de cada codificação e a forma de isolamento do modelo são declaradas na concordância e informadas na publicação.
 - São 12 documentos, como na rubrica da D3: o nº 14 tem um documento para duas candidaturas, e o nº 90, inapto e sem votos, entra na codificação e é listado à parte.
 
 ## 2. Modelo
@@ -45,9 +45,11 @@ Meio ambiente e clima ficam no eixo de costumes, como no polo "green" da dimens�
 
 **Regras de decisão:**
 - **Literalidade:** codifica-se o que está escrito. Sem inferir pela candidatura, pelo partido ou por conhecimento externo.
-- **Mais de um trecho:** vale o mais explícito. Se houver trechos em direções opostas, `neutra`, com os dois registrados na observação.
+- **Mais de um trecho** (precedência na v2): vale o mais explícito. Compromisso que trata diretamente da afirmação prevalece sobre menção genérica ou programa lateral. Se houver compromissos diretos sobre o mesmo assunto em direções opostas, `neutra`, com os dois registrados na observação.
 - **Manter o estado atual:** quando a afirmação pede mudança ("ampliar", "reduzir", "revogar") e o plano propõe manter como está, isso é discordar. Quando a afirmação pede manutenção ("deve ser mantida"), propor manter é concordar.
 - **Parte da afirmação:** concordar com uma das alternativas da afirmação ("cotas **ou** outras ações afirmativas") basta. Afirmações com "inclusive" ou "mesmo com" exigem a parte qualificada para `concorda-totalmente`; sem ela, no máximo `tende-a-concordar`.
+- **Afirmações com "e"** (v2): quando a afirmação junta partes com "e" ("estatais **e** bancos públicos", "família **e** fé"), `concorda-totalmente` exige compromisso com todas; com uma só, no máximo `tende-a-concordar` (ou `tende-a-discordar`), e a parte que faltou vai na observação. É o espelho da regra do "ou".
+- **Meio diferente do exemplo** (v2): os meios citados na afirmação ("cobrando mais de altas rendas, lucros e dividendos ou grandes fortunas") ilustram o objetivo. Propor um deles, ou equivalente direto, é `concorda-totalmente`; declarar o mesmo objetivo por outro meio é `tende-a-concordar`.
 - **Diagnóstico sem proposta:** descrever um problema sem dizer o que fazer é `neutra`, não posição.
 - **Dúvida:** vai para a observação, sem tentar adivinhar o que a outra codificação fará.
 
@@ -90,10 +92,14 @@ Seis por polo em cada eixo, para que concordar com tudo não empurre o plano par
 | `k06-ocupacoes-de-terra` | conservador | Ocupações de terras e de imóveis por movimentos sociais devem ser tratadas com maior rigor legal. |
 
 **Notas para quem codifica:**
+- `e02` (v2): parceria público-privada e concessão contam como serviço concedido. Genérica, sem dizer o serviço, é `tende-a-concordar`; como compromisso para um serviço definido, `concorda-totalmente`.
+- `e04` (v2): garantir que uma reforma "não terá perda de arrecadação" equivale a manter a carga total (regra "manter o estado atual"); o grau depende dos demais trechos do plano sobre a carga.
 - `e06`: propor revogar ou rever a reforma trabalhista é discordar. Propor direitos para trabalhadores de aplicativo, sem falar da reforma, é `tende-a-discordar`.
 - `e07`: "responsabilidade fiscal" sozinha não é posição sobre o teto. Só conta o que o plano diz da regra de gasto.
 - `e10`: criticar os juros sem falar da autonomia é `neutra`.
 - `c03`: tratamento em comunidades terapêuticas, sem falar de descriminalização, é `tende-a-discordar` (a saúde aparece sem a parte qualificada).
+- `e12` (v2): parceria público-privada ou gestão privada na saúde, na educação ou na previdência é posição aqui, com a mesma gradação de `e02`; o mesmo trecho pode contar nas duas afirmações.
+- `k02` (v2): proteção jurídica de agentes de segurança (por exemplo, excludente de ilicitude) não trata de penas de infratores e, sozinha, é `sem-posicao`.
 - `k03`: "defesa da vida desde a concepção" é `concorda-totalmente`. Ampliar o acesso ao aborto legal já previsto é `tende-a-discordar`; ampliar as hipóteses é `discorda-totalmente`.
 - `k05`: menção a família como público de política social (por exemplo, renda por família) não é posição.
 
@@ -116,21 +122,21 @@ O pacote traz os trechos que a busca literal encontra para os termos de cada afi
 | ocupações | casa com "preocupações" |
 | família, valores | amplos demais (100 e 20 páginas, em sentidos variados) |
 
-Antes de registrar `sem-posicao`, cada codificação revisa os trechos candidatos da afirmação e lê o documento inteiro; os trechos candidatos são ponto de partida, não substituem a leitura. No pacote de 22/10/2026, todas as afirmações têm trecho candidato em ao menos 2 documentos (`k04` em 2, `c05` em 4; as demais em 5 a 11). Por documento, o nº 27 tem trechos para só 2 afirmações de economia e 3 de costumes.
+Antes de registrar `sem-posicao`, cada codificação revisa os trechos candidatos da afirmação e lê o documento inteiro; os trechos candidatos são ponto de partida, não substituem a leitura. No pacote da v1, de 22/10/2026 (a v2 usa os mesmos termos), todas as afirmações têm trecho candidato em ao menos 2 documentos (`k04` em 2, `c05` em 4; as demais em 5 a 11). Por documento, o nº 27 tem trechos para só 2 afirmações de economia e 3 de costumes.
 
 ## 6. Procedimento
 
-1. **Pacote** (`npm run compass:packet`): o mesmo material para as duas codificações, em `data/compass/<versão>/pacote-<data>/`. O diretório do pacote só tem material comum; as planilhas preenchidas e as notas de cada codificação ficam fora dele:
+1. **Pacote** (`npm run compass:packet`): o mesmo material para as duas codificações, em `data/compass/<versão>/pacote-<data>/`. O diretório do pacote só tem material comum:
    - PDFs conferidos pelo SHA-256 e texto publicado por página;
    - `trechos-candidatos.csv` e `codificacao-modelo.csv` (288 linhas: 12 documentos × 24 afirmações; a coluna `criterio` traz o código da afirmação e `pergunta`, o texto);
    - `manifest.json`, com eixos, escala, polaridades, mínimo e publicação do texto, e `LEIA-ME.txt`.
-2. **Codificação independente**, como na D3: quem codifica não conversa sobre a codificação nem vê a outra planilha, ou notas sobre ela, até as duas terminarem. Uma das duas pode ser feita por modelo de linguagem; a outra, sempre por uma pessoa. Cada codificação lê os documentos inteiros.
-3. **Validação e concordância** (`npm run compass:agreement -- --pacote=<dir> --a=<planilha> --autoria-a=<pessoa|modelo:id> --b=<planilha> --autoria-b=<pessoa|modelo:id>`):
-   - autoria declarada e obrigatória: `pessoa` (sem nome) ou `modelo:<identificador exato>`; o programa recusa as duas como modelo e grava a autoria em `concordancia.json`;
+2. **Codificação da pessoa, em público, e depois a do modelo, isolada:** como nos passos 2, 3 e 5 da seção 6 da [rubrica](rubrica-propostas.md), com as planilhas em `codificacoes/<versão>/`. Cada codificação lê os 12 documentos inteiros e declara isso (a pessoa no pull request; o modelo nas instruções publicadas).
+3. **Validação e concordância** (`npm run compass:agreement -- --pacote=<dir> --a=<planilha da pessoa> --autoria-a=pessoa --b=<planilha do modelo> --autoria-b=modelo:<id> --isolamento-b=<api|sessao>`):
+   - autoria declarada e obrigatória: `pessoa` (sem nome) ou `modelo:<identificador exato>`, com o isolamento; o programa exige uma pessoa e um modelo e grava a autoria em `concordancia.json`;
    - por afirmação: kappa de Cohen sobre os seis valores;
    - em `compass`: kappa simples para "posição localizada ou não" e kappa ponderado (pesos lineares) da escala, só nos pares em que as duas registraram posição, por eixo e no todo;
    - `publishable` em cada eixo: kappa ponderado de pelo menos **0,70** (decisão de Rafael, 22/10/2026). Eixo abaixo do mínimo, ou com kappa nulo, não é publicado: as afirmações com mais divergência voltam para revisão das regras, numa nova versão. Afirmação isolada com concordância baixa pode ser publicada, com os números na página de método.
-4. **Adjudicação** (`--adjudicacao=<planilha>`): cada divergência recebe valor final, páginas, trecho e justificativa. Gera `codificacao-final.csv`, `posicoes.json` e `posicoes.csv`. Nada disso é publicação. **Quem adjudica** (24/10/2026): de preferência uma pessoa que não fez nenhuma das codificações. Se quem adjudica fez uma delas, isso é declarado na publicação, e cada decisão cita as páginas, o trecho e a regra deste livro que a sustentam; preferir a própria leitura, sem essa base, não é justificativa. Modelo de linguagem nunca adjudica.
+4. **Adjudicação, em público** (`--adjudicacao=<planilha>`): cada divergência recebe valor final, páginas, trecho e justificativa, num pull request que Rafael avalia. Gera `codificacao-final.csv`, `posicoes.json` e `posicoes.csv`. Nada disso é publicação. **Quem adjudica** (24/10/2026): de preferência uma pessoa que não fez nenhuma das codificações. Se quem adjudica fez uma delas, isso é declarado na publicação, e cada decisão cita as páginas, o trecho e a regra deste livro que a sustentam; preferir a própria leitura, sem essa base, não é justificativa. Modelo de linguagem nunca adjudica.
 
 ## 7. Cálculo
 
@@ -145,15 +151,20 @@ Antes de registrar `sem-posicao`, cada codificação revisa os trechos candidato
 
 ## 8. Versionamento
 
-Mudar afirmações, polos, escala, termos, mínimo ou reamostragem cria uma nova versão, com novo pacote. Codificações de versões diferentes não se misturam. Uma nova publicação das propostas exige um novo pacote.
+Mudar afirmações, polos, escala, termos, mínimo, reamostragem, regras de decisão ou procedimento cria uma nova versão, com novo pacote. Codificações de versões diferentes não se misturam. Uma nova publicação das propostas exige um novo pacote.
 
-## 9. Decisões pendentes de Rafael
+**Aprovação:** como na rubrica (seção 8 do livro dela): pull request com o texto final, pelo menos uma aprovação de um contribuidor que não o abriu, nenhuma objeção sem resposta depois de 7 dias corridos e avaliação de Rafael antes do merge.
+
+**A v1 como registro** (decisão de Rafael, 24/10/2026): a v1 teve uma codificação feita por modelo antes de qualquer pessoa, e mantê-la escondida da pessoa contrariava a transparência do projeto. Ela não entra na concordância da v2. O SHA-256 da planilha já é público no `plan.md`, e o conteúdo será publicado quando a codificação da pessoa na v2 terminar; até lá, quem codifica a v2 não a consulta.
+
+## 9. Decisões e pendências
 
 1. ~~Aprovar as afirmações~~: aprovadas em 22/10/2026, com possibilidade de ampliação em versões futuras.
-2. ~~Quem codifica~~: codificação A pelo Claude (decisão de 22/10/2026; leitura integral dos 12 documentos concluída em 24/10/2026), guardada fora do pacote, em `data/compass/bussola-kieskompas-v1/codificacao-a/`. Codificação B e adjudicação por contribuidores do projeto (decisão de 24/10/2026; seções 1 e 6).
+2. ~~Quem codifica e quem adjudica~~: uma pessoa entre os contribuidores, em público, e depois um modelo, isolado; adjudicação por contribuidores (decisões de 22 e 24/10/2026; seções 1 e 6).
 3. ~~Concordância mínima~~: kappa ponderado ≥ 0,70 por eixo (22/10/2026); Rafael também considerou razoável 0,75.
-4. Publicação e página (fases P3 e P4 do plano). ~~Canal de contestação~~: o formulário de issue do repositório, comum à rubrica, com as mesmas regras (passo 7 da seção 6 do [livro da rubrica](rubrica-propostas.md)), decidido em 24/10/2026.
+4. Publicação e página (fases P3 e P4 do plano). ~~Canal de contestação~~: o formulário de issue do repositório, comum à rubrica, com as mesmas regras (passo 8 da seção 6 do [livro da rubrica](rubrica-propostas.md)), decidido em 24/10/2026.
+5. Aprovação da v2, em especial das regras marcadas "v2" nas seções 3 e 4: pela mesma regra da rubrica (seção 8 do [livro da rubrica](rubrica-propostas.md); decisão de Rafael, 24/10/2026). O pull request ainda não foi aberto. A rubrica é codificada antes da bússola.
 
-## 10. Lacunas para a próxima versão
+## 10. Lacunas da v1
 
-As lacunas que a codificação A encontrou neste livro ficam registradas com ela, fora do pacote, até a codificação B terminar, para não influenciá-la. Depois entram aqui e na próxima versão.
+As lacunas que a codificação da v1 encontrou neste livro entraram na v2 como regras (seções 3 e 4, marcadas "v2"), para serem avaliadas pelo mérito na aprovação, não por terem sido a escolha daquela codificação. A exigência de leitura integral, também apontada, já estava na seção 5; a declaração da leitura feita está na seção 6.

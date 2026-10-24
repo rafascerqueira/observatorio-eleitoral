@@ -140,11 +140,11 @@ Duas ferramentas de codificação documental dos planos de governo da Presidênc
 ```sh
 npm run rubric:packet                 # rubrica de acessibilidade e mobilidade (fase D3)
 npm run compass:packet                # bússola política, modelo Kieskompas
-npm run compass:agreement -- --pacote=<dir> --a=<planilha> --autoria-a=<pessoa|modelo:id> \
-  --b=<planilha> --autoria-b=<pessoa|modelo:id> [--adjudicacao=<planilha>]
+npm run compass:agreement -- --pacote=<dir> --a=<planilha da pessoa> --autoria-a=pessoa \
+  --b=<planilha do modelo> --autoria-b=modelo:<id> --isolamento-b=<api|sessao> [--adjudicacao=<planilha>]
 ```
 
-`rubric:agreement` recebe as mesmas opções e, além delas, `--consistencia`: compara duas codificações do mesmo modelo (`--autoria-a` e `--autoria-b` iguais) e grava o resultado ao lado da primeira planilha, fora do pacote, sem planilha de adjudicação. O relatório da rubrica traz o AC1 de Gwet por critério, com intervalo e o mínimo de 0,70 para publicar. O pacote só traz material comum: as planilhas preenchidas e as notas de cada codificação ficam fora do diretório dele. A autoria de cada codificação é obrigatória (`pessoa`, sem nome, ou `modelo:<identificador>`) e o programa recusa as duas como modelo. Na rubrica e na bússola, uma delas pode ser de modelo de linguagem, declarada como tal (decisões de Rafael de 24/10 e 22/10/2026); a outra é de uma pessoa, a adjudicação é sempre humana e cada codificação lê os documentos inteiros. Regras em [rubrica das propostas](rubrica-propostas.md) e no [livro de códigos da bússola](bussola-livro-de-codigos.md); situação no [plano da bússola](plano-bussola-politica.md).
+`rubric:agreement` recebe as mesmas opções e, além delas, `--consistencia`: compara duas codificações do mesmo modelo (`--autoria-a` e `--autoria-b` iguais) e grava o resultado ao lado da primeira planilha, fora do pacote, sem planilha de adjudicação. O relatório da rubrica traz o AC1 de Gwet por critério, com intervalo e o mínimo de 0,70 para publicar. O pacote só traz material comum: as planilhas preenchidas e as notas de cada codificação ficam fora do diretório dele. A autoria de cada codificação é obrigatória (`pessoa`, sem nome, ou `modelo:<identificador>` com `--isolamento-<a|b>=api|sessao`), e a concordância exige uma pessoa e um modelo. Na rubrica e na bússola, a pessoa codifica primeiro, em público, num pull request em `codificacoes/<versão>/`, e o modelo depois, numa execução isolada que recebe só o pacote e o livro (decisões de Rafael, 24/10/2026); a adjudicação é sempre humana e cada codificação lê os documentos inteiros. Regras em [rubrica das propostas](rubrica-propostas.md) e no [livro de códigos da bússola](bussola-livro-de-codigos.md); situação no [plano da bússola](plano-bussola-politica.md).
 
 ## Verificação
 

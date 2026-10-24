@@ -122,20 +122,32 @@ export const validateCoding = (rows: readonly CodingRow[], documents: readonly R
  * (modelo de linguagem, com a versão exata). Sem nome de pessoa. Ao menos uma das duas codificações é de uma pessoa, salvo na
  * medida de consistência do modelo (`consistency`), em que as duas são do mesmo modelo e o resultado não vai para a adjudicação.
  */
-export type Authorship = { kind: 'pessoa' } | { kind: 'modelo'; model: string };
-export function authorship(a: string | null, b: string | null, consistency = false): [Authorship, Authorship] {
-  const read = (value: string | null, role: string): Authorship => {
-    if (value === 'pessoa') return { kind: 'pessoa' };
+/**
+ * Execução isolada do modelo: `api` registra a entrada e a saída exatas; `sessao` (sessão aberta só com o pacote) é menos
+ * verificável e a publicação declara essa limitação.
+ */
+export type Isolation = 'api' | 'sessao';
+export type Authorship = { kind: 'pessoa' } | { kind: 'modelo'; model: string; isolation: Isolation };
+type Declared = readonly [string | null, string | null];
+export function authorship(a: string | null, b: string | null, { consistency = false, isolation = [null, null] }: { consistency?: boolean; isolation?: Declared } = {}): [Authorship, Authorship] {
+  const read = (value: string | null, declared: string | null, role: string): Authorship => {
+    if (value === 'pessoa') {
+      if (declared) throw new Error(`--isolamento-${role} vale só para codificação de modelo.`);
+      return { kind: 'pessoa' };
+    }
     const model = /^modelo:([\w.:/-]+)$/.exec(value ?? '')?.[1];
-    if (model) return { kind: 'modelo', model };
-    throw new Error(`Autoria da codificação ${role} ausente ou inválida: declare --autoria-${role}=pessoa ou --autoria-${role}=modelo:<identificador>.`);
+    if (!model) throw new Error(`Autoria da codificação ${role} ausente ou inválida: declare --autoria-${role}=pessoa ou --autoria-${role}=modelo:<identificador>.`);
+    if (declared !== 'api' && declared !== 'sessao') throw new Error(`Codificação ${role} de modelo: declare a execução isolada, --isolamento-${role}=api ou --isolamento-${role}=sessao.`);
+    return { kind: 'modelo', model, isolation: declared };
   };
-  const result: [Authorship, Authorship] = [read(a, 'a'), read(b, 'b')];
+  const result: [Authorship, Authorship] = [read(a, isolation[0], 'a'), read(b, isolation[1], 'b')];
   if (consistency) {
     // Consistência do modelo: duas codificações independentes do mesmo modelo, só para medir; nunca vão para a adjudicação.
     if (!result.every((item) => item.kind === 'modelo') || new Set(result.map((item) => item.kind === 'modelo' && item.model)).size !== 1)
       throw new Error('--consistencia compara duas codificações do mesmo modelo: declare as duas como modelo:<identificador>, com o mesmo identificador.');
-  } else if (result.every((item) => item.kind === 'modelo')) throw new Error('As duas codificações declaradas como de modelo: ao menos uma tem de ser de uma pessoa.');
+  } else if (result.filter((item) => item.kind === 'pessoa').length !== 1)
+    // A pessoa codifica primeiro, em público; o modelo depois, isolado (decisão de Rafael, 24/10/2026).
+    throw new Error('A concordância compara a codificação de uma pessoa com a de um modelo: declare uma como pessoa e a outra como modelo:<identificador>.');
   return result;
 }
 
