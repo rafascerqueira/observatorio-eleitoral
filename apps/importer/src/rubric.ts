@@ -8,7 +8,7 @@ import { Pool } from 'pg';
 import { parse } from 'csv-parse/sync';
 import { PROPOSALS_NORMALIZATION, searchNormalize, searchPattern, searchText } from '@observatorio/contracts';
 import { ROOT, sourceFile } from './sources';
-import { adjudicationTemplate, agreement, authorship, consolidate, criterionReliability, MIN_CRITERION_AC1, RELIABILITY_RESAMPLES, CODING_COLUMNS, codingTemplate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, RUBRIC_THEME, RUBRIC_VERSION,
+import { adjudicationTemplate, agreement, authorship, consolidate, packetPages, criterionReliability, MIN_CRITERION_AC1, RELIABILITY_RESAMPLES, CODING_COLUMNS, codingTemplate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, RUBRIC_THEME, RUBRIC_VERSION,
   validateCoding, type CodingRow, type Criterion, type RubricDocument } from './rubric-core';
 
 /**
@@ -17,11 +17,14 @@ import { adjudicationTemplate, agreement, authorship, consolidate, criterionReli
  * onde copiar os trechos, trechos candidatos da busca literal, modelo da planilha e manifesto com a versão da rubrica e a
  * publicação do texto). `concordancia`: valida as duas planilhas contra
  * o texto publicado, mede a concordância e gera a planilha de adjudicação; com a adjudicação preenchida, consolida a codificação
- * final. Os PDFs são dados não confiáveis: só copiados, nunca abertos nem executados.
+ * final. `validacao`: confere uma planilha só com o pacote (`textos/`), sem o banco, para quem codifica; a concordância confere de
+ * novo no texto publicado. Os PDFs são dados não confiáveis: só copiados, nunca abertos nem executados.
  */
 const exec = promisify(execFile);
 const SCOPE = '2022/proposals/president', EXCERPT_CONTEXT = 140;
 const option = (name: string) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
+// Caminhos relativos ao diretório de onde se chamou o npm (INIT_CWD), não ao da workspace do importador.
+const pathOption = (name: string) => { const value = option(name); return value ? resolve(process.env.INIT_CWD ?? process.cwd(), value) : null; };
 const sha256 = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 type Manifest = { rubric: string; publication: { batchId: string }; documents: Array<RubricDocument & { file: string; pdf: string; text: string; candidatePages: number[] }> };
 type Final = ReturnType<typeof consolidate>['final'];
@@ -124,8 +127,22 @@ export async function packet(definition: CodebookDefinition) {
   } finally { await database.end(); }
 }
 
+export async function validateSheet(definition: CodebookDefinition) {
+  const directory = pathOption('pacote'), file = pathOption('planilha');
+  const command = definition.command.replace(':agreement', ':validate');
+  if (!directory || !file) throw new Error(`Uso: npm run ${command} -- --pacote=<diretório> --planilha=<planilha>`);
+  const manifest = JSON.parse(await readFile(resolve(directory, 'manifest.json'), 'utf8')) as Manifest;
+  if (manifest.rubric !== definition.version) throw new Error(`Pacote da ${manifest.rubric}; este código aplica a ${definition.version}.`);
+  const texts = new Map<string, string>();
+  for (const document of manifest.documents)
+    for (const [page, text] of packetPages(await readFile(resolve(directory, document.text), 'utf8'), document.pages)) texts.set(`${document.sha256}/${page}`, searchText(text));
+  const problems = definition.validate(readCoding(await readFile(file, 'utf8')), manifest.documents, (document, page) => texts.get(`${document}/${page}`) ?? null);
+  if (problems.length) { console.error(problems.join('\n')); throw new Error(`${problems.length} problema(s) em ${basename(file)}.`); }
+  console.log(`${basename(file)}: planilha válida pelo texto do pacote. A concordância confere de novo no texto publicado.`);
+}
+
 export async function agreementReport(definition: CodebookDefinition) {
-  const directory = option('pacote'), fileA = option('a'), fileB = option('b'), fileDecisions = option('adjudicacao');
+  const directory = pathOption('pacote'), fileA = pathOption('a'), fileB = pathOption('b'), fileDecisions = pathOption('adjudicacao');
   if (!directory || !fileA || !fileB) throw new Error(`Uso: npm run ${definition.command} -- --pacote=<diretório> --a=<planilha> --autoria-a=<pessoa|modelo:id> [--isolamento-a=<api|sessao>] --b=<planilha> --autoria-b=<pessoa|modelo:id> [--isolamento-b=<api|sessao>] [--adjudicacao=<planilha> | --consistencia]`);
   // Consistência do modelo: duas codificações do mesmo modelo, só para medir. O resultado fica ao lado da planilha A, fora do
   // pacote (que vai para quem ainda codifica), e não gera planilha de adjudicação.
@@ -169,5 +186,6 @@ export async function agreementReport(definition: CodebookDefinition) {
 }
 
 const command = process.argv[2];
-if (require.main === module) (command === 'pacote' ? packet(ACCESSIBILITY) : command === 'concordancia' ? agreementReport(ACCESSIBILITY) : Promise.reject(new Error('Comando: pacote ou concordancia.')))
+if (require.main === module) (command === 'pacote' ? packet(ACCESSIBILITY) : command === 'concordancia' ? agreementReport(ACCESSIBILITY) : command === 'validacao' ? validateSheet(ACCESSIBILITY)
+  : Promise.reject(new Error('Comando: pacote, validacao ou concordancia.')))
   .catch((error: unknown) => { console.error(error instanceof Error ? error.message : 'Rubrica: falha.'); process.exitCode = 1; });

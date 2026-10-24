@@ -2,6 +2,7 @@
   "name": "observatorio-eleitoral",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -54,8 +55,10 @@
     "audit:proposals-text": "npm run build -w @observatorio/contracts && npm run audit:proposals-text -w @observatorio/importer --",
     "rubric:packet": "npm run build -w @observatorio/contracts && npm run rubric:packet -w @observatorio/importer --",
     "rubric:agreement": "npm run build -w @observatorio/contracts && npm run rubric:agreement -w @observatorio/importer --",
+    "rubric:validate": "npm run build -w @observatorio/contracts && npm run rubric:validate -w @observatorio/importer --",
     "compass:packet": "npm run build -w @observatorio/contracts && npm run compass:packet -w @observatorio/importer --",
     "compass:agreement": "npm run build -w @observatorio/contracts && npm run compass:agreement -w @observatorio/importer --",
+    "compass:validate": "npm run build -w @observatorio/contracts && npm run compass:validate -w @observatorio/importer --",
     "check:reimports": "node scripts/check-reimports.mjs"
   },
   "devDependencies": {

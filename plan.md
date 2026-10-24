@@ -20,7 +20,7 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 
 - **Antes de declarar acessibilidade completa:** leitor de tela humano, Safari e dispositivos reais, zoom de texto/alto contraste do sistema. Chrome/Firefox e verificações automáticas já foram realizados; não substituem esses ensaios.
 - **Hospedagem: fora da pauta** (decisão de Rafael, 24/10/2026, §59): é questão de custo do projeto, não de finalidade. O que segue fica como registro para quando voltar. O importador das propostas depende de pacotes do sistema (`poppler-utils`, `tesseract-ocr`, `tesseract-ocr-por`), que a API e a web não usam: importar localmente e levar o banco com `data/originals` e `data/audit`, ou criar uma imagem do importador com Ubuntu 24.04 para reproduzir as versões da publicação (§48). A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
-- **Decisões abertas:** licença específica (Rafael decidiu em 24/10/2026 por licença livre copyleft, §59) e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas), com codificação e adjudicação pelos contribuidores do projeto (§58), e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
+- **Decisões abertas:** eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas), com codificação e adjudicação pelos contribuidores do projeto (§58), e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
 - **Bússola política (§53):** livro na v2, à espera da aprovação; a pessoa codifica em público e o modelo depois, isolado (§59); depois, publicação `compass-2022-v1`, conferência externa e página `/propostas/bussola`.
 - **Limpeza dos lotes não publicados (§52):** autorizada para o início da carga de 2026, com backup antes; 52 lotes inventariados, nenhum citado pelas publicações vigentes.
@@ -996,3 +996,29 @@ Respostas de Rafael na mesma data:
 6. **Licença:** livre, copyleft (a licença específica ainda será escolhida). **Fase E:** modelo ESEB. **Carga de 2026:** na semana que vem (a partir de 26/10).
 
 Commitado em 24/10/2026, sem push.
+
+## 60. Licença, pacote em release e validação sem banco — 24/10/2026
+
+Rafael autorizou o push e o release do pacote e aceitou as recomendações:
+- **Licença:** Rafael tinha decidido por copyleft; depois de comparar AGPL e MIT, preferiu a MIT, pela liberdade de redistribuição. Código em MIT (`LICENSE`, "Rafael Cerqueira e contribuidores do Mente Eleitoral"; campo `license` nos `package.json` e no lockfile); textos e codificações do projeto em CC BY 4.0 (`LICENSE-CC-BY-4.0.txt`, texto oficial da Creative Commons), na mesma lógica permissiva; dados e documentos do TSE e do IBGE seguem os termos das fontes. Seção no README. Nome e marca não são cobertos por licença de código.
+- **Pacote para os contribuidores:** o da rubrica (gerado em 21/10, cerca de 16 MB: 12 PDFs do TSE, `textos/`, trechos candidatos, planilha modelo, manifesto e `LEIA-ME.txt`) vai como `.zip` num release do repositório, com o SHA-256. Conferido antes: nenhum caminho local nem dado pessoal; a busca só achou links citados nos planos.
+- **Validação sem banco:** `rubric:validate` e `compass:validate` (`validateSheet` em `rubric.ts`, `packetPages` em `rubric-core.ts`) conferem uma planilha só com `textos/` do pacote; a concordância continua conferindo no banco.
+- Caminhos relativos nas opções de pacote e planilhas passam a valer a partir do diretório de onde se chama o `npm` (`INIT_CWD`); antes, eram lidos a partir de `apps/importer`.
+
+Verificação:
+- as 438 páginas do pacote da rubrica, lidas por `packetPages`, dão o mesmo `search_text` do banco;
+- `rubric:validate` com planilhas fictícias no rascunho, apagadas depois: a planilha em branco tem 132 problemas; uma com trecho real é aceita; com a página errada, o trecho é recusado;
+- typecheck sem erros; 55 testes do importador (1 novo, do leitor de `textos/`) e todos os das demais workspaces passando.
+
+**Proposta de publicação da rubrica e da bússola** (item 5, apresentada a Rafael, a decidir):
+- cada uma vira uma publicação versionada do importador, a partir da codificação final em `codificacoes/<versão>/`, com a identidade das planilhas, do livro e do texto, e relatório de auditoria; a API só lê;
+- `/propostas/rubrica`: tabela documento × critério, na ordem do número, com valor, página e trecho; critério abaixo do AC1 mínimo aparece como não publicado, com os números; limitações da seção 3 ao lado;
+- `/propostas/bussola`: como na P4 do plano da bússola (gráfico SVG no servidor, tabela equivalente, intervalos, "insuficiente" sem coordenada, trechos por candidatura);
+- nas duas: método (autoria, isolamento, concordância, consistência), downloads de todas as planilhas e link de contestação para o formulário.
+
+Release: [`pacote-rubrica-v1-2026-10-21`](https://github.com/rafascerqueira/observatorio-eleitoral/releases/tag/pacote-rubrica-v1-2026-10-21), com `pacote-rubrica-acessibilidade-mobilidade-v1-2026-10-21.zip` (14,7 MB, 31 arquivos, SHA-256 `e1bfd0e169b8e092d57c2d15a5afc75bf17ba7c630e759ebce625ec9cd52ffb0`) e o arquivo `.sha256`. Commitado e enviado ao `upstream/main` em 24/10/2026, a pedido de Rafael.
+
+Pendente:
+- abrir os pull requests de aprovação dos dois livros;
+- decidir a proposta de publicação;
+- licença dos arquivos da identidade visual (`docs/identidade/`, `apps/web/public/brand/`), que hoje caem na regra geral do código.

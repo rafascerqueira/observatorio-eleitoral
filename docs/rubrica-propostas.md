@@ -105,11 +105,11 @@ Trechos achados na leitura valem como os da busca. No pacote gerado em 20/10/202
 
 ## 6. Procedimento
 
-1. **Pacote** (`npm run rubric:packet`): o mesmo material para as duas codificações, em `data/rubric/<versão>/pacote-<data>/`. O diretório do pacote só tem material comum; as planilhas preenchidas e as notas de cada codificação ficam fora dele:
+1. **Pacote** (`npm run rubric:packet`): o mesmo material para as duas codificações, em `data/rubric/<versão>/pacote-<data>/`, publicado como `.zip` num release do repositório, com o SHA-256, para quem codifica sem o banco (decisão de Rafael, 24/10/2026). O pacote de 21/10/2026 está no release [`pacote-rubrica-v1-2026-10-21`](https://github.com/rafascerqueira/observatorio-eleitoral/releases/tag/pacote-rubrica-v1-2026-10-21), em `pacote-rubrica-acessibilidade-mobilidade-v1-2026-10-21.zip` (SHA-256 `e1bfd0e169b8e092d57c2d15a5afc75bf17ba7c630e759ebce625ec9cd52ffb0`). O diretório do pacote só tem material comum; as planilhas preenchidas e as notas de cada codificação ficam fora dele:
    - PDFs conferidos pelo SHA-256 e texto publicado por página;
    - `trechos-candidatos.csv` e `codificacao-modelo.csv` (132 linhas: 12 documentos × 11 critérios);
    - `manifest.json`, com a versão da rubrica, os termos e a publicação do texto, e `LEIA-ME.txt`.
-2. **Codificação da pessoa, em público:** um contribuidor copia `codificacao-modelo.csv`, lê os documentos inteiros e preenche todas as linhas num pull request, em `codificacoes/<versão>/pessoa.csv` (CSV UTF-8 com ";"), visível durante todo o trabalho. No pull request, declara que leu os documentos inteiros. Rafael avalia o pull request.
+2. **Codificação da pessoa, em público:** um contribuidor copia `codificacao-modelo.csv`, lê os documentos inteiros e preenche todas as linhas num pull request, em `codificacoes/<versão>/pessoa.csv` (CSV UTF-8 com ";"), visível durante todo o trabalho. Antes de enviar, confere a planilha com `npm run rubric:validate -- --pacote=<dir> --planilha=<planilha>`, que usa só o texto do pacote, sem o banco. No pull request, declara que leu os documentos inteiros. Rafael avalia o pull request.
 3. **Codificação do modelo, depois e isolada** (decisões de Rafael, 24/10/2026): começa só depois do merge da planilha da pessoa.
    - **Entrada:** só o pacote e este livro, copiados para um diretório vazio, sem acesso ao repositório, à internet nem à planilha da pessoa.
    - **Registro:** as instruções dadas ao modelo são publicadas antes da execução, em `codificacoes/<versão>/modelo-instrucoes.md`; a saída é publicada sem edição, com o SHA-256.

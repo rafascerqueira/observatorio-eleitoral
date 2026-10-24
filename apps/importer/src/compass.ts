@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { agreementReport, packet, type CodebookDefinition } from './rubric';
+import { agreementReport, packet, validateSheet, type CodebookDefinition } from './rubric';
 import { csv } from './rubric-core';
 import { AXES, COMPASS_CRITERIA, COMPASS_EXCLUDED_TERMS, COMPASS_TERMS, COMPASS_THEME, COMPASS_VERSION, compassAgreement, MIN_ITEMS, polarity, positions, RESAMPLES, SCALE,
   STATEMENTS, validateCompass, type Axis } from './compass-core';
@@ -28,5 +28,6 @@ const COMPASS: CodebookDefinition = {
 };
 
 const command = process.argv[2];
-if (require.main === module) (command === 'pacote' ? packet(COMPASS) : command === 'concordancia' ? agreementReport(COMPASS) : Promise.reject(new Error('Comando: pacote ou concordancia.')))
+if (require.main === module) (command === 'pacote' ? packet(COMPASS) : command === 'concordancia' ? agreementReport(COMPASS) : command === 'validacao' ? validateSheet(COMPASS)
+  : Promise.reject(new Error('Comando: pacote, validacao ou concordancia.')))
   .catch((error: unknown) => { console.error(error instanceof Error ? error.message : 'Bússola: falha.'); process.exitCode = 1; });

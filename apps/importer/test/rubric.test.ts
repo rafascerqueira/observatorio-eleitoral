@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parse } from 'csv-parse/sync';
 import { searchText } from '@observatorio/contracts';
-import { adjudicationTemplate, agreement, authorship, codingTemplate, cohenKappa, consolidate, criterionReliability, csv, gwetAC1, MIN_CRITERION_AC1, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, validateCoding, type CodingRow } from '../src/rubric-core';
+import { adjudicationTemplate, agreement, authorship, codingTemplate, cohenKappa, consolidate, criterionReliability, packetPages, csv, gwetAC1, MIN_CRITERION_AC1, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, validateCoding, type CodingRow } from '../src/rubric-core';
 
 // Dois documentos e páginas sintéticos; nenhum dado real.
 const documents = [{ id: documentId('a'.repeat(64)), sha256: 'a'.repeat(64), pages: 3, candidacies: '11 · CANDIDATURA A' },
@@ -130,4 +130,10 @@ test('consistência do modelo: duas codificações do mesmo modelo, e só com --
   assert.throws(() => authorship('modelo:x', 'modelo:y', both), /mesmo identificador/);
   assert.throws(() => authorship('modelo:x', 'pessoa', { consistency: true, isolation: ['api', null] }), /mesmo modelo/);
   assert.throws(() => authorship('modelo:x', 'modelo:x', { isolation: ['api', 'api'] }), /uma pessoa com a de um modelo/);
+});
+
+test('texto do pacote: páginas em sequência, sem dividir por cabeçalho fora de ordem', () => {
+  const content = '=== Página 1 (texto do PDF) ===\nMobilidade urbana\n=== Página 9 (OCR) ===\nainda na 1\n\n=== Página 2 (OCR) ===\nônibus\n\n=== Página 3 (sem texto) ===\n\n';
+  assert.deepEqual([...packetPages(content, 3)], [[1, 'Mobilidade urbana\n=== Página 9 (OCR) ===\nainda na 1'], [2, 'ônibus'], [3, '']]);
+  assert.throws(() => packetPages(content, 4), /3 de 4 páginas/);
 });

@@ -126,11 +126,11 @@ Antes de registrar `sem-posicao`, cada codificação revisa os trechos candidato
 
 ## 6. Procedimento
 
-1. **Pacote** (`npm run compass:packet`): o mesmo material para as duas codificações, em `data/compass/<versão>/pacote-<data>/`. O diretório do pacote só tem material comum:
+1. **Pacote** (`npm run compass:packet`): o mesmo material para as duas codificações, em `data/compass/<versão>/pacote-<data>/`, publicado como `.zip` num release do repositório, como o da rubrica. O diretório do pacote só tem material comum:
    - PDFs conferidos pelo SHA-256 e texto publicado por página;
    - `trechos-candidatos.csv` e `codificacao-modelo.csv` (288 linhas: 12 documentos × 24 afirmações; a coluna `criterio` traz o código da afirmação e `pergunta`, o texto);
    - `manifest.json`, com eixos, escala, polaridades, mínimo e publicação do texto, e `LEIA-ME.txt`.
-2. **Codificação da pessoa, em público, e depois a do modelo, isolada:** como nos passos 2, 3 e 5 da seção 6 da [rubrica](rubrica-propostas.md), com as planilhas em `codificacoes/<versão>/`. Cada codificação lê os 12 documentos inteiros e declara isso (a pessoa no pull request; o modelo nas instruções publicadas).
+2. **Codificação da pessoa, em público, e depois a do modelo, isolada:** como nos passos 2, 3 e 5 da seção 6 da [rubrica](rubrica-propostas.md), com as planilhas em `codificacoes/<versão>/`; a conferência prévia é `npm run compass:validate`. Cada codificação lê os 12 documentos inteiros e declara isso (a pessoa no pull request; o modelo nas instruções publicadas).
 3. **Validação e concordância** (`npm run compass:agreement -- --pacote=<dir> --a=<planilha da pessoa> --autoria-a=pessoa --b=<planilha do modelo> --autoria-b=modelo:<id> --isolamento-b=<api|sessao>`):
    - autoria declarada e obrigatória: `pessoa` (sem nome) ou `modelo:<identificador exato>`, com o isolamento; o programa exige uma pessoa e um modelo e grava a autoria em `concordancia.json`;
    - por afirmação: kappa de Cohen sobre os seis valores;

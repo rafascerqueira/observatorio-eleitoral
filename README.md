@@ -47,7 +47,7 @@ Os cruzamentos entre TSE e IBGE usam códigos oficiais, nunca nomes de municípi
 
 ## Situação
 
-O projeto roda **localmente**, ainda sem endereço público. O escopo atual é a eleição de 2022. A carga de 2026 vem depois do 2º turno, e os cargos de deputado estão fora do escopo. A codificação documental das propostas (uma rubrica de acessibilidade e mobilidade e uma bússola política com dois eixos) está em preparação e ainda não publica nada. A licença ainda não foi definida.
+O projeto roda **localmente**, ainda sem endereço público. O escopo atual é a eleição de 2022. A carga de 2026 vem depois do 2º turno, e os cargos de deputado estão fora do escopo. A codificação documental das propostas (uma rubrica de acessibilidade e mobilidade e uma bússola política com dois eixos) está em preparação e ainda não publica nada.
 
 ## Executar localmente
 
@@ -80,6 +80,12 @@ packages/contracts/  Esquemas Zod e tipos compartilhados entre web, API e import
 scripts/             Inicialização, smoke tests, regressões e auditorias
 docs/                Operação, decisões técnicas, contrato da API, auditorias e planos
 ```
+
+## Licença
+
+- **Código:** [MIT](LICENSE). Pode ser usado, modificado e redistribuído livremente, inclusive em outros projetos, desde que o aviso de copyright e a licença acompanhem as cópias.
+- **Textos e codificações do projeto** (`docs/`, livros de códigos, `codificacoes/` e os arquivos próprios dos pacotes de codificação: manifesto, instruções e planilha modelo): [CC BY 4.0](LICENSE-CC-BY-4.0.txt), com atribuição ao projeto.
+- **Dados e documentos das fontes** (TSE e IBGE), inclusive os planos de governo e o texto extraído deles: seguem os termos das fontes e não são relicenciados pelo projeto.
 
 ## Documentação
 

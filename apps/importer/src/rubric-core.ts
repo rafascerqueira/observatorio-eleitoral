@@ -79,6 +79,19 @@ export function readCoding(text: string): CodingRow[] {
     paginas: record.paginas!.split(/[,;\s]+/).filter(Boolean).map(Number) }));
 }
 
+/**
+ * Texto de cada página em `textos/` do pacote (cabeçalho "=== Página N (método) ===" seguido do texto publicado), na ordem das
+ * páginas do documento: quem codifica confere a planilha sem o banco. Página fora de ordem ou faltando torna o arquivo inválido.
+ */
+export function packetPages(content: string, pages: number) {
+  // Cabeçalhos aceitos só em sequência (1, 2, 3…): uma linha parecida com outro número, dentro do texto, não divide a página.
+  const starts: Array<{ page: number; header: number; body: number }> = [];
+  for (const match of content.matchAll(/^=== Página (\d+) \([^)\n]*\) ===\n/gmu))
+    if (Number(match[1]) === starts.length + 1) starts.push({ page: starts.length + 1, header: match.index, body: match.index + match[0].length });
+  if (starts.length !== pages) throw new Error(`Texto do pacote com ${starts.length} de ${pages} páginas.`);
+  return new Map(starts.map((start, index) => [start.page, content.slice(start.body, starts[index + 1]?.header ?? content.length).replace(/\n+$/u, '')]));
+}
+
 const key = (row: { documento: string; criterio: string }) => `${row.documento}/${row.criterio}`;
 type PageText = (sha256: string, page: number) => string | null;
 /**
