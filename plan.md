@@ -876,4 +876,4 @@ Pendente:
 - depois, `compass:agreement` com `--autoria-a=modelo:claude-opus-5-5 --autoria-b=pessoa`, adjudicação e publicação;
 - ao fim da B, as lacunas das notas entram no livro de códigos numa nova versão.
 
-Sem commit.
+Commitado em 24/10/2026 ("Corrige a revisão da codificação A da bússola e refaz a leitura").
