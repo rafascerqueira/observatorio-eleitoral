@@ -38,7 +38,7 @@ npm test -w @observatorio/api # uma workspace
 cd apps/api && npx tsx --test --test-name-pattern="trecho" test/api.test.ts  # um teste
 ```
 
-Smoke tests exigem web, API e banco em execução com dados importados (endereços alternativos via `SMOKE_API_URL`/`SMOKE_WEB_URL`): `npm run smoke`, `smoke:pilot`, `smoke:places`, `smoke:national`, `smoke:exterior`, `smoke:summary`, `smoke:governor` (tabela no README). `npm run compose:up` sobe tudo em contêineres (perfil `app`).
+Smoke tests exigem web, API e banco em execução com dados importados (endereços alternativos via `SMOKE_API_URL`/`SMOKE_WEB_URL`): `npm run smoke`, `smoke:pilot`, `smoke:places`, `smoke:national`, `smoke:exterior`, `smoke:summary`, `smoke:governor` (tabela em `docs/operacao.md`). `npm run compose:up` sobe tudo em contêineres (perfil `app`).
 
 Importações (demoradas, leem ZIPs grandes do TSE): `import:pilot`, `import:national`, `import:exterior`, seguidas de `npm run verify:national -w @observatorio/importer`; cargos estaduais com `npm run import:state -- --office governor --uf SP` (verificação persistida embutida).
 

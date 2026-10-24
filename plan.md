@@ -9,7 +9,7 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 | Frente | Situação em 20/10/2026 |
 | --- | --- |
 | Resultados eleitorais | Presidência 2022 nacional e exterior; Governador e Senador nas 27 UFs, com turnos e categorias não válidas auditados. Deputados fora do escopo; 2026 e suplementar de RR não importados. 2026: avaliação do 1º turno em [avaliação de 2026](docs/avaliacao-2026-primeiro-turno.md); carga dos dois turnos depois de 25/10, com o Senado de duas vagas listado por votos e eleitas destacadas pela situação do TSE (§52). |
-| IBGE e perfis TSE | Contexto municipal, mapas, associação local → setor, perfil por local, faixas de renda, participação por perfil, demografia, grupos, sensibilidade e entorno dos domicílios (§34) publicados no banco local. Nove versões atuais e ordem de importação no [README](README.md); IDs e auditorias em [reimportações](docs/reimportacoes-2026-10-18.md). |
+| IBGE e perfis TSE | Contexto municipal, mapas, associação local → setor, perfil por local, faixas de renda, participação por perfil, demografia, grupos, sensibilidade e entorno dos domicílios (§34) publicados no banco local. Nove versões atuais e ordem de importação em [operação local](docs/operacao.md); IDs e auditorias em [reimportações](docs/reimportacoes-2026-10-18.md). |
 | Interface | Busca com sugestões, listagem municipal compacta/paginada, detalhe de todas as candidaturas, formulários GET sem JS, participação por município/estado civil e mapas por candidatura concluídos. Fase A (§33): setor censitário em cada local e quadro do município por situação; em `/mapa`, abstenção do cargo ou candidatura à escolha, dispersão e exportação CSV. Fase C (§34): entorno dos domicílios no painel do município, no cartão do local e em oito indicadores de `/mapa`. Fase B3 (§41): setores e locais em `/municipios/[code]/setores`. Fase D2 (§43): busca literal nas propostas da Presidência em `/propostas`; na v2 (§48), texto em ordem de leitura das colunas, ligaduras e hífens de fim de linha tratados. |
 | Identidade | **Mente Eleitoral**, com a identidade 03A (petróleo/terracota), símbolo M/conexões e frase “Um olhar único sobre votação e população”. Marca aplicada ao site, ícones, banner inicial, compartilhamento e README (§37). |
 | Robustez e rastreabilidade | Isolamento por ano/cargo; downloads de relatórios/originais, inclusive GeoPackage; distinção entre falha técnica e ausência na fonte; dependências versionadas e publicação bloqueada por divergência. |
@@ -171,7 +171,7 @@ Limites da revisão: leitura de código e documentação, importação dos módu
 
 Ao começar, ler o resumo vigente, o último registro deste plano e `git log`/`git status`, seguindo `AGENTS.md`. Estrutura executável, piloto, expansão de 2022, integração IBGE, interface, correções e reimportações estão concluídos; não reinicializar o projeto nem repetir cargas para aparentar progresso.
 
-1. **Manter a entrega local validada:** preservar publicações, originais, relatórios e backups; conferir o estado deixado no Git e não executar importações concorrentes. Comandos e dependências no README; última auditoria integral no §28.
+1. **Manter a entrega local validada:** preservar publicações, originais, relatórios e backups; conferir o estado deixado no Git e não executar importações concorrentes. Comandos e dependências em `docs/operacao.md` (antes no README); última auditoria integral no §28.
 2. **Avançar na hospedagem com Rafael:** retomar `docs/hospedagem-inicial.md`, escolher a estratégia e validar custos/capacidade atuais. Preparar configuração, restauração e ensaios de carga no destino antes de uma implantação explicitamente autorizada. O estudo de 17/10 não é orçamento vigente nem escolha de provedor.
 3. **Planejar os ensaios manuais de acessibilidade:** leitor de tela, Safari/dispositivos reais e preferências do sistema; registrar os resultados sem ampliar a cobertura declarada dos testes automáticos. Esses itens não foram resolvidos pela revisão documental.
 4. **Tratar manutenção ou expansão separadamente:** limpeza de armazenamento, eventual migração de nomes de colunas, distritos na busca, suplementar de RR e 2026 só entram conforme decisão/necessidade registradas. Deputados continuam fora do escopo.
@@ -877,3 +877,15 @@ Pendente:
 - ao fim da B, as lacunas das notas entram no livro de códigos numa nova versão.
 
 Commitado em 24/10/2026 ("Corrige a revisão da codificação A da bússola e refaz a leitura").
+
+## 56. README como apresentação do projeto e manual de operação separado — 24/10/2026
+
+Rafael pediu que o README falasse do projeto, e não de planejamento. Feito:
+- `README.md` passa a ter apresentação, princípios, funcionalidades, fontes, situação, execução mínima, estrutura e mapa da documentação, sem citar seções deste arquivo;
+- o manual de operação (configuração, Docker, importações e versões, validação e publicação, piloto de SP, rubrica e bússola, smokes, verificações `check:*`, esquema do banco e migração antiga) foi movido sem cortes para `docs/operacao.md`;
+- o histórico de verificações e as pendências saíram do README; já estavam no "Estado atual" e nas "Pendências vigentes" deste arquivo;
+- `AGENTS.md` e as duas referências vigentes deste arquivo apontam agora para `docs/operacao.md`.
+
+Verificação: links locais do README e de `docs/operacao.md` conferidos; comparação linha a linha com o README anterior, sem perda além do que saiu de propósito. Rafael leu e aprovou o texto.
+
+Commitado em 24/10/2026, sem push.
