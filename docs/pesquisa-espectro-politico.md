@@ -51,7 +51,7 @@ Pontos comuns: todas medem **partidos** (ou presidentes já eleitos), não candi
 
 ## 5. Plano proposto (para aprovação; nada implementado)
 
-Depende da D3, que ainda espera definir quem codifica.
+Depende da D3, cuja codificação cabe aos contribuidores do projeto (decisão de 24/10/2026).
 
 1. **D3 concluída no tema piloto** (acessibilidade e mobilidade): duas codificações, concordância, adjudicação, publicação e canal de contestação, como já planejado.
 2. **Quadro por tema** (`/propostas/temas/<tema>`): tabela candidaturas × critérios do livro de códigos, na ordem do número, com o trecho codificado, link para a página do PDF e o rótulo "não menciona" explícito. Equivalente em tabela, sem gráfico de posição. Sem resumo automático.

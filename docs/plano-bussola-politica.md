@@ -16,7 +16,7 @@ Rafael escolheu o modelo **Kieskompas** e autorizou seguir sem novas perguntas. 
 - **P2:**
   - pacote gerado em `data/compass/bussola-kieskompas-v1/pacote-2026-10-23T00-14-13.878Z/`: 12 documentos, 288 linhas, 636 trechos candidatos em 218 páginas; só material comum às duas codificações;
   - codificação A pelo Claude (modelo de linguagem), por decisão de Rafael em 22/10/2026, refeita em 24/10/2026 com leitura integral dos 12 documentos; guardada fora do pacote, em `data/compass/bussola-kieskompas-v1/codificacao-a/`, com as notas, que não vão para quem faz a B;
-  - aguarda a codificação B (uma pessoa, sem ver a A) e quem adjudica.
+  - aguarda a codificação B e a adjudicação, por contribuidores do projeto (decisão de Rafael, 24/10/2026); quem faz a B não vê a A.
 - **P3 (parte):**
   - cálculo pronto e testado com dados sintéticos: kappa ponderado, posições, intervalo por reamostragem, sensibilidade e contribuições;
   - roda na concordância e grava `posicoes.json` e `posicoes.csv`, sem publicação;
@@ -67,7 +67,7 @@ Da **codificação dos planos de governo** já publicados (`proposals-2022-v2`),
 ## Complexidade
 
 - **Técnica: média.** Reaproveita a busca, a rubrica, o pacote e a concordância. O gráfico é simples (SVG estático com tabela).
-- **Humana: o gargalo.** Uma pessoa para a codificação B (a A é do modelo de linguagem) e uma para adjudicar. Planos de governo são vagos em muitos temas, então é provável haver cobertura baixa em costumes. Isso será mostrado, não preenchido.
+- **Humana: o gargalo.** Contribuidores do projeto para a codificação B (a A é do modelo de linguagem) e para adjudicar. Planos de governo são vagos em muitos temas, então é provável haver cobertura baixa em costumes. Isso será mostrado, não preenchido.
 - **Metodológica: a escolha das afirmações define o resultado** (Louwerse e Rosema mostraram que mudar o método muda a recomendação para a maioria). Por isso: afirmações publicadas antes da codificação, equilíbrio entre os polos, sensibilidade publicada e versão nova a cada mudança.
 
 ## Fora do plano

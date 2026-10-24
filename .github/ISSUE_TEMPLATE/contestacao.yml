@@ -1,0 +1,77 @@
+name: Contestação de codificação
+description: Conteste um valor publicado pela rubrica das propostas ou pela bússola política, com página e trecho do plano de governo.
+title: "Contestação: <versão> · <candidatura> · <critério ou afirmação>"
+labels: ["contestação"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A contestação trata da leitura do documento pelas regras do livro de códigos, não do mérito da proposta nem da candidatura. Ela e a resposta são públicas: não inclua dados pessoais.
+
+        Regras: [rubrica das propostas](../blob/main/docs/rubrica-propostas.md) e [livro de códigos da bússola](../blob/main/docs/bussola-livro-de-codigos.md). Contestação aceita não reescreve a publicação: a correção entra numa nova publicação, e a anterior continua disponível.
+  - type: dropdown
+    id: ferramenta
+    attributes:
+      label: Ferramenta
+      options:
+        - Rubrica das propostas (acessibilidade e mobilidade)
+        - Bússola política
+    validations:
+      required: true
+  - type: input
+    id: versao
+    attributes:
+      label: Versão
+      description: Como aparece na publicação.
+      placeholder: rubrica-acessibilidade-mobilidade-v1
+    validations:
+      required: true
+  - type: input
+    id: candidatura
+    attributes:
+      label: Candidatura
+      description: Número e nome, como na publicação.
+    validations:
+      required: true
+  - type: input
+    id: criterio
+    attributes:
+      label: Critério ou afirmação
+      description: O código, como na publicação.
+      placeholder: territorio
+    validations:
+      required: true
+  - type: input
+    id: valor-publicado
+    attributes:
+      label: Valor publicado
+    validations:
+      required: true
+  - type: input
+    id: valor-proposto
+    attributes:
+      label: Valor que você propõe
+    validations:
+      required: true
+  - type: input
+    id: paginas
+    attributes:
+      label: Páginas do documento
+      placeholder: "12, 15"
+    validations:
+      required: true
+  - type: textarea
+    id: trecho
+    attributes:
+      label: Trecho
+      description: Copiado do texto publicado do plano, sem resumir nem corrigir.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: justificativa
+    attributes:
+      label: Justificativa
+      description: Qual regra do livro de códigos leva ao valor proposto, e por quê.
+    validations:
+      required: true

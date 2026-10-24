@@ -4,7 +4,7 @@ Criado em 12/10/2026 e revisado em **22/10/2026**. Fonte de verdade sobre finali
 
 ## Estado atual
 
-Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). A rubrica da D3 está preparada, sem codificação, à espera de quem codifica e adjudica (uma das codificações pode ser de modelo, §57), e a pesquisa documental da E está feita (§49). Next.js em 16.4.2 por aviso de segurança (§50). Bússola política no modelo Kieskompas (§§51–53): 24 afirmações aprovadas, concordância mínima decidida (kappa ponderado ≥ 0,70 por eixo), pacote gerado e cálculo pronto, à espera de quem codifica. 2026 avaliado e adiado para depois do 2º turno (§§51–52). Próximo: quem codifica e adjudica (D3 e bússola, **pendente por decisão de Rafael em 22/10**), ESEB ou LAPOP (E), hospedagem e, depois de 25/10, a carga de 2026.
+Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). A rubrica da D3 está preparada, sem codificação; codificam e adjudicam os contribuidores do projeto, e uma das codificações pode ser de modelo (§§57–58), e a pesquisa documental da E está feita (§49). Next.js em 16.4.2 por aviso de segurança (§50). Bússola política no modelo Kieskompas (§§51–53): 24 afirmações aprovadas, concordância mínima decidida (kappa ponderado ≥ 0,70 por eixo), pacote gerado, codificação A feita e cálculo pronto, à espera da codificação B e da adjudicação pelos contribuidores (§58). 2026 avaliado e adiado para depois do 2º turno (§§51–52). Próximo: codificações e adjudicação pelos contribuidores (D3 e bússola; antes, na D3, a aprovação da versão pela comunidade de contribuidores), ESEB ou LAPOP (E), hospedagem e, depois de 25/10, a carga de 2026.
 
 | Frente | Situação em 20/10/2026 |
 | --- | --- |
@@ -20,9 +20,9 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 
 - **Antes de declarar acessibilidade completa:** leitor de tela humano, Safari e dispositivos reais, zoom de texto/alto contraste do sistema. Chrome/Firefox e verificações automáticas já foram realizados; não substituem esses ensaios.
 - **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. O importador das propostas depende de pacotes do sistema (`poppler-utils`, `tesseract-ocr`, `tesseract-ocr-por`), que a API e a web não usam: importar localmente e levar o banco com `data/originals` e `data/audit`, ou criar uma imagem do importador com Ubuntu 24.04 para reproduzir as versões da publicação (§48). A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
-- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas) à espera de quem codifica e adjudica (§57), e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
+- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas), com codificação e adjudicação pelos contribuidores do projeto (§58), e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
-- **Bússola política (§53):** livro de códigos aprovado; pendente quem codifica e quem adjudica (a mesma pendência da D3, deixada em aberto por Rafael em 22/10); depois, publicação `compass-2022-v1`, conferência externa e página `/propostas/bussola`.
+- **Bússola política (§53):** livro de códigos aprovado; codificação B e adjudicação pelos contribuidores do projeto (§58); depois, publicação `compass-2022-v1`, conferência externa e página `/propostas/bussola`.
 - **Limpeza dos lotes não publicados (§52):** autorizada para o início da carga de 2026, com backup antes; 52 lotes inventariados, nenhum citado pelas publicações vigentes.
 - **Manutenção registrada, sem execução autorizada nesta etapa:** renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
 
@@ -932,5 +932,31 @@ Pendente:
 - aprovação da versão;
 - território genérico (item 5 da seção 9), a decidir antes da codificação;
 - publicação e canal de contestação.
+
+Commitado em 24/10/2026, sem push.
+
+## 58. Quem codifica e quem adjudica — 24/10/2026
+
+Rafael decidiu que as codificações feitas por pessoas e a adjudicação, na rubrica da D3 e na bússola, cabem aos contribuidores do projeto. Continuam valendo:
+- duas codificações independentes, ao menos uma de pessoa, com leitura integral;
+- uma delas pode ser de modelo de linguagem, declarada como tal;
+- quem adjudica de preferência não codificou; se codificou, isso é declarado e cada decisão cita páginas, trecho e regra (§57); modelo nunca adjudica;
+- na bússola, quem faz a B não vê a A, nem as notas, nem o histórico do commit `9c493d9` (§57).
+
+Atualizados: seções 1 e 9 dos dois livros de códigos, plano da bússola, seções D3 e 20 e quadros do plano de melhorias, pesquisa do espectro político, `AGENTS.md` e o "Estado atual" deste arquivo. Só documentação; nenhum código mudou.
+
+Na mesma data, Rafael decidiu, seguindo as recomendações do Claude:
+- **Território genérico:** "nas cidades", "nos municípios" e outros recortes menores que o país contam como `declarado`; "o país" continua de fora. Fica declarado que o critério tende a `declarado` na maioria dos documentos do tema. A regra está só no livro (seção 3), não no código nem no pacote: a versão continua `v1`.
+- **Aprovação da versão** (seção 8 do livro da rubrica): pela comunidade de contribuidores, num pull request com o texto final; aprovada com pelo menos uma aprovação de quem não o abriu e nenhuma objeção sem resposta após 7 dias corridos da abertura; mudança nas regras reinicia o prazo; a codificação só começa depois.
+- **Contestação** (passo 7 da seção 6 do livro da rubrica; a bússola remete a ele): formulário de issue `.github/ISSUE_TEMPLATE/contestacao.yml`, público, com versão, candidatura, critério, valor, páginas, trecho e justificativa. Contribuidores respondem pela regra de quem adjudica; contestação aceita entra numa nova publicação, sem reescrever a anterior.
+
+Verificação: o YAML do formulário foi lido sem erros; ele só passa a valer no GitHub depois de um push.
+
+Pendente:
+- abrir o pull request de aprovação da rubrica (exige push, que só Rafael autoriza);
+- forma e página de publicação (D3 e bússola);
+- se a bússola, aprovada por Rafael em 22/10, também passa a seguir a aprovação pela comunidade nas próximas versões;
+- quem faz cada codificação entre os contribuidores, e o prazo para responder contestações;
+- o rótulo `contestação` precisa existir no repositório do GitHub para ser aplicado.
 
 Commitado em 24/10/2026, sem push.

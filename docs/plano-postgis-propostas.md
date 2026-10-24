@@ -37,7 +37,7 @@ As letras seguem as do estudo; a ordem muda. A sequência entrega primeiro o que
 | 1 | A — Explorar o publicado | Textos corrigidos; setor e situação da associação por local e por município; série escolhível e dispersão em `/mapa` | Só código | — |
 | 2 | C — Entorno urbano 2022 | Indicadores do entorno por município e setor, com cobertura da pesquisa | Fonte nova pequena (cerca de 34 MB) e código | A1, para o cartão do local |
 | 3 | B — Base espacial medida | Ensaio sem persistência; depois catálogo, representação e mapa local → setor | Execução local pesada; depois migration | B2 só após B1; B3 usa C se publicada |
-| Paralela | D — Propostas de governo | Inventário; busca literal com página; rubrica com adjudicação humana | Download pequeno (cerca de 20 MB), código e revisão humana | Definição de quem codifica e de quem adjudica, para D3 |
+| Paralela | D — Propostas de governo | Inventário; busca literal com página; rubrica com adjudicação humana | Download pequeno (cerca de 20 MB), código e revisão humana | Codificação e adjudicação da D3 por contribuidores do projeto |
 | Última | E — Prioridades declaradas | Pesquisa documental | Leitura | — |
 
 ## 4. Fase A — explorar o que já está publicado
@@ -135,7 +135,7 @@ Desenhar ponto, raios e setores incluídos exige a faixa de cada local por raio,
   - Tabelas de documentos e páginas: texto por página, método (nativo, OCR ou falha) e versão do extrator. Texto normalizado no importador, como `search_name`, com índice de busca `portuguese`, sem depender de `unaccent` em índice.
   - API de busca e página `/propostas` (GET, sem JavaScript). Todas as candidaturas do recorte sempre listadas, na ordem do número de urna, com página e trecho. "Nenhuma ocorrência literal no texto extraído" é diferente de "não propõe" e vem com a cobertura da extração. Nunca ordenar por número de menções ou de páginas.
   - Licença CC-BY do TSE e atribuição exibidas. O ZIP original já pode ser servido; PDFs individuais exigiriam aceitar `.pdf` em `originalFileSchema` (hoje só zip, json, xlsx e gpkg), com cabeçalhos de segurança, e são decisão à parte.
-- **D3. Rubrica (só com revisão humana definida).** Tema piloto ligado à fase C (ex.: acessibilidade e mobilidade urbana), aplicado a todos os planos da Presidência. Duas codificações independentes (desde 24/10/2026, uma delas pode ser de modelo de linguagem, declarada como tal; a outra é de uma pessoa), com leitura integral dos documentos, adjudicação humana, concordância medida e publicada, versão da rubrica e canal de contestação. Nada é publicado sem adjudicação humana. Preparada em 20/10/2026 (seção 20); a codificação espera a definição de quem codifica e de quem adjudica.
+- **D3. Rubrica (só com revisão humana definida).** Tema piloto ligado à fase C (ex.: acessibilidade e mobilidade urbana), aplicado a todos os planos da Presidência. Duas codificações independentes (desde 24/10/2026, uma delas pode ser de modelo de linguagem, declarada como tal; a outra é de uma pessoa), com leitura integral dos documentos, adjudicação humana, concordância medida e publicada, versão da rubrica e canal de contestação. Nada é publicado sem adjudicação humana. Preparada em 20/10/2026 (seção 20); codificações das pessoas e adjudicação por contribuidores do projeto (24/10/2026).
 - **D4.** Governadores só depois da avaliação da D3; Senado fora da obrigação legal de apresentar plano.
 
 ## 8. Fase E — prioridades declaradas
@@ -162,7 +162,7 @@ Somente pesquisa documental: esclarecer a divergência do ESEB 2022 (2.001 × 1.
 | 7 | Abrangência do catálogo (B2) | Decidir entre Brasil e UF piloto com os números da B1 |
 | 8 | Pontos do mapa local → setor (B3) | Neutros por padrão |
 | 9 | Inventário de propostas (D1) | Autorizar o download (cerca de 20 MB) e o inventário sem publicação |
-| 10 | Codificação e adjudicação (D3) | Definir quem codifica (uma das codificações pode ser de modelo, desde 24/10/2026) e quem adjudica antes de iniciar a rubrica |
+| 10 | Codificação e adjudicação (D3) | Decidido em 24/10/2026: contribuidores do projeto codificam e adjudicam; uma das codificações pode ser de modelo |
 
 ## 11. Fora deste plano
 
@@ -553,11 +553,13 @@ Nada foi codificado nem publicado.
 
 Atualização (24/10/2026): Rafael aceitou que uma das duas codificações seja feita por modelo de linguagem, declarada como tal; exigiu a leitura integral dos documentos; e decidiu declarar, em vez de mudar, a limitação de os critérios serem do documento e não de cada medida. A versão continua `v1` (seção 8 do livro de códigos).
 
-Pendente (decisões de Rafael, seção 9 do livro de códigos):
-1. quem codifica e como se adjudica;
-2. aprovação do livro de códigos;
-3. concordância mínima para publicar;
-4. forma de publicação e canal de contestação.
+Também em 24/10/2026: concordância mínima por critério (AC1 de Gwet ≥ 0,70) e codificação e adjudicação por contribuidores do projeto.
+
+Ainda em 24/10/2026: "nas cidades" e outros recortes genéricos contam como território declarado; a versão é aprovada pela comunidade de contribuidores, num pull request (uma aprovação de outro contribuidor e nenhuma objeção sem resposta em 7 dias); a contestação é por formulário de issue do repositório, comum à bússola.
+
+Pendente (seção 9 do livro de códigos):
+1. abrir o pull request de aprovação;
+2. forma e página de publicação.
 
 ## 21. Andamento — fase E: pesquisa documental (20/10/2026)
 

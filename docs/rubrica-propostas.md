@@ -1,6 +1,6 @@
 # Rubrica das propostas de governo: acessibilidade e mobilidade urbana
 
-Livro de códigos da versão `rubrica-acessibilidade-mobilidade-v1` (fase D3 do [plano de melhorias](plano-postgis-propostas.md)). Proposto em 20/10/2026 para aprovação de Rafael e ajustado em 24/10/2026 (autoria, leitura integral, limitação da seção 3, exemplos e critério de publicação da seção 7): nenhum documento foi codificado e nada foi publicado. Critérios, valores e termos estão no código em `apps/importer/src/rubric-core.ts`; mudar qualquer um deles exige nova versão.
+Livro de códigos da versão `rubrica-acessibilidade-mobilidade-v1` (fase D3 do [plano de melhorias](plano-postgis-propostas.md)). Proposto em 20/10/2026 e ajustado em 24/10/2026 (autoria, leitura integral, limitação e território genérico da seção 3, exemplos, contestação da seção 6, critério de publicação da seção 7 e aprovação da seção 8). Aguarda a aprovação da comunidade de contribuidores (seção 8): nenhum documento foi codificado e nada foi publicado. Critérios, valores e termos estão no código em `apps/importer/src/rubric-core.ts`; mudar qualquer um deles exige nova versão.
 
 ## 1. Finalidade e limites
 
@@ -12,7 +12,7 @@ A rubrica registra, com página e trecho, o que cada plano de governo da Presid�
 - Os 12 documentos registrados no TSE são codificados com o mesmo procedimento:
   - o nº 14 tem um documento para duas candidaturas, codificado uma vez;
   - o nº 90, inapto e sem votos, entra na codificação e é listado à parte, como em `/propostas`.
-- **Quem codifica (decisão de Rafael, 24/10/2026):** duas codificações independentes. Uma pode ser feita por modelo de linguagem, declarada como tal; a outra é sempre de uma pessoa, e a adjudicação das divergências é humana. A autoria de cada codificação é declarada na concordância (seção 6) e informada na publicação.
+- **Quem codifica e quem adjudica (decisões de Rafael, 24/10/2026):** duas codificações independentes, feitas por contribuidores do projeto. Uma pode ser feita por modelo de linguagem, declarada como tal; a outra é sempre de uma pessoa. A adjudicação das divergências é humana, também por contribuidores do projeto (regra da seção 6 para quem adjudica tendo codificado). A autoria de cada codificação é declarada na concordância (seção 6) e informada na publicação.
 - O texto é o da publicação `proposals-2022-v2` (`e2c6e07e…`), e os PDFs do pacote são conferidos pelo SHA-256 publicado.
 
 ## 2. Tema
@@ -45,7 +45,7 @@ A unidade é o documento: um valor vale se aparece em **qualquer** trecho do tem
 | `diagnostico` | Descreve um problema ou a situação do tema? | `com-dado` (cita número, estatística ou fonte), `sem-dado`, `nao-localizado`, `nao-se-aplica` |
 | `intervencao` | Propõe medida sobre o tema? | `especifica` (diz o que será feito: programa, obra, norma, serviço, compra, mudança de regra), `generica` (só intenção, como "melhorar a mobilidade"), `nao-localizado`, `nao-se-aplica` |
 | `publico` | Declara o público da medida? | `declarado` (ex.: pessoas com deficiência, estudantes, trabalhadores), `nao-localizado`, `nao-se-aplica` |
-| `territorio` | Declara o território da medida? | `declarado` (ex.: regiões metropolitanas, capitais, uma região; "o país" não conta), `nao-localizado`, `nao-se-aplica` |
+| `territorio` | Declara o território da medida? | `declarado` (qualquer recorte menor que o país, mesmo genérico: "nas cidades", "nos municípios", áreas urbanas, periferias, regiões metropolitanas, capitais, uma região; "o país", "o Brasil" e "todo o território nacional" não contam), `nao-localizado`, `nao-se-aplica` |
 | `meta-quantidade` | Declara meta em quantidade? | `declarada` (valor e unidade: "500 ônibus", "30% da frota"), `nao-localizado`, `nao-se-aplica` |
 | `meta-prazo` | Declara prazo? | `declarado` ("até 2026", "no primeiro ano"), `nao-localizado`, `nao-se-aplica` |
 | `responsabilidade` | Menciona órgão, ente federativo, programa ou norma responsável? | `mencionada`, `nao-localizado`, `nao-se-aplica` |
@@ -56,6 +56,7 @@ A unidade é o documento: um valor vale se aparece em **qualquer** trecho do tem
 **Regras de decisão:**
 - **Valor mais completo:** havendo mais de um trecho, vale o mais completo (`com-dado` sobre `sem-dado`; `especifica` sobre `generica`).
 - **Negações:** compromisso de manter, não fazer ou revogar algo também é medida — específica se diz o quê. Registre a negação na observação.
+- **Território genérico (decisão de Rafael, 24/10/2026):** recorte genérico como "nas cidades" conta como `declarado` quando o trecho o liga à medida. "O país" não conta porque é o alcance de todo plano da Presidência; "nas cidades" já é um recorte dele. Como a seção 2 define mobilidade urbana pelo deslocamento nas cidades, este critério tende a ficar `declarado` na maioria dos documentos que tratam do tema, e a publicação diz isso junto dos resultados.
 - **Sem inferência:** não se completa o que o texto não diz (custo, prazo, órgão), nem com conhecimento externo.
 - **Observação útil:** registre na observação o que ajudar a adjudicação a entender a leitura (seção, contexto), sem pedir acordo.
 
@@ -66,6 +67,7 @@ A unidade é o documento: um valor vale se aparece em **qualquer** trecho do tem
 | "A mobilidade urbana precisa melhorar." | `diagnostico` `sem-dado`; nenhuma medida |
 | "Metade das calçadas das capitais não tem rampa, segundo o órgão X." | `diagnostico` `com-dado` |
 | "Vamos melhorar o transporte público." | `intervencao` `generica` |
+| "Vamos melhorar o transporte público nas cidades." | `intervencao` `generica`; `territorio` `declarado` (recorte genérico) |
 | "O Ministério X criará o programa Ônibus Acessível, de compra de ônibus adaptados para as regiões metropolitanas." | `intervencao` `especifica`; `responsabilidade` `mencionada` (ministério e programa nomeados); `territorio` `declarado` (regiões metropolitanas); a frase não declara público ("adaptados" descreve o veículo) |
 | "…com 2.000 ônibus até 2025, financiados por um fundo nacional de mobilidade." | `meta-quantidade` `declarada`; `meta-prazo` `declarado`; `fonte-recursos` `declarada`; `custo` não declarado |
 | "…ao custo de R$ 3 bilhões, com um painel público do número de ônibus entregues por ano." | `custo` `declarado`; `acompanhamento` `declarado` |
@@ -116,6 +118,7 @@ Trechos achados na leitura valem como os da busca. No pacote gerado em 20/10/202
 4. **Consistência da codificação por modelo:** quando uma das codificações é feita por modelo de linguagem, ele codifica duas vezes, em sessões independentes, sem ver a primeira (A1 e A2). A A1 é a que entra na concordância com a codificação da pessoa; a A2 só mede a consistência. `npm run rubric:agreement -- --pacote=<dir> --a=<A1> --autoria-a=modelo:<id> --b=<A2> --autoria-b=modelo:<id> --consistencia` mede A1 × A2 com as mesmas estatísticas e grava o resultado ao lado da planilha A1, fora do pacote, sem planilha de adjudicação. A consistência não muda nenhum valor: é publicada na página de método, e critério com consistência baixa orienta a revisão das regras.
 5. **Adjudicação:** cada divergência recebe valor final, páginas, trecho e justificativa, pela forma de revisão que Rafael definir. Com `--adjudicacao=<planilha>`, o programa consolida a `codificacao-final.csv`, com a origem de cada valor (`concordancia` ou `adjudicacao`). A decisão passa pela mesma validação; divergência sem decisão e justificativa bloqueia. **Quem adjudica** (24/10/2026): de preferência uma pessoa que não fez nenhuma das codificações. Se quem adjudica fez uma delas, isso é declarado na publicação, e cada decisão cita as páginas, o trecho e a regra deste livro que a sustentam; preferir a própria leitura, sem essa base, não é justificativa. Modelo de linguagem nunca adjudica.
 6. **Publicação:** a decidir (seção 9), só para os critérios que atingem o mínimo da seção 7. As planilhas originais das duas codificações e a adjudicação ficam preservadas, para que a publicação mostre a origem de cada valor.
+7. **Contestação** (decisão de Rafael, 24/10/2026): pelo formulário de issue do repositório (`.github/ISSUE_TEMPLATE/contestacao.yml`), comum à rubrica e à bússola. Quem contesta indica versão, documento, critério, valor, páginas, trecho e a justificativa pela regra deste livro. A contestação e a resposta são públicas. Contribuidores do projeto respondem com decisão e justificativa, pela mesma regra de quem adjudica (passo 5). Contestação aceita não reescreve a publicação: a correção entra numa nova publicação, e a anterior continua disponível, com a indicação da mudança. Contestação que mostra uma regra ambígua orienta a próxima versão.
 
 ## 7. Concordância e critério de publicação
 
@@ -131,12 +134,13 @@ Fixados antes de qualquer codificação, em 24/10/2026, por decisão de Rafael. 
 
 - Mudar a definição do tema, os critérios, os valores ou os termos cria uma nova versão, com novo pacote. Codificações de versões diferentes não se misturam.
 - O pacote registra a versão e a publicação do texto. Uma nova publicação das propostas exige um novo pacote.
-- Os ajustes de 24/10/2026 (autoria, leitura integral, limitação da seção 3, exemplos e critério de publicação da seção 7) entraram antes de qualquer codificação e não mudam tema, critérios, valores nem termos: a versão continua `v1`, e o pacote de 21/10 continua válido. Depois que a codificação começar, mudar a estatística ou o mínimo da seção 7 cria uma nova versão.
+- Os ajustes de 24/10/2026 (autoria, leitura integral, limitação e território genérico da seção 3, exemplos, contestação, critério de publicação da seção 7 e aprovação) entraram antes de qualquer codificação e não mudam tema, critérios, valores nem termos: a versão continua `v1`, e o pacote de 21/10 continua válido. Depois que a codificação começar, mudar a estatística ou o mínimo da seção 7 cria uma nova versão.
+- **Aprovação** (decisão de Rafael, 24/10/2026): cada versão é aprovada pela comunidade de contribuidores, num pull request com o texto final deste livro. A versão está aprovada quando o pull request tem pelo menos uma aprovação de um contribuidor que não o abriu e, passados 7 dias corridos da abertura, nenhuma objeção sem resposta. Mudança nas regras durante a revisão reinicia o prazo. Este livro registra a data e o link da aprovação. A codificação só começa depois dela.
 
-## 9. Decisões pendentes de Rafael
+## 9. Decisões e pendências
 
-1. ~~Codificação por modelo~~: aceita em 24/10/2026, para uma das duas codificações (seção 1). Pendentes: quem faz cada codificação e quem adjudica (a regra para quem adjudica tendo codificado está na seção 6).
-2. Aprovação desta versão: definição do tema, critérios, regras e termos.
+1. ~~Codificação por modelo, quem codifica e quem adjudica~~: decididos em 24/10/2026. Uma das duas codificações pode ser de modelo; as das pessoas e a adjudicação são de contribuidores do projeto (seções 1 e 6).
+2. Aprovação desta versão (tema, critérios, regras e termos): pela comunidade de contribuidores, pela regra da seção 8. O pull request ainda não foi aberto.
 3. ~~Concordância mínima~~: decidida em 24/10/2026, com AC1 de Gwet de pelo menos 0,70 por critério, números publicados sempre e consistência da codificação por modelo (seções 6 e 7).
-4. Publicação e canal de contestação, que podem ser e-mail do projeto, formulário ou issue no repositório. A codificação final sempre vai com as planilhas, a concordância e a versão.
-5. Território: se expressões genéricas como "nas cidades" ou "nos municípios", que são o próprio escopo do tema, contam como `declarado` (proposta: não contam, como "o país"). Precisa ser decidido antes da codificação, para não virar fonte de divergência.
+4. Publicação: página e forma ainda a decidir. ~~Canal de contestação~~: formulário de issue do repositório (seção 6, passo 7), decidido em 24/10/2026. A codificação final sempre vai com as planilhas, a concordância e a versão.
+5. ~~Território genérico~~: decidido em 24/10/2026; "nas cidades" e outros recortes genéricos contam como `declarado` (seção 3).

@@ -10,7 +10,7 @@ A bússola situa cada plano de governo da Presidência de 2022 em dois eixos, a 
 - Não há afinidade com o visitante, ranking nem recomendação. A página mostra onde cada plano fica e por quê, com os trechos.
 - "Sem posição" quer dizer posição não localizada no texto revisado. Nunca vira neutro nem zero.
 - Rótulos dos eixos sem termos pejorativos (decisão de Rafael, 22/10/2026).
-- **Quem codifica (decisão de Rafael, 22/10/2026):** a codificação A foi feita pelo Claude (modelo de linguagem), declarada como tal; a codificação B será de uma pessoa, sem ver a A nem notas sobre ela; a adjudicação das divergências é humana. A autoria de cada codificação é declarada na concordância (seção 6) e informada na publicação.
+- **Quem codifica (decisão de Rafael, 22/10/2026):** a codificação A foi feita pelo Claude (modelo de linguagem), declarada como tal; a codificação B será de uma pessoa entre os contribuidores do projeto, sem ver a A nem notas sobre ela; a adjudicação das divergências é humana, também por contribuidores do projeto (decisão de Rafael, 24/10/2026; regra da seção 6 para quem adjudica tendo codificado). A autoria de cada codificação é declarada na concordância (seção 6) e informada na publicação.
 - São 12 documentos, como na rubrica da D3: o nº 14 tem um documento para duas candidaturas, e o nº 90, inapto e sem votos, entra na codificação e é listado à parte.
 
 ## 2. Modelo
@@ -150,9 +150,9 @@ Mudar afirmações, polos, escala, termos, mínimo ou reamostragem cria uma nova
 ## 9. Decisões pendentes de Rafael
 
 1. ~~Aprovar as afirmações~~: aprovadas em 22/10/2026, com possibilidade de ampliação em versões futuras.
-2. ~~Quem codifica~~: codificação A pelo Claude (decisão de 22/10/2026; leitura integral dos 12 documentos concluída em 24/10/2026), guardada fora do pacote, em `data/compass/bussola-kieskompas-v1/codificacao-a/`. Pendentes: quem faz a codificação B e quem adjudica (a regra para quem adjudica tendo codificado está na seção 6).
+2. ~~Quem codifica~~: codificação A pelo Claude (decisão de 22/10/2026; leitura integral dos 12 documentos concluída em 24/10/2026), guardada fora do pacote, em `data/compass/bussola-kieskompas-v1/codificacao-a/`. Codificação B e adjudicação por contribuidores do projeto (decisão de 24/10/2026; seções 1 e 6).
 3. ~~Concordância mínima~~: kappa ponderado ≥ 0,70 por eixo (22/10/2026); Rafael também considerou razoável 0,75.
-4. Publicação, página e canal de contestação (fases P3 e P4 do plano).
+4. Publicação e página (fases P3 e P4 do plano). ~~Canal de contestação~~: o formulário de issue do repositório, comum à rubrica, com as mesmas regras (passo 7 da seção 6 do [livro da rubrica](rubrica-propostas.md)), decidido em 24/10/2026.
 
 ## 10. Lacunas para a próxima versão
 
