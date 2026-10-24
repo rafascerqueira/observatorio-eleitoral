@@ -8,12 +8,12 @@ import { Pool } from 'pg';
 import { parse } from 'csv-parse/sync';
 import { PROPOSALS_NORMALIZATION, searchNormalize, searchPattern, searchText } from '@observatorio/contracts';
 import { ROOT, sourceFile } from './sources';
-import { adjudicationTemplate, agreement, consolidate, CODING_COLUMNS, codingTemplate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, RUBRIC_THEME, RUBRIC_VERSION,
+import { adjudicationTemplate, agreement, authorship, consolidate, CODING_COLUMNS, codingTemplate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, RUBRIC_THEME, RUBRIC_VERSION,
   validateCoding, type CodingRow, type Criterion, type RubricDocument } from './rubric-core';
 
 /**
  * Fase D3, preparação da rubrica (livro de códigos em docs/rubrica-propostas.md), sem publicação e com o banco só em leitura.
- * `pacote`: material idêntico para as duas pessoas que codificam (PDFs conferidos pelo SHA-256, texto publicado de cada página, de
+ * `pacote`: material idêntico para as duas codificações independentes (PDFs conferidos pelo SHA-256, texto publicado de cada página, de
  * onde copiar os trechos, trechos candidatos da busca literal, modelo da planilha e manifesto com a versão da rubrica e a
  * publicação do texto). `concordancia`: valida as duas planilhas contra
  * o texto publicado, mede a concordância e gera a planilha de adjudicação; com a adjudicação preenchida, consolida a codificação
@@ -111,9 +111,9 @@ export async function packet(definition: CodebookDefinition) {
     await writeFile(resolve(directory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     await writeFile(resolve(directory, 'LEIA-ME.txt'), [
       `Pacote de codificação — ${definition.theme} (${definition.version})`, '',
-      `O mesmo pacote vai para as duas pessoas que codificam. Regras completas no livro de códigos: ${definition.codebook}.`, '',
-      '1. Copie codificacao-modelo.csv para codificacao-<suas iniciais>.csv e preencha valor, paginas, trecho e observacao em todas as linhas.',
-      '2. Não converse sobre a codificação nem veja a planilha da outra pessoa até as duas terminarem.',
+      `O mesmo pacote vai para as duas codificações independentes (A e B); a autoria de cada uma (pessoa ou modelo de linguagem) é declarada na concordância e na publicação. Regras completas no livro de códigos: ${definition.codebook}.`, '',
+      '1. Copie codificacao-modelo.csv para codificacao-<a ou b>.csv, fora deste diretório, e preencha valor, paginas, trecho e observacao em todas as linhas.',
+      '2. Não converse sobre a codificação nem veja a outra planilha, ou notas sobre ela, até as duas terminarem. Este diretório só tem o material comum: nenhuma planilha preenchida fica aqui.',
       `3. ${definition.readingHint}`,
       `4. Valores que afirmam algo exigem página e trecho copiado do texto publicado (textos/), sem resumir nem corrigir; nas páginas por OCR, registre na observação o que o OCR leu errado. ${definition.criteria[0]!.values.some((value) => value.code === 'nao-localizado') ? '"nao-localizado" quer dizer não encontrado no texto revisado, não que o documento não proponha.' : '"sem-posicao" quer dizer posição não encontrada no texto revisado, não que a candidatura não tenha posição.'}`,
       '5. Salve como CSV UTF-8 com separador ";" (Excel: "CSV UTF-8"; LibreOffice: conjunto de caracteres UTF-8, separador ponto e vírgula).',
@@ -124,7 +124,8 @@ export async function packet(definition: CodebookDefinition) {
 
 export async function agreementReport(definition: CodebookDefinition) {
   const directory = option('pacote'), fileA = option('a'), fileB = option('b'), fileDecisions = option('adjudicacao');
-  if (!directory || !fileA || !fileB) throw new Error(`Uso: npm run ${definition.command} -- --pacote=<diretório> --a=<planilha> --b=<planilha> [--adjudicacao=<planilha>]`);
+  if (!directory || !fileA || !fileB) throw new Error(`Uso: npm run ${definition.command} -- --pacote=<diretório> --a=<planilha> --autoria-a=<pessoa|modelo:id> --b=<planilha> --autoria-b=<pessoa|modelo:id> [--adjudicacao=<planilha>]`);
+  const authors = authorship(option('autoria-a'), option('autoria-b'));
   const manifest = JSON.parse(await readFile(resolve(directory, 'manifest.json'), 'utf8')) as Manifest;
   if (manifest.rubric !== definition.version) throw new Error(`Pacote da ${manifest.rubric}; este código aplica a ${definition.version}.`);
   const database = pool();
@@ -143,7 +144,7 @@ export async function agreementReport(definition: CodebookDefinition) {
   const result = agreement(a, b, definition.criteria);
   const output = resolve(directory, `resultado-${new Date().toISOString().replaceAll(':', '-')}`);
   await mkdir(output, { recursive: true });
-  const inputs = files.map((file, index) => ({ role: ['a', 'b', 'adjudicacao'][index], file: basename(file), sha256: sha256(raw[index]!) }));
+  const inputs = files.map((file, index) => ({ role: ['a', 'b', 'adjudicacao'][index], file: basename(file), sha256: sha256(raw[index]!), ...(index < 2 ? { author: authors[index] } : {}) }));
   const report = { rubric: definition.version, publication: manifest.publication, generatedAt: new Date().toISOString(), inputs, byCriterion: result.byCriterion, overall: result.overall, ...definition.report?.(a, b), divergences: result.divergences.length };
   await writeFile(resolve(output, 'concordancia.json'), `${JSON.stringify(report, null, 2)}\n`);
   await writeFile(resolve(output, 'adjudicacao-modelo.csv'), adjudicationTemplate(result.divergences, manifest.documents));

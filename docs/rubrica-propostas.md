@@ -95,7 +95,8 @@ Trechos achados na leitura valem como os da busca. No pacote gerado em 20/10/202
    - `trechos-candidatos.csv` e `codificacao-modelo.csv` (132 linhas: 12 documentos × 11 critérios);
    - `manifest.json`, com a versão da rubrica, os termos e a publicação do texto, e `LEIA-ME.txt`.
 2. **Codificação independente:** cada pessoa copia o modelo, preenche todas as linhas e salva como CSV UTF-8 com ";". As duas não conversam sobre a codificação nem veem a planilha da outra até terminarem.
-3. **Validação e concordância** (`npm run rubric:agreement -- --pacote=<dir> --a=<planilha> --b=<planilha>`):
+3. **Validação e concordância** (`npm run rubric:agreement -- --pacote=<dir> --a=<planilha> --autoria-a=<pessoa|modelo:id> --b=<planilha> --autoria-b=<pessoa|modelo:id>`):
+   - a autoria de cada planilha é declarada e gravada em `concordancia.json` (`pessoa`, sem nome, ou `modelo:<identificador>`); as duas como modelo são recusadas. As planilhas preenchidas ficam fora do diretório do pacote;
    - as duas planilhas são conferidas: linhas completas, valores permitidos, coerência com o tema, páginas e trechos;
    - com elas válidas, gera `concordancia.json` e `adjudicacao-modelo.csv`, só com as divergências e o que cada pessoa registrou;
    - grava o SHA-256 de cada planilha.

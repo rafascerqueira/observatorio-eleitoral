@@ -1,6 +1,6 @@
 # Bússola política: livro de códigos
 
-Versão `bussola-kieskompas-v1`, proposta em 22/10/2026 a partir do [plano da bússola política](plano-bussola-politica.md), no modelo do Kieskompas escolhido por Rafael. **As 24 afirmações da seção 4 foram aprovadas por Rafael em 22/10/2026**; acréscimos futuros entram em novas versões (seção 8). Nenhum documento foi codificado e nada foi publicado. Afirmações, escala, termos, mínimo e reamostragem estão no código em `apps/importer/src/compass-core.ts`; mudar qualquer um deles exige nova versão.
+Versão `bussola-kieskompas-v1`, proposta em 22/10/2026 a partir do [plano da bússola política](plano-bussola-politica.md), no modelo do Kieskompas escolhido por Rafael. **As 24 afirmações da seção 4 foram aprovadas por Rafael em 22/10/2026**; acréscimos futuros entram em novas versões (seção 8). A codificação A está feita (seção 9); a B e a adjudicação, não; nada foi publicado. Afirmações, escala, termos, mínimo e reamostragem estão no código em `apps/importer/src/compass-core.ts`; mudar qualquer um deles exige nova versão.
 
 ## 1. Finalidade e limites
 
@@ -10,7 +10,7 @@ A bússola situa cada plano de governo da Presidência de 2022 em dois eixos, a 
 - Não há afinidade com o visitante, ranking nem recomendação. A página mostra onde cada plano fica e por quê, com os trechos.
 - "Sem posição" quer dizer posição não localizada no texto revisado. Nunca vira neutro nem zero.
 - Rótulos dos eixos sem termos pejorativos (decisão de Rafael, 22/10/2026).
-- **Quem codifica (decisão de Rafael, 22/10/2026):** a codificação A foi feita pelo Claude (modelo de linguagem), declarada como tal; a codificação B será de uma pessoa, sem ver a A; a adjudicação das divergências é humana. A publicação informa quem fez cada codificação.
+- **Quem codifica (decisão de Rafael, 22/10/2026):** a codificação A foi feita pelo Claude (modelo de linguagem), declarada como tal; a codificação B será de uma pessoa, sem ver a A nem notas sobre ela; a adjudicação das divergências é humana. A autoria de cada codificação é declarada na concordância (seção 6) e informada na publicação.
 - São 12 documentos, como na rubrica da D3: o nº 14 tem um documento para duas candidaturas, e o nº 90, inapto e sem votos, entra na codificação e é listado à parte.
 
 ## 2. Modelo
@@ -49,7 +49,7 @@ Meio ambiente e clima ficam no eixo de costumes, como no polo "green" da dimens�
 - **Manter o estado atual:** quando a afirmação pede mudança ("ampliar", "reduzir", "revogar") e o plano propõe manter como está, isso é discordar. Quando a afirmação pede manutenção ("deve ser mantida"), propor manter é concordar.
 - **Parte da afirmação:** concordar com uma das alternativas da afirmação ("cotas **ou** outras ações afirmativas") basta. Afirmações com "inclusive" ou "mesmo com" exigem a parte qualificada para `concorda-totalmente`; sem ela, no máximo `tende-a-concordar`.
 - **Diagnóstico sem proposta:** descrever um problema sem dizer o que fazer é `neutra`, não posição.
-- **Dúvida:** vai para a observação, sem decidir pela outra pessoa.
+- **Dúvida:** vai para a observação, sem tentar adivinhar o que a outra codificação fará.
 
 ## 4. Afirmações
 
@@ -116,16 +116,17 @@ O pacote traz os trechos que a busca literal encontra para os termos de cada afi
 | ocupações | casa com "preocupações" |
 | família, valores | amplos demais (100 e 20 páginas, em sentidos variados) |
 
-Antes de registrar `sem-posicao`, cada pessoa revisa os trechos candidatos da afirmação, o sumário e as seções do tema. No pacote de 22/10/2026, todas as afirmações têm trecho candidato em ao menos 2 documentos (`k04` em 2, `c05` em 4; as demais em 5 a 11). Por documento, o nº 27 tem trechos para só 2 afirmações de economia e 3 de costumes.
+Antes de registrar `sem-posicao`, cada codificação revisa os trechos candidatos da afirmação e lê o documento inteiro; os trechos candidatos são ponto de partida, não substituem a leitura. No pacote de 22/10/2026, todas as afirmações têm trecho candidato em ao menos 2 documentos (`k04` em 2, `c05` em 4; as demais em 5 a 11). Por documento, o nº 27 tem trechos para só 2 afirmações de economia e 3 de costumes.
 
 ## 6. Procedimento
 
-1. **Pacote** (`npm run compass:packet`): o mesmo material para as duas pessoas, em `data/compass/<versão>/pacote-<data>/`:
+1. **Pacote** (`npm run compass:packet`): o mesmo material para as duas codificações, em `data/compass/<versão>/pacote-<data>/`. O diretório do pacote só tem material comum; as planilhas preenchidas e as notas de cada codificação ficam fora dele:
    - PDFs conferidos pelo SHA-256 e texto publicado por página;
    - `trechos-candidatos.csv` e `codificacao-modelo.csv` (288 linhas: 12 documentos × 24 afirmações; a coluna `criterio` traz o código da afirmação e `pergunta`, o texto);
    - `manifest.json`, com eixos, escala, polaridades, mínimo e publicação do texto, e `LEIA-ME.txt`.
-2. **Codificação independente**, como na D3: as duas pessoas não conversam sobre a codificação nem veem a planilha da outra até terminarem.
-3. **Validação e concordância** (`npm run compass:agreement -- --pacote=<dir> --a=<planilha> --b=<planilha>`):
+2. **Codificação independente**, como na D3: quem codifica não conversa sobre a codificação nem vê a outra planilha, ou notas sobre ela, até as duas terminarem. Uma das duas pode ser feita por modelo de linguagem; a outra, sempre por uma pessoa. Cada codificação lê os documentos inteiros.
+3. **Validação e concordância** (`npm run compass:agreement -- --pacote=<dir> --a=<planilha> --autoria-a=<pessoa|modelo:id> --b=<planilha> --autoria-b=<pessoa|modelo:id>`):
+   - autoria declarada e obrigatória: `pessoa` (sem nome) ou `modelo:<identificador exato>`; o programa recusa as duas como modelo e grava a autoria em `concordancia.json`;
    - por afirmação: kappa de Cohen sobre os seis valores;
    - em `compass`: kappa simples para "posição localizada ou não" e kappa ponderado (pesos lineares) da escala, só nos pares em que as duas registraram posição, por eixo e no todo;
    - `publishable` em cada eixo: kappa ponderado de pelo menos **0,70** (decisão de Rafael, 22/10/2026). Eixo abaixo do mínimo, ou com kappa nulo, não é publicado: as afirmações com mais divergência voltam para revisão das regras, numa nova versão. Afirmação isolada com concordância baixa pode ser publicada, com os números na página de método.
@@ -149,16 +150,10 @@ Mudar afirmações, polos, escala, termos, mínimo ou reamostragem cria uma nova
 ## 9. Decisões pendentes de Rafael
 
 1. ~~Aprovar as afirmações~~: aprovadas em 22/10/2026, com possibilidade de ampliação em versões futuras.
-2. ~~Quem codifica~~: codificação A pelo Claude em 22/10/2026 (`codificacao-claude.csv` no pacote, SHA-256 `3ada9942…`). Pendentes: quem faz a codificação B e quem adjudica.
-
-## 10. Lacunas encontradas na codificação A, para a próxima versão
-
-Registradas durante a codificação A, sem mudar a v1:
-
-1. **Afirmações com "e"** ("estatais **e** bancos públicos", "família **e** fé", "indígenas **e** quilombolas"): o livro não diz o que fazer quando o plano se compromete com só uma das partes. Na codificação A, `tende-a-concordar` (ou `tende-a-discordar`), com a explicação na observação.
-2. **Trechos em direções opostas × trecho mais explícito:** a seção 3 traz as duas regras sem ordem de precedência. Na codificação A, valeu o mais explícito quando um lado era compromisso nomeado e o outro, menção genérica (exemplo: oposição nomeada a privatizações ao lado de "concessões" para investimento privado); quando os dois lados eram compromissos, `neutra`.
-3. **`e02` e PPPs em serviços:** parcerias público-privadas em saúde ou serviços contam como "serviços concedidos"? Na codificação A, `tende-a-concordar`.
-4. **`k02` e excludente de ilicitude:** proteção jurídica de agentes de segurança não trata de penas de infratores. Na codificação A, `sem-posicao`, com observação.
-5. **Leitura dos planos longos:** nos nº 22, 30, 44 e 90, a codificação A leu o sumário, os títulos e as seções de cada tema, localizadas por busca ampla, em vez do texto corrido; nos demais, o texto inteiro. A codificação B deve ler os documentos inteiros.
+2. ~~Quem codifica~~: codificação A pelo Claude (decisão de 22/10/2026; leitura integral dos 12 documentos concluída em 24/10/2026), guardada fora do pacote, em `data/compass/bussola-kieskompas-v1/codificacao-a/`. Pendentes: quem faz a codificação B e quem adjudica.
 3. ~~Concordância mínima~~: kappa ponderado ≥ 0,70 por eixo (22/10/2026); Rafael também considerou razoável 0,75.
 4. Publicação, página e canal de contestação (fases P3 e P4 do plano).
+
+## 10. Lacunas para a próxima versão
+
+As lacunas que a codificação A encontrou neste livro ficam registradas com ela, fora do pacote, até a codificação B terminar, para não influenciá-la. Depois entram aqui e na próxima versão.

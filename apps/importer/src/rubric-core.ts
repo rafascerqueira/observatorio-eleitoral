@@ -3,7 +3,7 @@ import { searchPattern, searchText } from '@observatorio/contracts';
 
 /**
  * Rubrica documental das propostas de governo (fase D3; livro de códigos em docs/rubrica-propostas.md): tema piloto, termos da
- * busca, critérios e valores, planilha de codificação, validação, concordância entre as duas pessoas e consolidação depois da
+ * busca, critérios e valores, planilha de codificação, validação, concordância entre as duas codificações e consolidação depois da
  * adjudicação. Atributos documentais, iguais para todas as candidaturas: sem nota, peso, ordenação ou juízo de mérito.
  */
 export const RUBRIC_VERSION = 'rubrica-acessibilidade-mobilidade-v1';
@@ -118,7 +118,24 @@ export const validateCoding = (rows: readonly CodingRow[], documents: readonly R
     ? '"nao-se-aplica" só quando o tema não foi localizado, e sempre nesse caso.' : null);
 
 /**
- * Concordância entre duas pessoas sobre os mesmos itens: proporção observada e kappa de Cohen. Kappa nulo quando a concordância
+ * Autoria declarada de cada codificação, gravada na concordância para a publicação informá-la: `pessoa` ou `modelo:<identificador>`
+ * (modelo de linguagem, com a versão exata). Sem nome de pessoa. Ao menos uma das duas codificações é de uma pessoa.
+ */
+export type Authorship = { kind: 'pessoa' } | { kind: 'modelo'; model: string };
+export function authorship(a: string | null, b: string | null): [Authorship, Authorship] {
+  const read = (value: string | null, role: string): Authorship => {
+    if (value === 'pessoa') return { kind: 'pessoa' };
+    const model = /^modelo:([\w.:/-]+)$/.exec(value ?? '')?.[1];
+    if (model) return { kind: 'modelo', model };
+    throw new Error(`Autoria da codificação ${role} ausente ou inválida: declare --autoria-${role}=pessoa ou --autoria-${role}=modelo:<identificador>.`);
+  };
+  const result: [Authorship, Authorship] = [read(a, 'a'), read(b, 'b')];
+  if (result.every((item) => item.kind === 'modelo')) throw new Error('As duas codificações declaradas como de modelo: ao menos uma tem de ser de uma pessoa.');
+  return result;
+}
+
+/**
+ * Concordância entre duas codificações sobre os mesmos itens: proporção observada e kappa de Cohen. Kappa nulo quando a concordância
  * esperada é total (as duas usaram uma só categoria, a mesma, em todos os itens); sem itens, tudo nulo.
  */
 export function cohenKappa(pairs: ReadonlyArray<readonly [string, string]>) {
@@ -142,7 +159,7 @@ export const adjudicationTemplate = (divergences: ReturnType<typeof agreement>['
   ...divergences.map(({ a, b }) => [a.documento, documents.find((document) => document.id === a.documento)?.candidacies ?? '', a.criterio, a.valor, a.paginas.join(', '), a.trecho, b.valor, b.paginas.join(', '), b.trecho, '', '', '', ''])]);
 
 /**
- * Codificação final: o valor comum quando as duas pessoas concordam e a decisão registrada quando divergem. Toda divergência precisa
+ * Codificação final: o valor comum quando as duas codificações concordam e a decisão registrada quando divergem. Toda divergência precisa
  * de decisão e justificativa; a decisão passa pela mesma validação de uma planilha. Cada linha guarda a origem (`concordancia` ou
  * `adjudicacao`) para a publicação poder mostrá-la.
  */

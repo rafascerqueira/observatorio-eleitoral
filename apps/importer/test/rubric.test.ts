@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parse } from 'csv-parse/sync';
 import { searchText } from '@observatorio/contracts';
-import { adjudicationTemplate, agreement, codingTemplate, cohenKappa, consolidate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, validateCoding, type CodingRow } from '../src/rubric-core';
+import { adjudicationTemplate, agreement, authorship, codingTemplate, cohenKappa, consolidate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, validateCoding, type CodingRow } from '../src/rubric-core';
 
 // Dois documentos e páginas sintéticos; nenhum dado real.
 const documents = [{ id: documentId('a'.repeat(64)), sha256: 'a'.repeat(64), pages: 3, candidacies: '11 · CANDIDATURA A' },
@@ -88,4 +88,13 @@ test('consolidação: valor comum quando concordam; decisão com justificativa q
   const decided = final.find((row) => row.documento === documents[0]!.id && row.criterio === 'intervencao')!;
   assert.deepEqual([decided.origem, decided.valor, decided.justificativa], ['adjudicacao', 'especifica', 'A frase diz o que será comprado.']);
   assert.equal(final.filter((row) => row.origem === 'concordancia').length, a.length - 1);
+});
+
+test('autoria: pessoa ou modelo com identificador, declarada nas duas codificações e nunca as duas de modelo', () => {
+  assert.deepEqual(authorship('modelo:claude-opus-5-5', 'pessoa'), [{ kind: 'modelo', model: 'claude-opus-5-5' }, { kind: 'pessoa' }]);
+  assert.deepEqual(authorship('pessoa', 'pessoa'), [{ kind: 'pessoa' }, { kind: 'pessoa' }]);
+  assert.throws(() => authorship(null, 'pessoa'), /--autoria-a=pessoa/);
+  assert.throws(() => authorship('pessoa', 'modelo:'), /codificação b ausente ou inválida/);
+  assert.throws(() => authorship('Fulano', 'pessoa'), /codificação a ausente ou inválida/);
+  assert.throws(() => authorship('modelo:x', 'modelo:y'), /ao menos uma tem de ser de uma pessoa/);
 });

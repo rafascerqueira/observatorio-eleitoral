@@ -7,7 +7,7 @@ import { AXES, COMPASS_CRITERIA, COMPASS_EXCLUDED_TERMS, COMPASS_TERMS, COMPASS_
 
 /**
  * Bússola política (livro de códigos em docs/bussola-livro-de-codigos.md), no mesmo fluxo da rubrica da D3 e sem publicação:
- * `pacote` gera o material idêntico para as duas pessoas que codificam; `concordancia` valida as planilhas, mede a concordância
+ * `pacote` gera o material idêntico para as duas codificações independentes; `concordancia` valida as planilhas, mede a concordância
  * (inclusive o kappa ponderado da escala) e, com a adjudicação, grava a codificação final e as posições calculadas.
  */
 const COMPASS: CodebookDefinition = {

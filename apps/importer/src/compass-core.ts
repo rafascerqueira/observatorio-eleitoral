@@ -2,8 +2,8 @@ import { cohenKappa, validateRows, type CodingRow, type Criterion, type RubricDo
 
 /**
  * Bússola política das candidaturas no modelo Kieskompas (livro de códigos em docs/bussola-livro-de-codigos.md): afirmações
- * atribuídas a dois eixos, posição de cada plano de governo em cada afirmação numa escala de cinco pontos, codificada por duas
- * pessoas com página e trecho, e coordenada do eixo pela média das afirmações com posição documentada. "Sem posição" fica fora
+ * atribuídas a dois eixos, posição de cada plano de governo em cada afirmação numa escala de cinco pontos, em duas codificações
+ * independentes (ao menos uma de pessoa) com página e trecho, e coordenada do eixo pela média das afirmações com posição documentada. "Sem posição" fica fora
  * da média e nunca vira neutro; abaixo do mínimo de afirmações a candidatura não é situada no eixo.
  */
 export const COMPASS_VERSION = 'bussola-kieskompas-v1';
@@ -114,7 +114,7 @@ export const validateCompass = (rows: readonly CodingRow[], documents: readonly 
 
 const scoreOf = (code: string) => SCALE.find((point) => point.code === code)?.score ?? null;
 /**
- * Kappa de Cohen ponderado (pesos lineares) para a escala ordinal de cinco pontos, só com os pares em que as duas pessoas
+ * Kappa de Cohen ponderado (pesos lineares) para a escala ordinal de cinco pontos, só com os pares em que as duas codificações
  * registraram posição. Nulo sem pares ou com concordância esperada total.
  */
 export function weightedKappa(pairs: ReadonlyArray<readonly [string, string]>) {

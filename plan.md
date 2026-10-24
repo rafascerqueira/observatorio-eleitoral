@@ -813,14 +813,13 @@ Atualização (22/10/2026): concordância mínima decidida — kappa ponderado d
 Rafael decidiu que o Claude faz uma das duas codificações da bússola, e a divergência será vista depois. A regra muda no §2, no `AGENTS.md`, no livro de códigos e no plano: duas codificações independentes, uma delas podendo ser de modelo de linguagem, declarada como tal na publicação, e adjudicação humana.
 
 Feito:
-- **Codificação A:** `data/compass/bussola-kieskompas-v1/pacote-2026-10-23T00-14-13.878Z/codificacao-claude.csv`, somente leitura, SHA-256 `3ada9942868463da8f18354c72d121c766ad904a527b8cd92adfd9d5f4949d4f`.
-- **Contagem:** 288 linhas, com 185 posições (79 concorda totalmente, 35 tende a concordar, 25 neutra, 19 tende a discordar, 27 discorda totalmente) e 103 sem posição.
-- **Cobertura por plano** (afirmações com posição, economia/costumes): 12: 9/7, 13: 12/7, 14: 7/8, 15: 10/7, 16: 10/8, 21: 12/10, 22: 9/8, 27: 2/4, 30: 8/5, 44: 6/5, 80: 12/8, 90: 6/5. Só o nº 27 fica abaixo do mínimo, em economia.
+- **Codificação A:** planilha de 288 linhas, somente leitura, SHA-256 `3ada9942868463da8f18354c72d121c766ad904a527b8cd92adfd9d5f4949d4f`; gravada no diretório do pacote e substituída em 24/10/2026 (§55).
+- **Contagem e cobertura por plano:** retiradas deste registro em 24/10/2026 (§55), para não influenciar a codificação B; ficam nas notas da codificação A, fora do pacote.
 - **Posições não calculadas** de propósito, para não influenciar a codificação B.
 - **Leitura:**
   - texto inteiro em 8 planos;
   - nos nº 22, 30, 44 e 90 (os mais longos), sumário, títulos e seções de cada tema localizadas por busca ampla;
-  - limitação declarada no livro de códigos (seção 10), com outras quatro lacunas para a próxima versão.
+  - limitação declarada então no livro de códigos, com outras quatro lacunas para a próxima versão; a leitura parcial foi refeita em 24/10/2026 (§55).
 
 Verificação: os trechos dos 12 documentos passaram pela validação do `compass:agreement` (mesma função, `validateCompass`, contra o texto publicado).
 
@@ -828,5 +827,53 @@ Pendente:
 - codificação B por uma pessoa, sem ver a A;
 - adjudicação humana;
 - depois, `compass:agreement` com as duas planilhas e a publicação.
+
+Commit `9c493d9` (22/10/2026).
+
+## 55. Correções da revisão da codificação A e releitura completa — 24/10/2026
+
+A revisão de código do commit `9c493d9` (`/code-review`) apontou dez problemas. Os mais graves eram quatro: a planilha A estava dentro do pacote que vai para quem faz a B; o livro de códigos e este `plan.md` mostravam valores e a cobertura da A; e a A leu só em parte os nº 22, 30, 44 e 90, ferindo a regra de mesmos critérios para todas as candidaturas. Rafael pediu que tudo fosse corrigido, com a releitura completa dos quatro planos.
+
+Feito:
+- **Independência da B:**
+  - a planilha A saiu do pacote: agora fica em `data/compass/bussola-kieskompas-v1/codificacao-a/`, junto com as notas (`NOTAS.md`: lacunas, contagem, cobertura e mudanças), que não vão para quem faz a B;
+  - a seção 10 do livro de códigos (lacunas com os valores da A) foi para essas notas;
+  - a contagem e a cobertura por plano saíram do §54.
+- **Releitura completa:**
+  - os nº 22, 30, 44 e 90 foram lidos por inteiro, página a página, e as 96 linhas deles foram refeitas sem consultar a versão anterior;
+  - as 192 linhas dos outros oito planos não mudaram;
+  - a nova planilha é `codificacao-claude-2026-10-24.csv`, somente leitura, SHA-256 `00165d7316d393814c2ee0079a303cb6c10fce9f8832ff1b0eb1831fa2f63e38`;
+  - a de 22/10 continua guardada, sem alteração, como `codificacao-claude-2026-10-22.csv`.
+- **Autoria declarada no código:**
+  - `rubric:agreement` e `compass:agreement` exigem `--autoria-a` e `--autoria-b` (`pessoa`, sem nome, ou `modelo:<identificador>`);
+  - recusam as duas declaradas como modelo;
+  - gravam a autoria em `inputs` de `concordancia.json` (`authorship` em `rubric-core.ts`).
+- **LEIA-ME:**
+  - o texto gerado pelo pacote não fala mais em "duas pessoas" nem em iniciais;
+  - manda guardar a planilha fora do diretório do pacote;
+  - proíbe ver a outra planilha ou notas sobre ela;
+  - o `LEIA-ME.txt` do pacote de 23/10 foi atualizado para o mesmo texto (ele não entra no `manifest.json`).
+- **Documentação:**
+  - no livro de códigos: cabeçalho, seção 3, seções 5 e 6 (leitura integral obrigatória e autoria declarada) e ordem da seção 9;
+  - no plano da bússola: trechos ainda com a regra antiga;
+  - no `docs/rubrica-propostas.md` e no `AGENTS.md`: as novas opções da concordância.
+
+Verificação:
+- `npm run typecheck -w @observatorio/importer` sem erros;
+- `npm test -w @observatorio/importer`: 51 testes (50 antes), todos passando, com o novo teste da autoria;
+- a planilha nova passa pela `validateCompass` contra o texto publicado no banco: 288 linhas, nenhum problema;
+- `compass:agreement`, rodado com uma cópia do manifesto fora do pacote:
+  - recusa sem autoria e com as duas de modelo;
+  - com `--autoria-a=modelo:claude-opus-5-5 --autoria-b=pessoa`, grava `author` nas duas entradas;
+  - o resultado do teste foi apagado.
+
+Atenção para a codificação B:
+- a pessoa deve receber só o diretório do pacote e o livro de códigos;
+- o histórico do Git (mensagem e diff do commit `9c493d9`) ainda traz a contagem e as lacunas da A; reescrever o histórico exige decisão de Rafael.
+
+Pendente:
+- codificação B por uma pessoa e quem adjudica;
+- depois, `compass:agreement` com `--autoria-a=modelo:claude-opus-5-5 --autoria-b=pessoa`, adjudicação e publicação;
+- ao fim da B, as lacunas das notas entram no livro de códigos numa nova versão.
 
 Sem commit.
