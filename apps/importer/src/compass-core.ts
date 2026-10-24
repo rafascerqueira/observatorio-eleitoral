@@ -1,4 +1,4 @@
-import { cohenKappa, validateRows, type CodingRow, type Criterion, type RubricDocument, type Value } from './rubric-core';
+import { cohenKappa, quantile, random, validateRows, type CodingRow, type Criterion, type RubricDocument, type Value } from './rubric-core';
 
 /**
  * Bússola política das candidaturas no modelo Kieskompas (livro de códigos em docs/bussola-livro-de-codigos.md): afirmações
@@ -150,20 +150,7 @@ export function compassAgreement(a: readonly CodingRow[], b: readonly CodingRow[
 /** Mínimo de afirmações com posição para situar uma candidatura num eixo (um terço das doze). */
 export const MIN_ITEMS = 4;
 export const RESAMPLES = 2000;
-/** Gerador pseudoaleatório determinístico (mulberry32): a mesma codificação dá sempre o mesmo intervalo. */
-function random(seed: number) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-  };
-}
 const mean = (values: readonly number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
-const quantile = (sorted: readonly number[], q: number) => {
-  const position = (sorted.length - 1) * q, low = Math.floor(position), high = Math.ceil(position);
-  return sorted[low]! + (sorted[high]! - sorted[low]!) * (position - low);
-};
 export type AxisPosition = { items: number; status: 'situada' | 'insuficiente'; score: number | null; interval: [number, number] | null; leaveOneOut: [number, number] | null;
   contributions: Array<{ statement: string; value: string; contribution: number }> };
 /**

@@ -4,7 +4,7 @@ Criado em 12/10/2026 e revisado em **22/10/2026**. Fonte de verdade sobre finali
 
 ## Estado atual
 
-Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). A rubrica da D3 está preparada, sem codificação, à espera de quem revisa, e a pesquisa documental da E está feita (§49). Next.js em 16.4.2 por aviso de segurança (§50). Bússola política no modelo Kieskompas (§§51–53): 24 afirmações aprovadas, concordância mínima decidida (kappa ponderado ≥ 0,70 por eixo), pacote gerado e cálculo pronto, à espera de quem codifica. 2026 avaliado e adiado para depois do 2º turno (§§51–52). Próximo: quem codifica e adjudica (D3 e bússola, **pendente por decisão de Rafael em 22/10**), ESEB ou LAPOP (E), hospedagem e, depois de 25/10, a carga de 2026.
+Implementação e dados disponíveis **localmente**, sem implantação externa. A entrega de código, testes e auditorias dos §§26–28 está no commit `825dffb`; a revisão documental posterior está registrada no §30. As fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md), a identidade visual e a revisão de código de 20/10 (§§33–46) foram verificadas e estão em `upstream/main`. A `proposals-2022-v2` da busca nas propostas, decidida por Rafael com a auditoria do §47, está publicada e verificada no banco local (§48). A rubrica da D3 está preparada, sem codificação, à espera de quem codifica e adjudica (uma das codificações pode ser de modelo, §57), e a pesquisa documental da E está feita (§49). Next.js em 16.4.2 por aviso de segurança (§50). Bússola política no modelo Kieskompas (§§51–53): 24 afirmações aprovadas, concordância mínima decidida (kappa ponderado ≥ 0,70 por eixo), pacote gerado e cálculo pronto, à espera de quem codifica. 2026 avaliado e adiado para depois do 2º turno (§§51–52). Próximo: quem codifica e adjudica (D3 e bússola, **pendente por decisão de Rafael em 22/10**), ESEB ou LAPOP (E), hospedagem e, depois de 25/10, a carga de 2026.
 
 | Frente | Situação em 20/10/2026 |
 | --- | --- |
@@ -20,7 +20,7 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 
 - **Antes de declarar acessibilidade completa:** leitor de tela humano, Safari e dispositivos reais, zoom de texto/alto contraste do sistema. Chrome/Firefox e verificações automáticas já foram realizados; não substituem esses ensaios.
 - **Próximo marco de operação:** decidir hospedagem com Rafael após o pacote local concluído. O importador das propostas depende de pacotes do sistema (`poppler-utils`, `tesseract-ocr`, `tesseract-ocr-por`), que a API e a web não usam: importar localmente e levar o banco com `data/originals` e `data/audit`, ou criar uma imagem do importador com Ubuntu 24.04 para reproduzir as versões da publicação (§48). A análise de 17/10 é histórica; preço, região, capacidade e desenho final precisam de validação antes de contratar/implantar. Backup teve checksum e catálogo conferidos; restauração completa e carga no ambiente de destino ainda não ensaiadas.
-- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas) à espera de quem revisa, e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
+- **Decisões abertas:** licença e eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas) à espera de quem codifica e adjudica (§57), e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
 - **Bússola política (§53):** livro de códigos aprovado; pendente quem codifica e quem adjudica (a mesma pendência da D3, deixada em aberto por Rafael em 22/10); depois, publicação `compass-2022-v1`, conferência externa e página `/propostas/bussola`.
 - **Limpeza dos lotes não publicados (§52):** autorizada para o início da carga de 2026, com backup antes; 52 lotes inventariados, nenhum citado pelas publicações vigentes.
@@ -887,5 +887,50 @@ Rafael pediu que o README falasse do projeto, e não de planejamento. Feito:
 - `AGENTS.md` e as duas referências vigentes deste arquivo apontam agora para `docs/operacao.md`.
 
 Verificação: links locais do README e de `docs/operacao.md` conferidos; comparação linha a linha com o README anterior, sem perda além do que saiu de propósito. Rafael leu e aprovou o texto.
+
+Commitado em 24/10/2026, sem push.
+
+## 57. Revisão da rubrica da D3: autoria por modelo, leitura integral e limitação declarada — 24/10/2026
+
+Rafael revisou com o Claude o livro de códigos da rubrica (`docs/rubrica-propostas.md`), seção por seção, e decidiu:
+1. **Autoria:** uma das duas codificações pode ser feita por modelo de linguagem, declarada como tal; a outra é sempre de uma pessoa, e a adjudicação é humana. Até então, o plano de melhorias falava em "duas pessoas". O código já aceitava `modelo:<id>` (`authorship`, §55) e não mudou.
+2. **Leitura integral:** cada codificação lê os documentos inteiros, como na bússola. O passo 3 do `LEIA-ME.txt` gerado (`readingHint` em `rubric.ts` e `compass.ts`) passa a exigir isso, e os `LEIA-ME.txt` dos dois pacotes existentes foram atualizados para o mesmo texto (nenhum dos dois entra no `manifest.json`).
+3. **Limitação declarada:** os critérios descrevem o documento, não cada medida. Meta, prazo, custo e outros atributos podem vir de medidas diferentes; a regra não muda, e a publicação repete a limitação.
+
+Os ajustes vieram antes de qualquer codificação e não mudam tema, critérios, valores nem termos: a versão continua `rubrica-acessibilidade-mobilidade-v1`, e o pacote de 21/10 continua válido. Atualizados: livro de códigos da rubrica (seções 1, 2, 3, 5, 6, 7, 8 e 9), seções D3 e 20 e quadro de decisões do plano de melhorias, `AGENTS.md`, `docs/operacao.md` e o "Estado atual" deste arquivo.
+
+Ficou registrado como pendência nova (item 5 da seção 9 do livro): se expressões genéricas como "nas cidades" contam como território declarado. A proposta é que não contem.
+
+**Concordância mínima** (decidida a seguir, por recomendação aceita por Rafael), fixada antes de qualquer codificação, na seção 7 do livro:
+- por critério, AC1 de Gwet, com intervalo de 95% por reamostragem dos documentos, ao lado do kappa e das contagens;
+- critério com AC1 ≥ 0,70 é publicado; abaixo disso, volta para uma nova versão;
+- os números são publicados sempre;
+- motivo: com 12 documentos e muitos `nao-localizado`, o kappa pode ficar perto de zero mesmo com quase tudo concordando.
+
+Somam-se:
+- exemplos fictícios por critério, na seção 3, para reduzir ambiguidade;
+- consistência da codificação por modelo: ele codifica duas vezes; a A1 entra na concordância e a A2 só mede.
+
+**Código:**
+- `rubric-core.ts`:
+  - `gwetAC1`, `criterionReliability`, `MIN_CRITERION_AC1` e `RELIABILITY_RESAMPLES`;
+  - `random` e `quantile` saíram do `compass-core.ts` e passaram a ser compartilhados;
+  - `authorship` ganhou o modo de consistência;
+- `rubric.ts`:
+  - o relatório da rubrica traz `reliability` e `purpose`;
+  - `--consistencia` exige o mesmo modelo nas duas codificações, recusa `--adjudicacao` e grava o resultado ao lado da planilha A1, fora do pacote, para não expor a A antes de a outra codificação terminar.
+
+Verificação:
+- typecheck sem erros;
+- 54 testes do importador passando (3 novos, entre eles o caso do paradoxo do kappa); os testes da bússola continuam passando com o gerador compartilhado;
+- `rubric:agreement` rodado do início ao fim com planilhas fictícias válidas e uma cópia do manifesto no rascunho (concordância normal, consistência e recusa de `--adjudicacao` no modo de consistência); tudo apagado depois.
+
+**Quem adjudica** (a seguir, nos dois livros de códigos, seção 6): Rafael perguntou se codificar sem modelo contraria a regra. Não contraria: o modelo é opcional, e o que se exige são duas codificações independentes, ao menos uma de pessoa, e adjudicação humana. A regra nova trata de quem adjudica tendo codificado: de preferência alguém que não codificou; se não, isso é declarado na publicação e cada decisão cita páginas, trecho e regra do livro. Modelo nunca adjudica. Ressalva para a bússola, registrada só aqui (o livro vai para quem faz a B e não deve apontar onde estão os valores da A): o histórico do commit `9c493d9` mostra valores e decisões da A, então quem já o leu não faz a B sem declarar essa exposição.
+
+Pendente:
+- quem faz cada codificação e quem adjudica;
+- aprovação da versão;
+- território genérico (item 5 da seção 9), a decidir antes da codificação;
+- publicação e canal de contestação.
 
 Commitado em 24/10/2026, sem push.

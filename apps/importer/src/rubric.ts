@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
 import { parse } from 'csv-parse/sync';
 import { PROPOSALS_NORMALIZATION, searchNormalize, searchPattern, searchText } from '@observatorio/contracts';
 import { ROOT, sourceFile } from './sources';
-import { adjudicationTemplate, agreement, authorship, consolidate, CODING_COLUMNS, codingTemplate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, RUBRIC_THEME, RUBRIC_VERSION,
+import { adjudicationTemplate, agreement, authorship, consolidate, criterionReliability, MIN_CRITERION_AC1, RELIABILITY_RESAMPLES, CODING_COLUMNS, codingTemplate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, RUBRIC_THEME, RUBRIC_VERSION,
   validateCoding, type CodingRow, type Criterion, type RubricDocument } from './rubric-core';
 
 /**
@@ -40,7 +40,9 @@ export type CodebookDefinition = {
 };
 const ACCESSIBILITY: CodebookDefinition = { version: RUBRIC_VERSION, theme: RUBRIC_THEME, codebook: 'docs/rubrica-propostas.md', dataDirectory: 'data/rubric', command: 'rubric:agreement',
   terms: RUBRIC_TERMS.map((term) => ({ term })), excludedTerms: RUBRIC_EXCLUDED_TERMS, criteria: RUBRIC_CRITERIA, validate: validateCoding,
-  readingHint: 'Use trechos-candidatos.csv como ponto de partida e leia também as seções do documento sobre cidades, transporte, infraestrutura e pessoas com deficiência (documentos/).' };
+  readingHint: 'Leia cada documento inteiro (documentos/ e textos/), não só as seções sobre cidades, transporte, infraestrutura e pessoas com deficiência; trechos-candidatos.csv é ponto de partida, não substitui a leitura.',
+  // Confiabilidade fixada antes da codificação (livro de códigos, seção 7): AC1 de Gwet por critério, com intervalo e mínimo.
+  report: (a, b) => ({ reliability: { statistic: 'gwet-ac1', minimum: MIN_CRITERION_AC1, resamples: RELIABILITY_RESAMPLES, byCriterion: criterionReliability(a, b, RUBRIC_CRITERIA) } }) };
 
 function pool() {
   config({ path: resolve(ROOT, '.env'), quiet: true });
@@ -124,8 +126,12 @@ export async function packet(definition: CodebookDefinition) {
 
 export async function agreementReport(definition: CodebookDefinition) {
   const directory = option('pacote'), fileA = option('a'), fileB = option('b'), fileDecisions = option('adjudicacao');
-  if (!directory || !fileA || !fileB) throw new Error(`Uso: npm run ${definition.command} -- --pacote=<diretório> --a=<planilha> --autoria-a=<pessoa|modelo:id> --b=<planilha> --autoria-b=<pessoa|modelo:id> [--adjudicacao=<planilha>]`);
-  const authors = authorship(option('autoria-a'), option('autoria-b'));
+  if (!directory || !fileA || !fileB) throw new Error(`Uso: npm run ${definition.command} -- --pacote=<diretório> --a=<planilha> --autoria-a=<pessoa|modelo:id> --b=<planilha> --autoria-b=<pessoa|modelo:id> [--adjudicacao=<planilha> | --consistencia]`);
+  // Consistência do modelo: duas codificações do mesmo modelo, só para medir. O resultado fica ao lado da planilha A, fora do
+  // pacote (que vai para quem ainda codifica), e não gera planilha de adjudicação.
+  const consistency = process.argv.includes('--consistencia');
+  if (consistency && fileDecisions) throw new Error('--consistencia só mede a concordância do modelo consigo mesmo; não aceita --adjudicacao.');
+  const authors = authorship(option('autoria-a'), option('autoria-b'), consistency);
   const manifest = JSON.parse(await readFile(resolve(directory, 'manifest.json'), 'utf8')) as Manifest;
   if (manifest.rubric !== definition.version) throw new Error(`Pacote da ${manifest.rubric}; este código aplica a ${definition.version}.`);
   const database = pool();
@@ -142,12 +148,13 @@ export async function agreementReport(definition: CodebookDefinition) {
   if (problems.length) { console.error(problems.join('\n')); throw new Error(`${problems.length} problema(s) nas planilhas; concordância não calculada.`); }
 
   const result = agreement(a, b, definition.criteria);
-  const output = resolve(directory, `resultado-${new Date().toISOString().replaceAll(':', '-')}`);
+  const stamp = new Date().toISOString().replaceAll(':', '-');
+  const output = consistency ? resolve(dirname(fileA), `consistencia-${stamp}`) : resolve(directory, `resultado-${stamp}`);
   await mkdir(output, { recursive: true });
   const inputs = files.map((file, index) => ({ role: ['a', 'b', 'adjudicacao'][index], file: basename(file), sha256: sha256(raw[index]!), ...(index < 2 ? { author: authors[index] } : {}) }));
-  const report = { rubric: definition.version, publication: manifest.publication, generatedAt: new Date().toISOString(), inputs, byCriterion: result.byCriterion, overall: result.overall, ...definition.report?.(a, b), divergences: result.divergences.length };
+  const report = { rubric: definition.version, purpose: consistency ? 'consistencia-do-modelo' : 'concordancia', publication: manifest.publication, generatedAt: new Date().toISOString(), inputs, byCriterion: result.byCriterion, overall: result.overall, ...definition.report?.(a, b), divergences: result.divergences.length };
   await writeFile(resolve(output, 'concordancia.json'), `${JSON.stringify(report, null, 2)}\n`);
-  await writeFile(resolve(output, 'adjudicacao-modelo.csv'), adjudicationTemplate(result.divergences, manifest.documents));
+  if (!consistency) await writeFile(resolve(output, 'adjudicacao-modelo.csv'), adjudicationTemplate(result.divergences, manifest.documents));
   if (fileDecisions) {
     const decisions = parse(raw[2]!, { delimiter: ';', columns: true, bom: true, skip_empty_lines: true, trim: true }) as Array<Record<string, string>>;
     const { final, problems: pending } = consolidate(a, b, decisions);

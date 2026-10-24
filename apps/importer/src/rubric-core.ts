@@ -119,10 +119,11 @@ export const validateCoding = (rows: readonly CodingRow[], documents: readonly R
 
 /**
  * Autoria declarada de cada codificação, gravada na concordância para a publicação informá-la: `pessoa` ou `modelo:<identificador>`
- * (modelo de linguagem, com a versão exata). Sem nome de pessoa. Ao menos uma das duas codificações é de uma pessoa.
+ * (modelo de linguagem, com a versão exata). Sem nome de pessoa. Ao menos uma das duas codificações é de uma pessoa, salvo na
+ * medida de consistência do modelo (`consistency`), em que as duas são do mesmo modelo e o resultado não vai para a adjudicação.
  */
 export type Authorship = { kind: 'pessoa' } | { kind: 'modelo'; model: string };
-export function authorship(a: string | null, b: string | null): [Authorship, Authorship] {
+export function authorship(a: string | null, b: string | null, consistency = false): [Authorship, Authorship] {
   const read = (value: string | null, role: string): Authorship => {
     if (value === 'pessoa') return { kind: 'pessoa' };
     const model = /^modelo:([\w.:/-]+)$/.exec(value ?? '')?.[1];
@@ -130,9 +131,27 @@ export function authorship(a: string | null, b: string | null): [Authorship, Aut
     throw new Error(`Autoria da codificação ${role} ausente ou inválida: declare --autoria-${role}=pessoa ou --autoria-${role}=modelo:<identificador>.`);
   };
   const result: [Authorship, Authorship] = [read(a, 'a'), read(b, 'b')];
-  if (result.every((item) => item.kind === 'modelo')) throw new Error('As duas codificações declaradas como de modelo: ao menos uma tem de ser de uma pessoa.');
+  if (consistency) {
+    // Consistência do modelo: duas codificações independentes do mesmo modelo, só para medir; nunca vão para a adjudicação.
+    if (!result.every((item) => item.kind === 'modelo') || new Set(result.map((item) => item.kind === 'modelo' && item.model)).size !== 1)
+      throw new Error('--consistencia compara duas codificações do mesmo modelo: declare as duas como modelo:<identificador>, com o mesmo identificador.');
+  } else if (result.every((item) => item.kind === 'modelo')) throw new Error('As duas codificações declaradas como de modelo: ao menos uma tem de ser de uma pessoa.');
   return result;
 }
+
+/** Gerador pseudoaleatório determinístico (mulberry32): a mesma codificação dá sempre o mesmo intervalo. */
+export function random(seed: number) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+export const quantile = (sorted: readonly number[], q: number) => {
+  const position = (sorted.length - 1) * q, low = Math.floor(position), high = Math.ceil(position);
+  return sorted[low]! + (sorted[high]! - sorted[low]!) * (position - low);
+};
 
 /**
  * Concordância entre duas codificações sobre os mesmos itens: proporção observada e kappa de Cohen. Kappa nulo quando a concordância
@@ -152,6 +171,48 @@ export function agreement(a: readonly CodingRow[], b: readonly CodingRow[], crit
   const byCriterion = Object.fromEntries(criteria.map((criterion) => [criterion.code, cohenKappa(pairs.filter(({ row }) => row.criterio === criterion.code).map(({ row, peer }) => [row.valor, peer.valor] as const))]));
   return { byCriterion, overall: cohenKappa(pairs.map(({ row, peer }) => [`${row.criterio}:${row.valor}`, `${peer.criterio}:${peer.valor}`] as const)),
     divergences: pairs.filter(({ row, peer }) => row.valor !== peer.valor).map(({ row, peer }) => ({ a: row, b: peer })) };
+}
+/**
+ * AC1 de Gwet (nominal), com `categories` = número de valores possíveis. Sofre menos que o kappa com a concentração numa
+ * categoria (o "paradoxo do kappa": 11 de 12 documentos `nao-localizado` nas duas dão concordância alta e kappa perto de zero).
+ * Sem itens ou com menos de duas categorias possíveis, nulo.
+ */
+export function gwetAC1(pairs: ReadonlyArray<readonly [string, string]>, categories: number) {
+  const items = pairs.length;
+  if (!items || categories < 2) return null;
+  const observed = pairs.filter(([a, b]) => a === b).length / items;
+  const expected = [...new Set(pairs.flat())].reduce((sum, category) => {
+    const share = pairs.reduce((count, [a, b]) => count + Number(a === category) + Number(b === category), 0) / (2 * items);
+    return sum + share * (1 - share);
+  }, 0) / (categories - 1);
+  return (observed - expected) / (1 - expected);
+}
+/** Mínimo de AC1 por critério para publicá-lo (decisão de Rafael, 24/10/2026, fixada antes da codificação). */
+export const MIN_CRITERION_AC1 = 0.7;
+export const RELIABILITY_RESAMPLES = 2000;
+const NOT_APPLICABLE_CODE = 'nao-se-aplica';
+/**
+ * Confiabilidade por critério, fixada antes da codificação: AC1 de Gwet, kappa de Cohen e concordância observada, com intervalo
+ * de 95% por reamostragem dos documentos (semente fixa por critério) e `publishable` quando o AC1 atinge o mínimo. Os pares em que
+ * alguma codificação marcou `nao-se-aplica` ficam fora: esse valor decorre do tema, e a divergência no tema já aparece no próprio
+ * critério `tema`. O número de categorias é o de valores do critério, menos `nao-se-aplica`.
+ */
+export function criterionReliability(a: readonly CodingRow[], b: readonly CodingRow[], criteria: readonly Criterion[] = RUBRIC_CRITERIA) {
+  const other = new Map(b.map((row) => [key(row), row]));
+  return Object.fromEntries(criteria.map((criterion, index) => {
+    const pairs = a.filter((row) => row.criterio === criterion.code && other.has(key(row))).map((row) => [row.valor, other.get(key(row))!.valor] as const)
+      .filter(([x, y]) => x !== NOT_APPLICABLE_CODE && y !== NOT_APPLICABLE_CODE);
+    const categories = criterion.values.filter((value) => value.code !== NOT_APPLICABLE_CODE).length, ac1 = gwetAC1(pairs, categories);
+    const draw = random(0xac1 + index * 7919), samples: number[] = [];
+    if (pairs.length) for (let sample = 0; sample < RELIABILITY_RESAMPLES; sample++) {
+      const value = gwetAC1(pairs.map(() => pairs[Math.floor(draw() * pairs.length)]!), categories);
+      if (value !== null) samples.push(value);
+    }
+    samples.sort((x, y) => x - y);
+    const { observed, kappa } = cohenKappa(pairs);
+    return [criterion.code, { items: pairs.length, categories, observed, kappa, ac1, interval: samples.length ? [quantile(samples, 0.025), quantile(samples, 0.975)] : null,
+      publishable: ac1 !== null && ac1 >= MIN_CRITERION_AC1 }];
+  }));
 }
 export const ADJUDICATION_COLUMNS = ['documento', 'candidaturas', 'criterio', 'valor_a', 'paginas_a', 'trecho_a', 'valor_b', 'paginas_b', 'trecho_b', 'valor_final', 'paginas_final', 'trecho_final', 'justificativa'] as const;
 /** Planilha de adjudicação: só as divergências, com o que cada pessoa registrou e campos para a decisão e o motivo. */

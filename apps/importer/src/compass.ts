@@ -13,7 +13,7 @@ import { AXES, COMPASS_CRITERIA, COMPASS_EXCLUDED_TERMS, COMPASS_TERMS, COMPASS_
 const COMPASS: CodebookDefinition = {
   version: COMPASS_VERSION, theme: COMPASS_THEME, codebook: 'docs/bussola-livro-de-codigos.md', dataDirectory: 'data/compass', command: 'compass:agreement',
   terms: COMPASS_TERMS, excludedTerms: COMPASS_EXCLUDED_TERMS, criteria: COMPASS_CRITERIA, validate: validateCompass,
-  readingHint: 'Use trechos-candidatos.csv (coluna criterios) como ponto de partida e leia também o sumário e as seções de economia, trabalho, tributos, direitos, segurança, educação e meio ambiente (documentos/). Codifique o que o plano diz, nunca o que a candidatura disse fora dele.',
+  readingHint: 'Leia cada documento inteiro (documentos/ e textos/), não só o sumário e as seções de economia, trabalho, tributos, direitos, segurança, educação e meio ambiente; trechos-candidatos.csv (coluna criterios) é ponto de partida, não substitui a leitura. Codifique o que o plano diz, nunca o que a candidatura disse fora dele.',
   manifestExtra: { axes: AXES, scale: SCALE, minItems: MIN_ITEMS, resamples: RESAMPLES,
     statements: STATEMENTS.map((statement) => ({ code: statement.code, axis: statement.axis, pole: statement.pole, polarity: polarity(statement), text: statement.text })) },
   report: (a, b) => ({ compass: compassAgreement(a, b) }),

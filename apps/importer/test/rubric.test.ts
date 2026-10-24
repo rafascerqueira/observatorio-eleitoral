@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parse } from 'csv-parse/sync';
 import { searchText } from '@observatorio/contracts';
-import { adjudicationTemplate, agreement, authorship, codingTemplate, cohenKappa, consolidate, csv, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, validateCoding, type CodingRow } from '../src/rubric-core';
+import { adjudicationTemplate, agreement, authorship, codingTemplate, cohenKappa, consolidate, criterionReliability, csv, gwetAC1, MIN_CRITERION_AC1, documentId, readCoding, RUBRIC_CRITERIA, RUBRIC_EXCLUDED_TERMS, RUBRIC_TERMS, validateCoding, type CodingRow } from '../src/rubric-core';
 
 // Dois documentos e páginas sintéticos; nenhum dado real.
 const documents = [{ id: documentId('a'.repeat(64)), sha256: 'a'.repeat(64), pages: 3, candidacies: '11 · CANDIDATURA A' },
@@ -97,4 +97,32 @@ test('autoria: pessoa ou modelo com identificador, declarada nas duas codificaç
   assert.throws(() => authorship('pessoa', 'modelo:'), /codificação b ausente ou inválida/);
   assert.throws(() => authorship('Fulano', 'pessoa'), /codificação a ausente ou inválida/);
   assert.throws(() => authorship('modelo:x', 'modelo:y'), /ao menos uma tem de ser de uma pessoa/);
+});
+
+test('AC1 de Gwet: alto quando quase tudo concorda numa categoria, onde o kappa fica em zero', () => {
+  const skewed = [...Array.from({ length: 11 }, () => ['nao-localizado', 'nao-localizado'] as const), ['nao-localizado', 'declarado'] as const];
+  assert.equal(cohenKappa(skewed).kappa, 0, 'Paradoxo do kappa: 92% de concordância e kappa zero');
+  assert.ok(Math.abs(gwetAC1(skewed, 2)! - 241 / 265) < 1e-12);
+  assert.equal(gwetAC1([['a', 'a'], ['b', 'b']], 2), 1);
+  assert.equal(gwetAC1([], 2), null);
+  assert.equal(gwetAC1([['a', 'a']], 1), null, 'Menos de duas categorias possíveis');
+});
+
+test('confiabilidade por critério: sem pares de "nao-se-aplica", intervalo reproduzível e mínimo para publicar', () => {
+  const a = coding(), b = coding();
+  const same = criterionReliability(a, b);
+  assert.deepEqual([same.tema!.items, same.intervencao!.items], [2, 1], 'O documento B (tema não localizado) sai dos critérios dependentes');
+  assert.deepEqual([same.intervencao!.ac1, same.intervencao!.interval, same.intervencao!.publishable], [1, [1, 1], true]);
+  assert.equal(same.intervencao!.categories, 3, 'Valores do critério menos "nao-se-aplica"');
+  b.find((row) => row.documento === documents[0]!.id && row.criterio === 'intervencao')!.valor = 'generica';
+  const diverging = criterionReliability(a, b);
+  assert.ok(diverging.intervencao!.ac1! < MIN_CRITERION_AC1); assert.equal(diverging.intervencao!.publishable, false);
+  assert.deepEqual(criterionReliability(a, b), diverging, 'Mesma codificação, mesmo resultado');
+});
+
+test('consistência do modelo: duas codificações do mesmo modelo, e só com --consistencia', () => {
+  assert.deepEqual(authorship('modelo:claude-opus-5-5', 'modelo:claude-opus-5-5', true), [{ kind: 'modelo', model: 'claude-opus-5-5' }, { kind: 'modelo', model: 'claude-opus-5-5' }]);
+  assert.throws(() => authorship('modelo:x', 'modelo:y', true), /mesmo identificador/);
+  assert.throws(() => authorship('modelo:x', 'pessoa', true), /mesmo modelo/);
+  assert.throws(() => authorship('modelo:x', 'modelo:x'), /ao menos uma tem de ser de uma pessoa/);
 });

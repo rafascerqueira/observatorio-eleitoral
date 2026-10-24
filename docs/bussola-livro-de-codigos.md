@@ -130,7 +130,7 @@ Antes de registrar `sem-posicao`, cada codificação revisa os trechos candidato
    - por afirmação: kappa de Cohen sobre os seis valores;
    - em `compass`: kappa simples para "posição localizada ou não" e kappa ponderado (pesos lineares) da escala, só nos pares em que as duas registraram posição, por eixo e no todo;
    - `publishable` em cada eixo: kappa ponderado de pelo menos **0,70** (decisão de Rafael, 22/10/2026). Eixo abaixo do mínimo, ou com kappa nulo, não é publicado: as afirmações com mais divergência voltam para revisão das regras, numa nova versão. Afirmação isolada com concordância baixa pode ser publicada, com os números na página de método.
-4. **Adjudicação** (`--adjudicacao=<planilha>`): cada divergência recebe valor final, páginas, trecho e justificativa. Gera `codificacao-final.csv`, `posicoes.json` e `posicoes.csv`. Nada disso é publicação.
+4. **Adjudicação** (`--adjudicacao=<planilha>`): cada divergência recebe valor final, páginas, trecho e justificativa. Gera `codificacao-final.csv`, `posicoes.json` e `posicoes.csv`. Nada disso é publicação. **Quem adjudica** (24/10/2026): de preferência uma pessoa que não fez nenhuma das codificações. Se quem adjudica fez uma delas, isso é declarado na publicação, e cada decisão cita as páginas, o trecho e a regra deste livro que a sustentam; preferir a própria leitura, sem essa base, não é justificativa. Modelo de linguagem nunca adjudica.
 
 ## 7. Cálculo
 
@@ -150,7 +150,7 @@ Mudar afirmações, polos, escala, termos, mínimo ou reamostragem cria uma nova
 ## 9. Decisões pendentes de Rafael
 
 1. ~~Aprovar as afirmações~~: aprovadas em 22/10/2026, com possibilidade de ampliação em versões futuras.
-2. ~~Quem codifica~~: codificação A pelo Claude (decisão de 22/10/2026; leitura integral dos 12 documentos concluída em 24/10/2026), guardada fora do pacote, em `data/compass/bussola-kieskompas-v1/codificacao-a/`. Pendentes: quem faz a codificação B e quem adjudica.
+2. ~~Quem codifica~~: codificação A pelo Claude (decisão de 22/10/2026; leitura integral dos 12 documentos concluída em 24/10/2026), guardada fora do pacote, em `data/compass/bussola-kieskompas-v1/codificacao-a/`. Pendentes: quem faz a codificação B e quem adjudica (a regra para quem adjudica tendo codificado está na seção 6).
 3. ~~Concordância mínima~~: kappa ponderado ≥ 0,70 por eixo (22/10/2026); Rafael também considerou razoável 0,75.
 4. Publicação, página e canal de contestação (fases P3 e P4 do plano).
 

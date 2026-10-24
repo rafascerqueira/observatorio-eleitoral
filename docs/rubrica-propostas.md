@@ -1,6 +1,6 @@
 # Rubrica das propostas de governo: acessibilidade e mobilidade urbana
 
-Livro de códigos da versão `rubrica-acessibilidade-mobilidade-v1` (fase D3 do [plano de melhorias](plano-postgis-propostas.md)). Proposto em 20/10/2026 para aprovação de Rafael: nenhum documento foi codificado e nada foi publicado. Critérios, valores e termos estão no código em `apps/importer/src/rubric-core.ts`; mudar qualquer um deles exige nova versão.
+Livro de códigos da versão `rubrica-acessibilidade-mobilidade-v1` (fase D3 do [plano de melhorias](plano-postgis-propostas.md)). Proposto em 20/10/2026 para aprovação de Rafael e ajustado em 24/10/2026 (autoria, leitura integral, limitação da seção 3, exemplos e critério de publicação da seção 7): nenhum documento foi codificado e nada foi publicado. Critérios, valores e termos estão no código em `apps/importer/src/rubric-core.ts`; mudar qualquer um deles exige nova versão.
 
 ## 1. Finalidade e limites
 
@@ -12,6 +12,7 @@ A rubrica registra, com página e trecho, o que cada plano de governo da Presid�
 - Os 12 documentos registrados no TSE são codificados com o mesmo procedimento:
   - o nº 14 tem um documento para duas candidaturas, codificado uma vez;
   - o nº 90, inapto e sem votos, entra na codificação e é listado à parte, como em `/propostas`.
+- **Quem codifica (decisão de Rafael, 24/10/2026):** duas codificações independentes. Uma pode ser feita por modelo de linguagem, declarada como tal; a outra é sempre de uma pessoa, e a adjudicação das divergências é humana. A autoria de cada codificação é declarada na concordância (seção 6) e informada na publicação.
 - O texto é o da publicação `proposals-2022-v2` (`e2c6e07e…`), e os PDFs do pacote são conferidos pelo SHA-256 publicado.
 
 ## 2. Tema
@@ -30,11 +31,13 @@ A rubrica registra, com página e trecho, o que cada plano de governo da Presid�
 - "acessibilidade" no sentido de acesso a serviços ou de preço acessível;
 - acessibilidade na comunicação, digital ou educacional (Libras, inclusão escolar), que pode ser tema de outra versão.
 
-**Menção em lista conta.** Por exemplo, "ampliar o acesso a saneamento, transporte e moradia" conta como trecho do tema, desde que o termo se refira ao deslocamento de pessoas ou à acessibilidade; nesse caso, a medida é genérica. Em caso de dúvida, registre-a na observação, sem decidir pela outra pessoa.
+**Menção em lista conta.** Por exemplo, "ampliar o acesso a saneamento, transporte e moradia" conta como trecho do tema, desde que o termo se refira ao deslocamento de pessoas ou à acessibilidade; nesse caso, a medida é genérica. Em caso de dúvida, registre-a na observação, sem tentar adivinhar o que a outra codificação fará.
 
 ## 3. Critérios e valores
 
 A unidade é o documento: um valor vale se aparece em **qualquer** trecho do tema, e a evidência é o trecho que o mostra. Se o tema não foi localizado, todos os demais critérios recebem `nao-se-aplica`. Se foi localizado, nenhum recebe.
+
+**Limitação declarada (decisão de Rafael, 24/10/2026):** os critérios descrevem o documento, não cada medida. Público, território, metas, prazo, responsável, custo, fonte e acompanhamento podem vir de trechos e de medidas diferentes. Um documento com `meta-quantidade` e `meta-prazo` declarados não tem, necessariamente, uma medida com meta e prazo. A publicação mostra o trecho de cada valor e repete esta limitação junto dos resultados.
 
 | Critério | Pergunta | Valores |
 | --- | --- | --- |
@@ -54,7 +57,20 @@ A unidade é o documento: um valor vale se aparece em **qualquer** trecho do tem
 - **Valor mais completo:** havendo mais de um trecho, vale o mais completo (`com-dado` sobre `sem-dado`; `especifica` sobre `generica`).
 - **Negações:** compromisso de manter, não fazer ou revogar algo também é medida — específica se diz o quê. Registre a negação na observação.
 - **Sem inferência:** não se completa o que o texto não diz (custo, prazo, órgão), nem com conhecimento externo.
-- **Leitura completa:** registre na observação o que ajudar a outra pessoa a entender a leitura (seção, contexto), sem pedir acordo.
+- **Observação útil:** registre na observação o que ajudar a adjudicação a entender a leitura (seção, contexto), sem pedir acordo.
+
+**Exemplos.** As frases abaixo foram inventadas para ilustrar as regras; nenhuma vem dos planos de 2022.
+
+| Frase fictícia | Valores |
+| --- | --- |
+| "A mobilidade urbana precisa melhorar." | `diagnostico` `sem-dado`; nenhuma medida |
+| "Metade das calçadas das capitais não tem rampa, segundo o órgão X." | `diagnostico` `com-dado` |
+| "Vamos melhorar o transporte público." | `intervencao` `generica` |
+| "O Ministério X criará o programa Ônibus Acessível, de compra de ônibus adaptados para as regiões metropolitanas." | `intervencao` `especifica`; `responsabilidade` `mencionada` (ministério e programa nomeados); `territorio` `declarado` (regiões metropolitanas); a frase não declara público ("adaptados" descreve o veículo) |
+| "…com 2.000 ônibus até 2025, financiados por um fundo nacional de mobilidade." | `meta-quantidade` `declarada`; `meta-prazo` `declarado`; `fonte-recursos` `declarada`; `custo` não declarado |
+| "…ao custo de R$ 3 bilhões, com um painel público do número de ônibus entregues por ano." | `custo` `declarado`; `acompanhamento` `declarado` |
+| "Vamos manter a gratuidade para pessoas idosas no transporte coletivo." | `intervencao` `especifica` (negação ou manutenção também é medida); `publico` `declarado` |
+| "Investir em saúde, educação e transporte." | tema `trata` só se "transporte" se referir ao deslocamento de pessoas; `intervencao` `generica` |
 
 ## 4. Evidência
 
@@ -81,43 +97,46 @@ Ficam fora da lista os termos que a busca por trecho não separa de outras palav
 | cidades | casa com "capacidades" e é amplo demais |
 | urbana, urbano | amplos demais (população urbana, violência urbana) |
 
-Os trechos candidatos são ponto de partida, não codificação. Antes de registrar `tema` como `nao-localizado`, cada pessoa revisa:
-1. todos os trechos candidatos do documento;
-2. o sumário ou os títulos das seções;
-3. as seções sobre cidades, transporte, infraestrutura, pessoas com deficiência ou direitos.
+Os trechos candidatos são ponto de partida, não codificação. **Cada codificação lê os 12 documentos inteiros** (decisão de Rafael, 24/10/2026), e não só os trechos candidatos, o sumário ou as seções do tema, antes de registrar qualquer valor, e em especial `nao-localizado`. Assim todas as candidaturas passam pelo mesmo procedimento, e a extensão do plano não muda o que pode ser encontrado nele.
 
 Trechos achados na leitura valem como os da busca. No pacote gerado em 20/10/2026, os nº 14 e nº 27 não têm nenhum trecho candidato; neles, a decisão depende dessa leitura.
 
 ## 6. Procedimento
 
-1. **Pacote** (`npm run rubric:packet`): o mesmo material para as duas pessoas, em `data/rubric/<versão>/pacote-<data>/`:
+1. **Pacote** (`npm run rubric:packet`): o mesmo material para as duas codificações, em `data/rubric/<versão>/pacote-<data>/`. O diretório do pacote só tem material comum; as planilhas preenchidas e as notas de cada codificação ficam fora dele:
    - PDFs conferidos pelo SHA-256 e texto publicado por página;
    - `trechos-candidatos.csv` e `codificacao-modelo.csv` (132 linhas: 12 documentos × 11 critérios);
    - `manifest.json`, com a versão da rubrica, os termos e a publicação do texto, e `LEIA-ME.txt`.
-2. **Codificação independente:** cada pessoa copia o modelo, preenche todas as linhas e salva como CSV UTF-8 com ";". As duas não conversam sobre a codificação nem veem a planilha da outra até terminarem.
+2. **Codificação independente:** cada codificação copia o modelo para fora do pacote, lê os documentos inteiros, preenche todas as linhas e salva como CSV UTF-8 com ";". Quem codifica não conversa sobre a codificação nem vê a outra planilha, ou notas sobre ela, até as duas terminarem.
 3. **Validação e concordância** (`npm run rubric:agreement -- --pacote=<dir> --a=<planilha> --autoria-a=<pessoa|modelo:id> --b=<planilha> --autoria-b=<pessoa|modelo:id>`):
    - a autoria de cada planilha é declarada e gravada em `concordancia.json` (`pessoa`, sem nome, ou `modelo:<identificador>`); as duas como modelo são recusadas. As planilhas preenchidas ficam fora do diretório do pacote;
    - as duas planilhas são conferidas: linhas completas, valores permitidos, coerência com o tema, páginas e trechos;
-   - com elas válidas, gera `concordancia.json` e `adjudicacao-modelo.csv`, só com as divergências e o que cada pessoa registrou;
+   - com elas válidas, gera `concordancia.json` e `adjudicacao-modelo.csv`, só com as divergências e o que cada codificação registrou;
    - grava o SHA-256 de cada planilha.
-4. **Adjudicação:** cada divergência recebe valor final, páginas, trecho e justificativa, pela forma de revisão que Rafael definir. Com `--adjudicacao=<planilha>`, o programa consolida a `codificacao-final.csv`, com a origem de cada valor (`concordancia` ou `adjudicacao`). A decisão passa pela mesma validação; divergência sem decisão e justificativa bloqueia.
-5. **Publicação:** a decidir (seção 9). As planilhas originais das duas pessoas e a adjudicação ficam preservadas, para que a publicação mostre a origem de cada valor.
+4. **Consistência da codificação por modelo:** quando uma das codificações é feita por modelo de linguagem, ele codifica duas vezes, em sessões independentes, sem ver a primeira (A1 e A2). A A1 é a que entra na concordância com a codificação da pessoa; a A2 só mede a consistência. `npm run rubric:agreement -- --pacote=<dir> --a=<A1> --autoria-a=modelo:<id> --b=<A2> --autoria-b=modelo:<id> --consistencia` mede A1 × A2 com as mesmas estatísticas e grava o resultado ao lado da planilha A1, fora do pacote, sem planilha de adjudicação. A consistência não muda nenhum valor: é publicada na página de método, e critério com consistência baixa orienta a revisão das regras.
+5. **Adjudicação:** cada divergência recebe valor final, páginas, trecho e justificativa, pela forma de revisão que Rafael definir. Com `--adjudicacao=<planilha>`, o programa consolida a `codificacao-final.csv`, com a origem de cada valor (`concordancia` ou `adjudicacao`). A decisão passa pela mesma validação; divergência sem decisão e justificativa bloqueia. **Quem adjudica** (24/10/2026): de preferência uma pessoa que não fez nenhuma das codificações. Se quem adjudica fez uma delas, isso é declarado na publicação, e cada decisão cita as páginas, o trecho e a regra deste livro que a sustentam; preferir a própria leitura, sem essa base, não é justificativa. Modelo de linguagem nunca adjudica.
+6. **Publicação:** a decidir (seção 9), só para os critérios que atingem o mínimo da seção 7. As planilhas originais das duas codificações e a adjudicação ficam preservadas, para que a publicação mostre a origem de cada valor.
 
-## 7. Concordância
+## 7. Concordância e critério de publicação
 
-Por critério: itens, concordâncias, proporção observada e kappa de Cohen; também no conjunto, com as categorias separadas por critério.
-- O kappa fica nulo quando a concordância esperada é total, isto é, quando as duas pessoas usaram uma só categoria, a mesma, em todos os documentos. Nesse caso, publica-se a proporção.
-- Com 12 documentos por critério, o kappa é instável: as contagens são publicadas junto.
-- Divergência no tema se propaga para os demais critérios do documento; a adjudicação começa pelo tema.
+Fixados antes de qualquer codificação, em 24/10/2026, por decisão de Rafael. Não mudam depois de ver o resultado: mudar a estatística ou o mínimo cria uma nova versão.
+
+- **Medidas por critério** (`reliability` em `concordancia.json`): itens, concordância observada, kappa de Cohen e **AC1 de Gwet**, com intervalo de 95% por reamostragem dos documentos (2.000 reamostras, semente fixa por critério, para o mesmo resultado a cada execução). O relatório traz também o kappa por critério e no conjunto, calculado sobre todas as linhas.
+- **Por que o AC1:** com 12 documentos e muitos `nao-localizado`, o kappa pode ficar perto de zero mesmo com quase tudo concordando. Exemplo: 11 de 12 documentos `nao-localizado` nas duas codificações e um divergente dão 92% de concordância, kappa zero e AC1 de 0,91. O AC1 sofre menos com essa concentração; o número de categorias é o de valores do critério.
+- **Critérios dependentes do tema:** os pares em que alguma codificação marcou `nao-se-aplica` ficam fora do cálculo. Esse valor decorre do tema, e a divergência no tema já aparece no critério `tema`. Critério sem nenhum par válido fica sem medida.
+- **Publicação:** critério com AC1 de pelo menos **0,70** é publicado. Abaixo disso, ou sem medida, o critério não é publicado e volta para revisão das regras numa nova versão, com os números na página de método. Concordância observada, kappa, AC1, contagens e intervalo são publicados sempre, também para os critérios publicados. Com 12 documentos, o intervalo é largo: não serve de regra, mas mostra a incerteza.
+- **Divergência no tema** se propaga para os demais critérios do documento; a adjudicação começa pelo tema.
 
 ## 8. Versionamento
 
 - Mudar a definição do tema, os critérios, os valores ou os termos cria uma nova versão, com novo pacote. Codificações de versões diferentes não se misturam.
 - O pacote registra a versão e a publicação do texto. Uma nova publicação das propostas exige um novo pacote.
+- Os ajustes de 24/10/2026 (autoria, leitura integral, limitação da seção 3, exemplos e critério de publicação da seção 7) entraram antes de qualquer codificação e não mudam tema, critérios, valores nem termos: a versão continua `v1`, e o pacote de 21/10 continua válido. Depois que a codificação começar, mudar a estatística ou o mínimo da seção 7 cria uma nova versão.
 
 ## 9. Decisões pendentes de Rafael
 
-1. Quem codifica (duas pessoas independentes) e como as divergências são adjudicadas.
+1. ~~Codificação por modelo~~: aceita em 24/10/2026, para uma das duas codificações (seção 1). Pendentes: quem faz cada codificação e quem adjudica (a regra para quem adjudica tendo codificado está na seção 6).
 2. Aprovação desta versão: definição do tema, critérios, regras e termos.
-3. Concordância mínima para publicar cada critério: um limite, ou publicar sempre com os números e rever na versão seguinte o critério de concordância baixa.
+3. ~~Concordância mínima~~: decidida em 24/10/2026, com AC1 de Gwet de pelo menos 0,70 por critério, números publicados sempre e consistência da codificação por modelo (seções 6 e 7).
 4. Publicação e canal de contestação, que podem ser e-mail do projeto, formulário ou issue no repositório. A codificação final sempre vai com as planilhas, a concordância e a versão.
+5. Território: se expressões genéricas como "nas cidades" ou "nos municípios", que são o próprio escopo do tema, contam como `declarado` (proposta: não contam, como "o país"). Precisa ser decidido antes da codificação, para não virar fonte de divergência.
