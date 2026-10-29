@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { municipalityQuerySchema, placesQuerySchema, STATES } from '@observatorio/contracts';
 import { ErrorSummary, OfficeField, QuerySelect, TurnField } from '../components/query-fields';
-import { availabilityFromCatalog, roundOptions } from '../lib/rounds';
+import { availabilityFromCatalog, roundOptions, yearChoices } from '../lib/rounds';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from '../lib/query-ui';
 import { brazilHref, formFingerprint, overviewHref, queryHref } from '../lib/query-navigation';
 
@@ -116,11 +116,13 @@ test('quadro de votos não válidos identifica a fonte do nome e não exibe perc
 test('turnos oferecidos seguem as publicações: 2º turno só onde existiu, turno único no Senado', () => {
   // Catálogo sintético: Presidência nacional com dois turnos; Governador com e sem 2º turno; Senador em turno único.
   const availability = availabilityFromCatalog([
-    { office: 'president', level: 'national', rounds: ['1', '2'] },
-    { office: 'governor', level: 'state', uf: 'SP', rounds: ['1', '2'] },
-    { office: 'governor', level: 'state', uf: 'CE', rounds: ['1'] },
-    { office: 'senator', level: 'state', uf: 'RJ', rounds: ['1'] },
-    { office: 'president', level: 'municipality', uf: 'SP' },
+    { year: 2022, office: 'president', level: 'national', rounds: ['1', '2'] },
+    { year: 2022, office: 'governor', level: 'state', uf: 'SP', rounds: ['1', '2'] },
+    { year: 2022, office: 'governor', level: 'state', uf: 'CE', rounds: ['1'] },
+    { year: 2022, office: 'senator', level: 'state', uf: 'RJ', rounds: ['1'] },
+    { year: 2022, office: 'president', level: 'municipality', uf: 'SP' },
+    // Mesma UF em outro ano: o 2º turno de um ano não vale para o outro.
+    { year: 2026, office: 'governor', level: 'state', uf: 'SP', rounds: ['1'] },
   ]);
   assert.deepEqual(roundOptions(availability, 'president').rounds, ['1', '2']);
   assert.deepEqual(roundOptions(availability, 'governor', 'SP'), { rounds: ['1', '2'], note: null, decided: null });
@@ -132,7 +134,16 @@ test('turnos oferecidos seguem as publicações: 2º turno só onde existiu, tur
   // UF sem publicação: nada é presumido além da regra do cargo.
   assert.deepEqual(roundOptions(availability, 'governor', 'BA'), { rounds: ['1', '2'], note: null, decided: null });
   // Publicação antiga sem `rounds` não vira turno único.
-  assert.deepEqual(availabilityFromCatalog([{ office: 'president', level: 'national' }]).president?.BR, ['1', '2']);
+  assert.deepEqual(availabilityFromCatalog([{ year: 2022, office: 'president', level: 'national' }])['2022']?.president?.BR, ['1', '2']);
+  assert.deepEqual(roundOptions(availability, 'governor', 'SP', '2026').rounds, ['1']);
+  assert.equal(roundOptions(availability, 'governor', 'SP', '2026').decided, 'first-round');
+  // Senado: uma vaga em 2022, duas em 2026; o aviso diz quantas são eleitas.
+  assert.match(roundOptions(availability, 'senator', 'RJ', '2026').note!, /duas candidaturas mais votadas/);
+  assert.match(roundOptions(availability, 'senator', 'RJ').note!, /maioria simples/);
+  const years = yearChoices([{ year: 2022 }, { year: 2026 }], '2022');
+  assert.deepEqual([years.choices.map((item) => item.label), years.disabledValues], [['2022', '2026'], []]);
+  assert.deepEqual(yearChoices([{ year: 2022 }], '2022').disabledValues, ['2026']);
+  assert.deepEqual(yearChoices([{ year: 2022 }], '2026').disabledValues, [], 'Ano pedido no endereço continua selecionável para mostrar o aviso');
   assert.deepEqual(roundOptions({}, 'president').rounds, ['1', '2']);
 
   const single = renderToStaticMarkup(createElement(TurnField, { value: '1', errors: [], rounds: ['1'], note: 'Turno único.' }));

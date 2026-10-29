@@ -5,14 +5,29 @@ import { count, type Row } from './csv';
 export const IMPORTER_VERSION = 'sao-paulo-2022-v1';
 type Round = '1' | '2';
 /** Recorte auditado de uma eleição: cargo, códigos de eleição por turno e turnos esperados. */
-export type ElectionScope = { year: 2022; office: Office; cargo: string; electionCodes: Partial<Record<Round, string>>; rounds: readonly Round[];
+export type ElectionScope = { year: 2022 | 2026; office: Office; cargo: string; electionCodes: Partial<Record<Round, string>>; rounds: readonly Round[];
   /** Aceita votos Anulado / Anulado sub judice (nominal) e nulos técnicos (seções), reconciliados por zona. */
-  nonValidVotes?: boolean };
+  nonValidVotes?: boolean;
+  /** Vagas (votos por eleitor). Ausente = uma; com duas, os votos da zona somam o dobro do comparecimento. */
+  seats?: 1 | 2 };
 export const PRESIDENT_2022: ElectionScope = { year: 2022, office: 'president', cargo: '1', electionCodes: { '1': '544', '2': '545' }, rounds: ['1', '2'] };
 // Eleições estaduais de 2022 (546/547), auditadas nos originais das 27 UFs.
 export const GOVERNOR_2022: ElectionScope = { year: 2022, office: 'governor', cargo: '3', electionCodes: { '1': '546', '2': '547' }, rounds: ['1', '2'], nonValidVotes: true };
 // Senado 2022: uma vaga por UF, um voto por eleitor, maioria simples em turno único (eleição 546 apenas).
 export const SENATOR_2022: ElectionScope = { year: 2022, office: 'senator', cargo: '5', electionCodes: { '1': '546' }, rounds: ['1'], nonValidVotes: true };
+// Presidência 2026 (6257/6258), auditada nos originais: a apuração traz nulos técnicos (votáveis sem candidatura válida),
+// que bloqueariam a regra de 2022; o nominal só tem votos válidos. Mesma regra de votos não válidos dos cargos estaduais.
+export const PRESIDENT_2026: ElectionScope = { year: 2026, office: 'president', cargo: '1', electionCodes: { '1': '6257', '2': '6258' }, rounds: ['1', '2'], nonValidVotes: true };
+// Eleições estaduais de 2026 (6259/6260): 2º turno de Governador em parte das UFs.
+export const GOVERNOR_2026: ElectionScope = { year: 2026, office: 'governor', cargo: '3', electionCodes: { '1': '6259', '2': '6260' }, rounds: ['1', '2'], nonValidVotes: true };
+// Senado 2026: duas vagas por UF, dois votos por eleitor, as duas candidaturas mais votadas em turno único (eleição 6259 apenas).
+export const SENATOR_2026: ElectionScope = { year: 2026, office: 'senator', cargo: '5', electionCodes: { '1': '6259' }, rounds: ['1'], nonValidVotes: true, seats: 2 };
+/** Presidência nacional por ano; publicações existentes nunca são reescritas. 2026: regra de votos não válidos (nulos técnicos na apuração). */
+export const NATIONAL_VERSIONS = { 2022: 'president-2022-national-v2', 2026: 'president-2026-national-v1' } as const;
+/** Exterior (ZZ) por ano: lê as partições da preparação nacional do mesmo ano. */
+export const EXTERIOR_VERSIONS = { 2022: 'president-2022-exterior-v1', 2026: 'president-2026-exterior-v1' } as const;
+/** Recortes auditados por ano e cargo. */
+export const SCOPES = { 2022: { president: PRESIDENT_2022, governor: GOVERNOR_2022, senator: SENATOR_2022 }, 2026: { president: PRESIDENT_2026, governor: GOVERNOR_2026, senator: SENATOR_2026 } } as const satisfies Record<ElectionScope['year'], Record<Office, ElectionScope>>;
 export type SectionVote = { electionCode: string; round: string; zone: number; section: number; local: string; number: string; votes: number; name: string | null; address: string | null; uf?: string; municipalityCode?: string; votableName?: string | null };
 type NonValid = z.infer<typeof nonValidVoteSchema>;
 type Classifier = (number: string) => 'blank' | 'null' | 'valid' | NonValid['category'];
@@ -67,9 +82,9 @@ function sortNonValid(items: NonValid[]) { return items.sort((a, b) => b.votes -
 export function reconcile(details: Row[], nominal: Row[], sections: SectionVote[], municipality = { code: '71072', name: 'São Paulo', uf: 'SP' as MunicipalityResult['uf'] }, options: { allowNonInstalled: boolean; scope?: ElectionScope } = { allowNonInstalled: false }) {
   return reconcileTerritory(details, nominal, sections, municipality, options);
 }
-export function reconcileExterior(details: Row[], nominal: Row[], sections: SectionVote[], city: { code: string; name: string }) {
-  if ([...details, ...nominal].some((row) => row.NR_ZONA !== '1') || sections.some((vote) => vote.zone !== 1)) throw new Error('Zona do exterior fora do escopo auditado de 2022.');
-  return reconcileTerritory(details, nominal, sections, { ...city, uf: 'ZZ' }, { allowNonInstalled: true, allowEmptyNonInstalled: true });
+export function reconcileExterior(details: Row[], nominal: Row[], sections: SectionVote[], city: { code: string; name: string }, scope = PRESIDENT_2022) {
+  if ([...details, ...nominal].some((row) => row.NR_ZONA !== '1') || sections.some((vote) => vote.zone !== 1)) throw new Error(`Zona do exterior fora do escopo auditado de ${scope.year}.`);
+  return reconcileTerritory(details, nominal, sections, { ...city, uf: 'ZZ' }, { allowNonInstalled: true, allowEmptyNonInstalled: true, scope });
 }
 function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: Row[], nominal: Row[], sections: SectionVote[], municipality: { code: string; name: string; uf: U }, options: { allowNonInstalled: boolean; allowEmptyNonInstalled?: boolean; scope?: ElectionScope }) {
   const scope = options.scope ?? PRESIDENT_2022;
@@ -157,9 +172,11 @@ function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: 
     let nonInstalledSections = 0;
     for (const [zone, row] of detailByZone) {
       const group = zoneVotes.get(zone) ?? [];
-      if (!group.length && !(municipality.uf === 'ZZ' && options.allowEmptyNonInstalled
-        && count(row, 'QT_VOTOS') === 0 && count(row, 'QT_COMPARECIMENTO') === 0
-        && count(row, 'QT_SECOES_PRINCIPAIS') === count(row, 'QT_SECOES_NAO_INSTALADAS'))) throw new Error(`Zona sem votos de seções: ${zone}`);
+      // Exterior: zona sem linhas de seção só quando a apuração confirma zero votos e zero comparecimento. As seções principais
+      // são não instaladas (2022) ou instaladas sem nenhum eleitor presente (2026: todos os aptos em abstenção); nenhuma linha é inventada.
+      const emptyZone = !group.length && municipality.uf === 'ZZ' && Boolean(options.allowEmptyNonInstalled)
+        && count(row, 'QT_VOTOS') === 0 && count(row, 'QT_COMPARECIMENTO') === 0;
+      if (!group.length && !emptyZone) throw new Error(`Zona sem votos de seções: ${zone}`);
       const calculated = emptyTotals(scope.nonValidVotes);
       const candidateVotes = new Map<string, number>();
       const plainNull = { votes: 0 };
@@ -186,7 +203,8 @@ function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: 
         ...(scope.nonValidVotes ? { annulled: count(row, 'QT_TOTAL_VOTOS_ANULADOS'), annulledSubJudice: count(row, 'QT_TOTAL_VOTOS_ANUL_SUBJUD'), technicalNull: count(row, 'QT_VOTOS_NULOS_TECNICOS') } : {}) };
       const missingSections = count(row, 'QT_SECOES_NAO_INSTALADAS');
       assertEqual(official.eligible, official.turnout + official.abstentions + official.nonInstalledEligible, `Zona ${zone}: aptos`);
-      assertEqual(official.turnout, official.totalVotes, `Zona ${zone}: comparecimento`);
+      // Cada eleitor que comparece dá um voto por vaga (inclusive branco ou nulo): duas vagas, o dobro de votos.
+      assertEqual(official.turnout * (scope.seats ?? 1), official.totalVotes, `Zona ${zone}: comparecimento × vagas`);
       assertEqual(official.totalVotes, official.valid + official.blank + official.null + (official.annulled ?? 0) + (official.annulledSubJudice ?? 0), `Zona ${zone}: composição dos votos`);
       const reconciledFields = scope.nonValidVotes ? ['valid', 'blank', 'null', 'totalVotes', 'annulled', 'annulledSubJudice', 'technicalNull'] as const : ['valid', 'blank', 'null', 'totalVotes'] as const;
       for (const field of reconciledFields) assertEqual(calculated[field] ?? 0, official[field] ?? 0, `Turno ${round}, zona ${zone}, ${field}`);
@@ -196,9 +214,14 @@ function reconcileTerritory<U extends MunicipalityResult['uf'] | 'ZZ'>(details: 
         assertEqual(official.annulled ?? 0, count(row, 'QT_VOTOS_NOMINAIS_ANULADOS'), `Zona ${zone}: anulados nominais`);
         assertEqual(official.annulledSubJudice ?? 0, count(row, 'QT_VOTOS_NOMINAIS_ANUL_SUBJUD'), `Zona ${zone}: anulados sub judice nominais`);
       }
-      assertEqual(uniqueSections.size + missingSections, count(row, 'QT_SECOES_PRINCIPAIS'), `Zona ${zone}: seções principais (com votos + não instaladas)`);
+      // Seções instaladas sem comparecimento não têm linhas no arquivo de seções: contam pela apuração, só em zona vazia confirmada.
+      const installedWithoutVotes = emptyZone ? count(row, 'QT_SECOES_PRINCIPAIS') - missingSections : 0;
+      if (installedWithoutVotes < 0) throw new Error(`Zona ${zone}: mais seções não instaladas que principais.`);
+      // Seção instalada sem comparecimento tem seus aptos em abstenção; sem abstenção, a falta de linhas não se explica.
+      if (installedWithoutVotes > 0 && count(row, 'QT_ABSTENCOES') === 0) throw new Error(`Zona sem votos de seções: ${zone} (seção instalada sem comparecimento nem abstenção).`);
+      assertEqual(uniqueSections.size + installedWithoutVotes + missingSections, count(row, 'QT_SECOES_PRINCIPAIS'), `Zona ${zone}: seções principais (com votos + instaladas sem comparecimento + não instaladas)`);
       if (row.QT_TOTAL_SECOES !== undefined && row.QT_SECOES_AGREGADAS !== undefined) assertEqual(count(row, 'QT_TOTAL_SECOES'), count(row, 'QT_SECOES_PRINCIPAIS') + count(row, 'QT_SECOES_AGREGADAS'), `Zona ${zone}: total de seções`);
-      sectionCount += uniqueSections.size;
+      sectionCount += uniqueSections.size + installedWithoutVotes;
       nonInstalledSections += missingSections;
       const candidates: Candidate[] = [];
       for (const candidate of candidateInfo.values()) {

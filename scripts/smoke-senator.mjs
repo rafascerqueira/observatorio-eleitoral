@@ -21,7 +21,7 @@ const official = { AC: [587222, 455438, 411949, 22, 18286], AL: [2322905, 180279
 const known = { RJ: ['technicalNull', 1573388, '142', 1566352], MT: ['technicalNull', 310481, '111', 310481], PB: ['annulled', 431857, '133', 431857], RO: ['annulled', 63300, '123', 63300], AM: ['annulledSubJudice', 10200, '700', 10200], TO: ['annulledSubJudice', 588, '271', 588] };
 
 const catalog = await json('/elections/catalog');
-const senators = catalog.datasets.filter((item) => item.level === 'state' && item.office === 'senator');
+const senators = catalog.datasets.filter((item) => item.year === 2022 && item.level === 'state' && item.office === 'senator');
 assert.ok(senators.length > 0, 'Ao menos uma publicação de Senador 2022 precisa estar concluída.');
 assert.ok(catalog.datasets.some((item) => item.level === 'national' && item.office === 'president'), 'Presidência nacional continua publicada.');
 const pendingSenate = catalog.plannedOffices.find((item) => item.office === 'senator');
@@ -91,5 +91,5 @@ assert.ok((await html('/?office=senator')).includes('cargo estadual: escolha uma
 assert.ok((await html('/?office=senator&uf=ZZ')).includes('Eleitores no exterior não votam'));
 const sources = await html('/fontes');
 const sample = senators[0];
-assert.ok(sources.includes(`Arquivos — Senador ${sample.uf}`)); assert.ok(sources.includes(`votacao_secao_2022_${sample.uf}.zip`));
+assert.ok(sources.includes(`Arquivos — Senador 2022 ${sample.uf}`)); assert.ok(sources.includes(`votacao_secao_2022_${sample.uf}.zip`));
 console.log(`Smoke de Senador 2022 aprovado: ${senators.length} UF(s), ${requests} requisições.`);

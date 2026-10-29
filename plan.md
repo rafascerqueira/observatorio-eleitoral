@@ -1022,3 +1022,52 @@ Pendente:
 - abrir os pull requests de aprovação dos dois livros;
 - decidir a proposta de publicação;
 - licença dos arquivos da identidade visual (`docs/identidade/`, `apps/web/public/brand/`), que hoje caem na regra geral do código.
+
+## 61. Dimensionamento da carga de 2026 — 28/10/2026
+
+Só medição; nada foi importado nem baixado para `data/`. Os arquivos de 2026 já estão no CDN do TSE com os dois turnos: 2º turno de Presidente nas 27 UFs e no exterior e de Governador em AC, AM, DF, ES, RN e TO. Os arquivos ainda estão sendo revistos (`detalhe_votacao_munzona_2026` foi gerado em 28/10 e `votacao_candidato_munzona_2026` foi alterado em 28/10).
+
+Linhas de `votacao_secao_2026_*` (Presidente, Governador e Senador), contadas em fluxo nos 28 ZIPs: Governador 3.153.951 (1º turno) + 157.002 (2º); Presidente 3.800.511 + 1.931.103; Senador 5.210.193 (duas vagas). São 14,25 mi de linhas, contra 13,58 mi publicadas de 2022.
+
+Estimativa (`national_section_votes` ≈ 423 B/linha com índices):
+- banco: ~6,0 GB de votos por seção + ~0,7 GB de resultados por local + ~0,15 GB de zonas, municípios e cobertura, total ~7 GB;
+- originais do TSE (seção, candidato por município/zona, detalhe, candidaturas): ~3,3 GB, gravados duas vezes (`data/raw` e cópia em `data/originals`), ~6,6 GB;
+- `data/staging`: ~3,5 GB (2022 publicado: ~3,3 GB);
+- backup antes da carga (~0,4 GB) e folga para WAL/temporários (~1,5 GB).
+Mínimo: ~19 GB. Se 2026 também ganhar perfis do eleitorado, locais, comparecimento e propostas (perfil por seção de 2026 tem 2,6 GB compactados contra 0,77 GB em 2022), somam-se ~7,5 GB, total ~27 GB. Disco livre hoje: 59 GB.
+
+A recuperar, se Rafael decidir: lotes não publicados de 2022 ocupam ~3,5 GB no banco (7,3 mi linhas de votos e 228 mil de resultados por local), e o `VACUUM FULL` exige espaço temporário equivalente à tabela. Ocupam ainda ~2,6 GB em `data/staging`.
+
+Pendente: decidir o escopo de 2026 e quando baixar (arquivos ainda em revisão); `datasetSchema.year` continua literal 2022; Senado de 2026 com duas vagas tem regra própria.
+
+Código necessário, conferido nos originais de 2026 (só levantamento; nada mudou):
+- os cabeçalhos de `detalhe_votacao_munzona`, `votacao_secao` e `votacao_candidato_munzona` são iguais aos de 2022; os códigos de eleição são 6257/6258 (Presidente) e 6259/6260 (estaduais);
+- **Senado com duas vagas:** em todas as 6.106 linhas de zona, `QT_VOTOS = 2 × QT_COMPARECIMENTO`, e há 2 eleitos em cada uma das 27 UFs. A verificação `comparecimento = votos` de `reconcileTerritory` bloqueia a carga; é preciso declarar as vagas no `ElectionScope` e explicar na interface o percentual sobre votos (dois por eleitor);
+- **Presidência com nulos técnicos:** 2.148 linhas de zona têm `QT_VOTOS_NULOS_TECNICOS > 0`; `PRESIDENT_2022` não aceita votos não válidos e bloquearia. O nominal da Presidência só tem `Válido`;
+- ano 2022 fixo no código: `ElectionScope.year` e `datasetSchema.year`, filtros `ANO_ELEICAO`, `INSERT`s com `2022` literal (`national.ts`, `exterior.ts`), escopos `2022/president/BR|ZZ` (importador e `publishedDataset`/`exteriorDataset` da API), nomes de arquivo e `data/raw/tse/2022` em `sources.ts`/`audit.ts`/`verify-national.ts`, `year !== '2022'` em `map/values`, e o seletor da web, que desabilita 2026;
+- o esquema do banco já inclui `year` e `batch_id` nas chaves: nenhuma migração;
+- as análises derivadas (locais → setores, perfis, métrica E, participação, propostas) têm escopos e arquivos de 2022 fixos; só entram se 2026 tiver escopo amplo.
+
+## 62. Eleições de 2026: Presidência, Governador e Senador publicados — 28 e 29/10/2026
+
+A pedido de Rafael ("vamos importar os cargos que já importamos de 2022"), 2026 entrou com os mesmos cargos e publicações próprias. Contexto municipal, perfis, locais → setores, métrica E, participação por perfil e propostas continuam só em 2022 (fora do pedido).
+
+**Importador:**
+- ano como parâmetro (`--year`, padrão 2022): `nationalSources(year)`/`stateSources(uf, year)` e `data/raw/tse/<ano>`. As publicações de 2022 mantêm a identidade (mesmas versões, escopos e arquivos) e não foram regravadas;
+- `SCOPES` por ano em `model.ts`: `PRESIDENT_2026` (6257/6258, com votos não válidos: a apuração tem nulos técnicos em 2.148 linhas de zona), `GOVERNOR_2026` (6259/6260), `SENATOR_2026` (6259, `seats: 2`). A reconciliação confere `votos = comparecimento × vagas` por zona;
+- Presidência nacional e exterior gravam com `persistTerritory` (o objeto reconciliado inteiro, com `nonValidVotes`) e passam por `verifyPersisted` (movido para `persist.ts`) antes de publicar. `verify:national` recebe o ano;
+- exterior: em 2026, Ciudad Guayana (dois turnos) e Trípoli (2º turno) tiveram seção instalada sem nenhum comparecimento (aptos todos em abstenção) e sem linha no arquivo de seções. A primeira tentativa bloqueou ("Zona sem votos de seções"). Regra nova, só em ZZ: zona sem linhas é aceita quando a apuração confirma zero votos e zero comparecimento; as seções instaladas contam pela apuração e exigem abstenção. Declarada no relatório e na metodologia.
+
+**API e web:** Presidência e exterior buscados pelo ano (`<ano>/president/BR|ZZ`; piloto só em 2022); `map/values` aceita 2026; mapas com junção à esquerda no contexto (`id` nulo para Boa Esperança do Norte, MT, TSE 73709, criado depois do Censo 2022: fica nas somas da UF e nas tabelas, fora do desenho, com aviso); turnos disponíveis por ano; seletor de ano a partir do catálogo; campo de ano nos dois mapas; aviso das duas vagas do Senado 2026; seção "Eleições de 2026" na metodologia; fontes por ano; contratos: `ELECTION_YEARS`, `officeSeats`, `dataset.seats`, `id` anulável nos mapas.
+
+**Carga** (backup antes: `data/backups/observatorio-2026-10-28-antes-2026.dump`, 1,4 GB, SHA-256 ao lado): 56 etapas sem falha, de 20:50 a 23:53 — Presidência nacional (5.571 municípios, 2.472 s), `verify:national`, exterior (186 localidades, 17.010 linhas, na 2ª tentativa) e Governador e Senador nas 27 UFs. Linhas de seção de 2026 no banco: 14.252.760, iguais à contagem direta nos ZIPs (item 61). Originais de 2026 gerados entre 26 e 28/10 (o TSE ainda revisava arquivos); outra versão dos arquivos exige nova publicação.
+
+**Espaço:** banco 12 → 18 GB (volume 12,7 → 19,4 GB), `data/raw` + `data/originals` +6,7 GB, `data/staging` +3,7 GB, backup 1,4 GB; disco livre 59 → 40 GB (estimativa do item 61: ~19 GB).
+
+**Verificação:** typecheck sem erros; testes unitários: importador 59 (novos: Senado com duas vagas, nulos técnicos da Presidência, fontes por ano, seção instalada sem comparecimento no exterior), web 41 (turnos por ano, seletor de ano), API 30, contratos 16; build da web; os 9 smoke tests e `check:regressions` passando. Os smoke passaram a fixar 2022 nas buscas do catálogo e a conferir 2026 publicado onde antes conferiam "não publicado". Conferido na API: 2º turno de 2026 com exterior, Senado SP com `seats: 2` e votos = 2 × comparecimento, Governador ES com 2º turno e SP sem, soma de MT no mapa = resultado estadual.
+
+Pendente:
+- commit (não pedido);
+- decidir se 2026 terá contexto, perfis e associação local → setor (cadastro de locais e perfis do TSE de 2026; ~7,5 GB a mais, item 61);
+- se o TSE publicar nova versão dos arquivos de 2026, nova publicação com nova identidade;
+- liberar espaço dos lotes de 2022 não publicados (~3,5 GB no banco e ~2,6 GB em staging), se Rafael decidir.

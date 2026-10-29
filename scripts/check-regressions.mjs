@@ -6,11 +6,12 @@ const web = process.env.SMOKE_WEB_URL ?? 'http://127.0.0.1:3000';
 let requests = 0;
 async function request(base, path) { requests++; return fetch(new URL(path, base), { signal: AbortSignal.timeout(120000) }); }
 for (const round of ['1', '2']) for (const suffix of ['', '&uf=SP']) for (const path of [`/elections/map/candidates?round=${round}${suffix}`, `/elections/places/groups?indicator=college&round=${round}${suffix}`, `/elections/places/groups?indicator=income-median&radius=500&round=${round}${suffix}`]) {
-  const missing = await request(api, `${path}&year=2026`); assert.equal(missing.status, 200); assert.equal((await missing.json()).status, 'awaiting-import');
+  // Mapas por candidatura derivam dos resultados (2026 publicado); grupos de locais e sensibilidade só existem para 2022.
+  const missing = await request(api, `${path}&year=2026`); assert.equal(missing.status, 200); assert.equal((await missing.json()).status, path.includes('map/candidates') ? 'published' : 'awaiting-import');
   const current = await request(api, `${path}&year=2022`); assert.equal(current.status, 200); assert.equal((await current.json()).status, 'published');
 }
 const catalog = await (await request(api, '/elections/catalog')).json();
-const national = catalog.datasets.find((item) => item.level === 'national');
+const national = catalog.datasets.find((item) => item.year === 2022 && item.level === 'national');
 const expected = await readFile(resolve('data/audit', `${national.id}.json`));
 for (const [base, path] of [[api, `/elections/imports/${national.id}/report`], [web, `/arquivos/imports/${national.id}/report`]]) {
   const response = await request(base, path); assert.equal(response.status, 200); assert.equal(response.headers.get('content-type'), 'application/json');

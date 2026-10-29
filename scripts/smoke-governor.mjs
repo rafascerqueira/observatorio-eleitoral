@@ -23,7 +23,7 @@ const official = {
 };
 
 const catalog = await json('/elections/catalog');
-const dataset = catalog.datasets.find((item) => item.level === 'state' && item.office === 'governor' && item.uf === 'SP');
+const dataset = catalog.datasets.find((item) => item.year === 2022 && item.level === 'state' && item.office === 'governor' && item.uf === 'SP');
 assert.ok(dataset, 'Publicação de Governador 2022/SP precisa estar concluída.');
 assert.deepEqual(dataset.rounds, ['1', '2']);
 assert.equal(dataset.coverage.expected, 645); assert.equal(dataset.coverage.reconciled, 645); assert.equal(dataset.coverage.blocked, 0);
@@ -57,7 +57,7 @@ for (const round of ['1', '2']) {
 
 // Todas as UFs publicadas para Governador: invariantes, turnos realizados e categorias não válidas.
 const SECOND_ROUND = ['AL', 'AM', 'BA', 'ES', 'MS', 'PB', 'PE', 'RO', 'RS', 'SC', 'SE', 'SP'];
-const governorDatasets = catalog.datasets.filter((item) => item.level === 'state' && item.office === 'governor');
+const governorDatasets = catalog.datasets.filter((item) => item.year === 2022 && item.level === 'state' && item.office === 'governor');
 for (const item of governorDatasets) {
   assert.equal(item.coverage.blocked, 0); assert.equal(item.coverage.expected, item.coverage.reconciled);
   assert.deepEqual(item.rounds, SECOND_ROUND.includes(item.uf) ? ['1', '2'] : ['1'], `turnos de ${item.uf}`);
@@ -130,5 +130,5 @@ assert.ok(exterior.includes('Eleitores no exterior não votam'));
 const placesPage = await html('/municipios/71072?office=governor&uf=SP&round=1');
 assert.ok(placesPage.includes('Governador · 2022 · 1º turno')); assert.ok(placesPage.includes('name="office" value="governor"'));
 const sources = await html('/fontes');
-assert.ok(sources.includes('Arquivos — Governador SP')); assert.ok(sources.includes('votacao_secao_2022_SP.zip'));
+assert.ok(sources.includes('Arquivos — Governador 2022 SP')); assert.ok(sources.includes('votacao_secao_2022_SP.zip'));
 console.log(`Smoke de Governador 2022 aprovado: ${governorDatasets.length} UF(s), ${requests} requisições.`);

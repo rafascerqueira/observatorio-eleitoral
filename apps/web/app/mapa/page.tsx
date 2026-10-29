@@ -12,7 +12,7 @@ import { MapTabs } from '../../components/map-tabs';
 import { Scatter } from '../../components/scatter';
 import { joinSeries, resolveSeries } from '../../lib/map-series';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, type QueryError, type RawQuery } from '../../lib/query-ui';
-import { availabilityFromCatalog } from '../../lib/rounds';
+import { availabilityFromCatalog, yearChoices } from '../../lib/rounds';
 
 export const metadata: Metadata = { title: 'Mapa' };
 export const dynamic = 'force-dynamic';
@@ -36,6 +36,9 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
   const seriesError: QueryError | null = state?.status === 'unknown-candidate' ? { field: 'series', message: `A candidatura nº ${filters.series} não está em ${OFFICE_LABELS[filters.office]}${filters.uf ? ` em ${UF_NAMES[filters.uf]}` : ''} no ${filters.round}º turno. Escolha outra comparação.` } : null;
   const errors = [...(parsed.success ? [] : queryErrors(raw, parsed.error.issues)), ...(scopeError ? [scopeError] : []), ...(seriesError ? [seriesError] : [])];
   const availability = availabilityFromCatalog(catalog?.datasets ?? []);
+  const years = yearChoices(catalog?.datasets ?? null, rawValue(raw, 'year', filters.year));
+  // O ano só vai no endereço quando não é o padrão, como os demais filtros opcionais.
+  const yearParam: Record<string, string> = filters.year === '2022' ? {} : { year: filters.year };
   const topology = geometry?.status === 'published' ? geometry.topology : null;
   const left = census?.status === 'published' ? census : null;
   const series = state?.status === 'ready' ? state.series : null;
@@ -45,30 +48,31 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
   const meta = MAP_INDICATORS[filters.indicator];
   // Na visão por UF, a API traz a sigla como nome: dica, dispersão e tabela mostram o nome por extenso.
   const named = (items: MapValues['items']) => level === 'uf' ? items.map((item) => ({ ...item, name: UF_NAMES[item.uf] })) : items;
-  const href = (item: { code: string; uf: string }) => level === 'uf' ? `/mapa?${new URLSearchParams({ indicator: filters.indicator, round: filters.round, office: filters.office, series: filters.series, uf: item.uf })}`
-    : `/municipios/${item.code}?${new URLSearchParams({ uf: item.uf, round: filters.round, ...(filters.office === 'president' ? {} : { office: filters.office }) })}`;
+  const href = (item: { code: string; uf: string }) => level === 'uf' ? `/mapa?${new URLSearchParams({ ...yearParam, indicator: filters.indicator, round: filters.round, office: filters.office, series: filters.series, uf: item.uf })}`
+    : `/municipios/${item.code}?${new URLSearchParams({ ...yearParam, uf: item.uf, round: filters.round, ...(filters.office === 'president' ? {} : { office: filters.office }) })}`;
   const map = topology ? projectShapes(topology as Topology) : { shapes: [], height: 0, insets: [] };
   const rows = left && series ? joinSeries(named(left.items), series.items) : [];
   // Dica curta (o título e os eixos já nomeiam as duas medidas): o texto se repete em cada ponto, no HTML e no payload do servidor.
-  const plotted = rows.flatMap((row) => row.census.value === null || row.series?.value == null ? [] : [{ id: row.id, name: row.name, x: row.census.value, y: row.series.value, weight: row.series.denominator ?? 0,
+  const plotted = rows.flatMap((row) => row.census.value === null || row.series?.value == null ? [] : [{ id: row.id ?? `${row.uf}-${row.code}`, name: row.name, x: row.census.value, y: row.series.value, weight: row.series.denominator ?? 0,
     detail: `Censo: ${pct(row.census.value)} · ${series!.kind === 'abstention' ? 'Abstenção' : 'Candidatura'}: ${pct(row.series.value)} (${number(row.series.numerator!)} de ${number(row.series.denominator!)} ${series!.kind === 'abstention' ? 'aptos' : 'válidos'})` }]);
   const seriesChoices = [{ value: 'abstention', label: `Abstenção (${OFFICE_LABELS[filters.office]})` },
     ...(candidates?.status === 'published' ? candidates.candidates.map((candidate) => ({ value: candidate.number, label: `${candidate.name} (${candidate.number}, ${candidate.party})` })) : [])];
   const ufChoices = [{ value: '', label: 'Brasil, por UF' }, ...[...STATES].sort((a, b) => UF_NAMES[a].localeCompare(UF_NAMES[b], 'pt-BR')).map((uf) => ({ value: uf as string, label: `${UF_NAMES[uf]}, por município` }))];
   const exportHref = `/mapa/dados.csv?${new URLSearchParams({ year: filters.year, indicator: filters.indicator, office: filters.office, round: filters.round, series: filters.series, ...(filters.uf ? { uf: filters.uf } : {}) })}`;
   return <>
-    <section className="hero places-hero"><p className="eyebrow">MAPA · CENSO 2022 E ELEIÇÕES 2022</p><h1>Território e participação — {place}</h1>
+    <section className="hero places-hero"><p className="eyebrow">MAPA · CENSO 2022 E ELEIÇÕES {filters.year}</p><h1>Território e participação — {place}</h1>
       <p className="hero-description">Um indicador do Censo 2022 sobre quem mora no território, ao lado da abstenção de um cargo ou da votação de uma candidatura, à sua escolha, e os dois juntos num gráfico de dispersão. Nada aqui demonstra relação de causa ou diz como votou cada grupo. Todas as candidaturas lado a lado estão em <Link href="/mapa/candidaturas">Votação por candidatura</Link>.</p></section>
     <section className="explorer" aria-labelledby="mapa-filtros">
       <MapTabs current="territory" />
       <div className="section-heading"><div><p className="eyebrow">ESCOLHA O RECORTE</p><h2 id="mapa-filtros">Indicadores e território</h2></div><Link className="text-link" href="/metodologia#mapas">Como ler <span aria-hidden="true">↗</span></Link></div>
-      <ErrorSummary errors={errors} targets={{ indicator: 'indicator', office: 'office', uf: 'uf', round: 'round-1', series: 'series' }} />
+      <ErrorSummary errors={errors} targets={{ year: 'year', indicator: 'indicator', office: 'office', uf: 'uf', round: 'round-1', series: 'series' }} />
       <QueryForm key={JSON.stringify(raw)} action="/mapa" className="municipality-filters" label="Filtros do mapa" submitLabel="Ver mapas" resultsId="mapas" hasErrors={errors.length > 0}>
         <div className="field"><label htmlFor="indicator">Indicador do Censo 2022</label><QuerySelect id="indicator" name="indicator" value={rawValue(raw, 'indicator', filters.indicator)} errors={errors}
           choices={CENSUS_MAP_INDICATORS.map((key) => ({ value: key, label: MAP_INDICATORS[key].label }))} /></div>
+        <div className="field"><label htmlFor="year">Eleição</label><QuerySelect id="year" name="year" value={rawValue(raw, 'year', filters.year)} errors={errors} choices={years.choices} disabledValues={years.disabledValues} /></div>
         <div className="field"><label htmlFor="office">Cargo</label><QuerySelect id="office" name="office" value={rawValue(raw, 'office', filters.office)} errors={errors} choices={OFFICES.map((office) => ({ value: office, label: OFFICE_LABELS[office] }))} /></div>
         <UfField office={rawValue(raw, 'office', filters.office)} value={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors} choices={ufChoices} />
-        <RoundField availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
+        <RoundField year={rawValue(raw, 'year', filters.year)} availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
         <SeriesField loaded={{ office: filters.office, uf: filters.uf ?? '', round: filters.round }} value={rawValue(raw, 'series', filters.series)} choices={seriesChoices} errors={errors} />
       </QueryForm>
       <div id="mapas" className="query-results">
@@ -91,12 +95,12 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
             <div className="table-scroll context-table" role="region" aria-label="Tabela dos mapas" tabIndex={0}><table>
               <caption className="sr-only">Indicador do Censo e {series.kind === 'abstention' ? 'abstenção' : 'votação da candidatura'} por {unit}, com numerador e denominador.</caption>
               <thead><tr><th scope="col">{level === 'uf' ? 'UF' : 'Município'}</th><th scope="col">{meta.label}</th><th scope="col">{series.title}</th></tr></thead>
-              <tbody>{rows.map((row) => <tr key={row.id}><th scope="row"><Link href={href(row)}>{row.name}</Link></th>
+              <tbody>{rows.map((row) => <tr key={`${row.uf}-${row.code}`}><th scope="row"><Link href={href(row)}>{row.name}</Link></th>
                 <td>{pct(row.census.value)}{row.census.value !== null && <span className="source-note"> · {number(row.census.numerator!)} de {number(row.census.denominator!)}</span>}</td>
                 <td>{pct(row.series?.value ?? null)}{row.series?.value != null && <span className="source-note"> · {number(row.series.numerator!)} de {number(row.series.denominator!)}</span>}</td></tr>)}</tbody>
             </table></div>
           </details>
-          {filters.uf && filters.office === 'president' && <p className="query-note"><Link href={`/mapa?${new URLSearchParams({ indicator: filters.indicator, round: filters.round, series: filters.series })}`}>← Voltar ao Brasil por UF</Link></p>}
+          {filters.uf && filters.office === 'president' && <p className="query-note"><Link href={`/mapa?${new URLSearchParams({ ...yearParam, indicator: filters.indicator, round: filters.round, series: filters.series })}`}>← Voltar ao Brasil por UF</Link></p>}
         </>}
       </div>
     </section>

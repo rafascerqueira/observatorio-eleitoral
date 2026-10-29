@@ -2,10 +2,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { count, type Row } from '../src/csv';
-import { GOVERNOR_2022, SENATOR_2022, reconcile, reconcileExterior, sectionVote } from '../src/model';
+import { GOVERNOR_2022, GOVERNOR_2026, PRESIDENT_2026, SENATOR_2022, SENATOR_2026, SCOPES, reconcile, reconcileExterior, sectionVote, type ElectionScope } from '../src/model';
+import { nationalSources, SOURCES, stateSources } from '../src/sources';
 import { percent } from '@observatorio/contracts';
 
-function fixture(scope?: typeof GOVERNOR_2022) {
+function fixture(scope?: ElectionScope) {
   const details: Row[] = [], nominal: Row[] = [], sections = [];
   for (const round of ['1', '2'] as const) {
     const base = { NR_TURNO: round, CD_ELEICAO: scope ? scope.electionCodes[round]! : round === '1' ? '544' : '545', CD_TIPO_ELEICAO: '2', NR_ZONA: '1', ST_VOTO_EM_TRANSITO: 'N', ...(scope ? { CD_CARGO: scope.cargo } : {}) };
@@ -162,4 +163,54 @@ test('divergência em anulados ou nulos técnicos bloqueia em vez de reclassific
   assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 }), /APU_SEP/);
   f = withNonValid(); f.sections.find((vote) => vote.number === '22')!.votableName = null;
   assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: false, scope: GOVERNOR_2022 }), /sem nome/);
+});
+
+test('Senado 2026: duas vagas, votos = 2 × comparecimento por zona; a regra de uma vaga bloqueia', () => {
+  const f = fixture(GOVERNOR_2026);
+  const first = (rows: Row[]): Row[] => rows.filter((row) => row.NR_TURNO === '1').map((row) => ({ ...row, CD_CARGO: '5' }));
+  // Cada eleitor dá dois votos: o comparecimento (13) fica; votos, válidos, brancos e nulos dobram.
+  const details = first(f.details).map((row) => ({ ...row, QT_VOTOS: '26', QT_TOTAL_VOTOS_VALIDOS: '20', QT_VOTOS_BRANCOS: '2', QT_TOTAL_VOTOS_NULOS: '4', QT_VOTOS_NULOS: '4' }));
+  const nominal = first(f.nominal).map((row) => ({ ...row, QT_VOTOS_NOMINAIS: String(2 * Number(row.QT_VOTOS_NOMINAIS)), QT_VOTOS_NOMINAIS_VALIDOS: String(2 * Number(row.QT_VOTOS_NOMINAIS_VALIDOS)) }));
+  const sections = f.sections.filter((vote) => vote.round === '1').map((vote) => ({ ...vote, votes: 2 * vote.votes }));
+  const options = { allowNonInstalled: false, scope: SENATOR_2026 };
+  const result = reconcile(details, nominal, sections, undefined, options);
+  assert.deepEqual(result.summaries.map((summary) => [summary.round, summary.electionCode]), [['1', '6259']]);
+  assert.deepEqual([result.summaries[0]!.totals.turnout, result.summaries[0]!.totals.totalVotes], [13, 26]);
+  assert.equal(result.summaries[0]!.candidates[0]!.percentValid, 60, 'Percentual sobre os votos válidos, não sobre eleitores');
+  assert.throws(() => reconcile(details, nominal, sections, undefined, { ...options, scope: { ...SENATOR_2026, seats: undefined } }), /comparecimento/);
+  // Votos iguais ao comparecimento não fecham com duas vagas.
+  assert.throws(() => reconcile(first(f.details), first(f.nominal), f.sections.filter((vote) => vote.round === '1'), undefined, options), /comparecimento/);
+});
+test('Presidência 2026: nulos técnicos reconciliados por zona; a regra de 2022 bloqueia', () => {
+  const f = fixture(PRESIDENT_2026);
+  for (const row of f.details) Object.assign(row, { QT_COMPARECIMENTO: '15', QT_ABSTENCOES: '5', QT_VOTOS: '15', QT_TOTAL_VOTOS_NULOS: '4', QT_VOTOS_NULOS: '2', QT_VOTOS_NULOS_TECNICOS: '2' });
+  for (const round of ['1', '2'] as const) for (const section of ['1', '2']) {
+    f.sections.push(sectionVote({ NR_TURNO: round, CD_ELEICAO: PRESIDENT_2026.electionCodes[round]!, CD_TIPO_ELEICAO: '2', CD_CARGO: '1', NR_ZONA: '1', NR_SECAO: section, NR_LOCAL_VOTACAO: '100', NR_VOTAVEL: '22', NM_VOTAVEL: 'NOME COMPLETO TECNICO', QT_VOTOS: '1', NM_LOCAL_VOTACAO: 'Local de teste', DS_LOCAL_VOTACAO_ENDERECO: '#NULO' }, PRESIDENT_2026));
+  }
+  const result = reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: true, scope: PRESIDENT_2026 });
+  assert.deepEqual(result.summaries.map((summary) => [summary.round, summary.electionCode, summary.totals.technicalNull, summary.totals.null]), [['1', '6257', 2, 4], ['2', '6258', 2, 4]]);
+  assert.deepEqual(result.summaries[0]!.nonValidVotes?.map((item) => [item.number, item.category, item.votes]), [['22', 'technical-null', 2]]);
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: true, scope: { ...PRESIDENT_2026, nonValidVotes: false } }), /NULOS_TECNICOS|não auditado/);
+  // Linhas de 2026 não passam pelo recorte de 2022, nem o contrário.
+  assert.throws(() => reconcile(f.details, f.nominal, f.sections, undefined, { allowNonInstalled: true }), /escopo auditado/);
+});
+test('fontes por ano: 2022 mantém os nomes das publicações existentes; 2026 usa os arquivos e a pasta do ano', () => {
+  assert.deepEqual(SOURCES.map((source) => [source.file, source.entry]), [['detalhe_votacao_munzona_2022.zip', 'detalhe_votacao_munzona_2022_BR.csv'], ['votacao_candidato_munzona_2022.zip', 'votacao_candidato_munzona_2022_BR.csv'], ['votacao_secao_2022_BR.zip', 'votacao_secao_2022_BR.csv']]);
+  assert.deepEqual(nationalSources(2026).map((source) => [source.file, source.year]), [['detalhe_votacao_munzona_2026.zip', 2026], ['votacao_candidato_munzona_2026.zip', 2026], ['votacao_secao_2026_BR.zip', 2026]]);
+  assert.deepEqual(stateSources('SP', 2026).map((source) => source.entry), ['detalhe_votacao_munzona_2026_SP.csv', 'votacao_candidato_munzona_2026_SP.csv', 'votacao_secao_2026_SP.csv']);
+  assert.deepEqual(stateSources('SP').map((source) => source.file), ['detalhe_votacao_munzona_2022.zip', 'votacao_candidato_munzona_2022.zip', 'votacao_secao_2022_SP.zip']);
+  assert.deepEqual([SCOPES[2026].senator.seats, SCOPES[2022].senator.seats], [2, undefined]);
+  assert.equal(SENATOR_2022.electionCodes['1'], '546');
+});
+
+test('exterior: seção instalada sem nenhum comparecimento conta pela apuração, sem linha de seção inventada', () => {
+  const f = fixture(PRESIDENT_2026);
+  for (const row of f.details) Object.assign(row, { SG_UF: 'ZZ', CD_MUNICIPIO: '29564', QT_APTOS: '72', QT_COMPARECIMENTO: '0', QT_ABSTENCOES: '72', QT_TOTAL_VOTOS_VALIDOS: '0', QT_VOTOS_BRANCOS: '0', QT_TOTAL_VOTOS_NULOS: '0', QT_VOTOS_NULOS: '0', QT_VOTOS: '0', QT_SECOES_PRINCIPAIS: '1', QT_SECOES_NAO_INSTALADAS: '0', QT_ELEITORES_SECOES_NAO_INSTALADAS: '0' });
+  for (const row of f.nominal) Object.assign(row, { SG_UF: 'ZZ', CD_MUNICIPIO: '29564', QT_VOTOS_NOMINAIS: '0', QT_VOTOS_NOMINAIS_VALIDOS: '0' });
+  const result = reconcileExterior(f.details, f.nominal, [], { code: '29564', name: 'Localidade sintética' }, PRESIDENT_2026);
+  assert.deepEqual(result.summaries.map((summary) => [summary.sections, summary.pollingPlaces, summary.totals.abstentions, summary.totals.turnout]), [[1, 0, 72, 0], [1, 0, 72, 0]]);
+  assert.equal(result.places.length, 0);
+  // Com comparecimento, a falta de linhas continua bloqueando.
+  f.details[0]!.QT_COMPARECIMENTO = '1'; f.details[0]!.QT_ABSTENCOES = '71';
+  assert.throws(() => reconcileExterior(f.details, f.nominal, [], { code: '29564', name: 'Teste' }, PRESIDENT_2026), /sem votos/);
 });

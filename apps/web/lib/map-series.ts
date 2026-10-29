@@ -32,11 +32,18 @@ export function resolveSeries(filters: Pick<MapPageQuery, 'series' | 'office' | 
     items: candidateSeries(candidates, index), weight: 'votos válidos', cuts: CANDIDATE_MAP_CUTS, resultsId: publication(candidates.publications, 'results'), contextId: publication(candidates.publications, 'context') } };
 }
 
-export type MapRow = { id: string; code: string; uf: string; name: string; census: Item; series: Item | null };
-/** Unidades do indicador do Censo com o valor da série pelo código IBGE do polígono (a ordem é a da tabela). */
+export type MapRow = { id: string | null; code: string; uf: string; name: string; census: Item; series: Item | null };
+/**
+ * Unidades do indicador do Censo com o valor da série pelo código IBGE do polígono (a ordem é a da tabela). Unidade da série sem
+ * correspondência no Censo 2022 (município criado depois) entra no fim, com o Censo sem dado: nunca é descartada.
+ */
 export function joinSeries(census: Item[], series: Item[]): MapRow[] {
-  const byId = new Map(series.map((item) => [item.id, item]));
-  return census.map((item) => ({ id: item.id, code: item.code, uf: item.uf, name: item.name, census: item, series: byId.get(item.id) ?? null }));
+  const byId = new Map(series.flatMap((item) => item.id === null ? [] : [[item.id, item] as const]));
+  const joined = census.map((item) => ({ id: item.id, code: item.code, uf: item.uf, name: item.name, census: item, series: item.id === null ? null : byId.get(item.id) ?? null }));
+  const censusIds = new Set(census.map((item) => item.id));
+  const extra = series.filter((item) => item.id === null || !censusIds.has(item.id))
+    .map((item) => ({ id: item.id, code: item.code, uf: item.uf, name: item.name, census: { ...item, numerator: null, denominator: null, value: null }, series: item }));
+  return [...joined, ...extra];
 }
 
 /** Campo de texto em CSV com `;`: entre aspas quando preciso e sem iniciar fórmula de planilha. */
@@ -53,7 +60,7 @@ export const MAP_CSV_COLUMNS = ['uf', 'codigo_tse', 'codigo_ibge', 'nome', 'indi
  * das publicações em cada linha (arquivo autodescritivo). UTF-8 com BOM e `;`, como os arquivos do TSE e do IBGE.
  */
 export function mapCsv(rows: MapRow[], indicatorLabel: string, series: ComparedSeries, contextId: string | null) {
-  const lines = rows.map((row) => [row.uf, row.code, row.id, row.name, indicatorLabel, csvCount(row.census.numerator), csvCount(row.census.denominator), csvPercent(row.census.value),
+  const lines = rows.map((row) => [row.uf, row.code, row.id ?? '', row.name, indicatorLabel, csvCount(row.census.numerator), csvCount(row.census.denominator), csvPercent(row.census.value),
     series.title, csvCount(row.series?.numerator ?? null), csvCount(row.series?.denominator ?? null), csvPercent(row.series?.value ?? null), contextId ?? '', series.resultsId ?? ''].map(csvText).join(';'));
   return `﻿${[MAP_CSV_COLUMNS.join(';'), ...lines].join('\r\n')}\r\n`;
 }

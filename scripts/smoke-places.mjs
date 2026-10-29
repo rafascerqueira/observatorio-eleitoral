@@ -72,7 +72,7 @@ for (const query of ['zone=0', 'section=-1', 'local=abc', 'zone=1&zone=2']) awai
 const invalid = await (await request(web, '/municipios/71072?zone=-1')).text();
 assert.match(invalid, /Confira os filtros/);
 assert.match(invalid, /aria-invalid="true"/);
-const unsupported = await (await request(web, '/municipios/71072?year=2026')).text();
-assert.match(unsupported, /Recorte sem publicação disponível/);
+const current = await (await request(web, '/municipios/71072?year=2026&uf=SP')).text();
+assert.match(current, /<option value="2026" selected="">/); assert.match(current, /locais aparecem sem setor/);
 console.log('Smoke de locais OK: zona/seção, códigos, texto e acentos, variantes, paginação e estados da interface.');
 console.log(JSON.stringify({ requests: timings.length, maximumMilliseconds: Math.max(...timings.map((timing) => timing.milliseconds)), lookupTimings: timings.filter((timing) => timing.path.includes('zone=0001')) }, null, 2));

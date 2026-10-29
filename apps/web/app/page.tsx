@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { municipalityQuerySchema, percent, STATES, OFFICES, OFFICE_LABELS, SINGLE_ROUND_OFFICES, isStateOffice, type MunicipalityResult, type Office } from '@observatorio/contracts';
+import { municipalityQuerySchema, officeSeats, percent, STATES, OFFICES, OFFICE_LABELS, SINGLE_ROUND_OFFICES, isStateOffice, type MunicipalityResult, type Office } from '@observatorio/contracts';
 import { getCatalog, getMunicipalities, getNational, getState } from '../lib/results';
 import { QueryForm } from '../components/query-form';
 import { ErrorSummary, FieldError, OfficeField, QuerySelect } from '../components/query-fields';
 import { RoundField, UfField } from '../components/round-field';
-import { availabilityFromCatalog, roundOptions } from '../lib/rounds';
+import { availabilityFromCatalog, roundOptions, yearChoices } from '../lib/rounds';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from '../lib/query-ui';
 import { overviewHref } from '../lib/query-navigation';
 import { NonValidVotesTable } from '../components/non-valid-votes';
@@ -50,7 +50,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   ]);
   // Turnos realizados por cargo e UF vêm das publicações; sem catálogo, nada é presumido além da regra do cargo.
   const availability = availabilityFromCatalog(catalog?.datasets ?? []);
-  const rounds = roundOptions(availability, filters.office, filters.uf);
+  const rounds = roundOptions(availability, filters.office, filters.uf, filters.year);
+  const years = yearChoices(catalog?.datasets ?? null, rawValue(raw, 'year', filters.year));
   const stateData = stateResult?.kind === 'ready' && stateResult.data.status === 'published' ? stateResult.data : null;
   const data = state?.kind === 'ready' ? state.data : null;
   const municipalData = data?.status === 'published' && 'items' in data ? data : null;
@@ -110,13 +111,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
           </div>
           <img className="hero-mark" src="/brand/mark-on-dark.svg" width="366" height="316" alt="" aria-hidden="true" />
         </div>
-        <div className="project-note"><span className="badge">{published ? data.dataset.level === 'national' ? 'Cobertura nacional' : data.dataset.level === 'state' ? 'Publicação estadual' : 'Piloto municipal' : 'Cobertura e fontes'}</span><p>{published ? data.dataset.level === 'state' ? `${officeLabel} · 2022 · ${data.dataset.uf} · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados${data.dataset.rounds ? ` em ${data.dataset.rounds.length === 2 ? 'dois turnos' : 'turno único'}` : ''}. Cada UF tem publicação própria, com fontes e cobertura na transparência.` : data.dataset.level === 'national' ? `Presidência · 2022 · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados nas 27 UFs. ${nationalData?.includesExterior ? 'Exterior incluído no consolidado Brasil.' : 'Exterior consultável à parte; confira a cobertura nas fontes.'}` : 'São Paulo · Presidência · 2022. A expansão nacional só aparece após a reconciliação.' : 'A disponibilidade depende do recorte consultado. Veja as versões publicadas e o andamento das importações na transparência.'}</p></div>
+        <div className="project-note"><span className="badge">{published ? data.dataset.level === 'national' ? 'Cobertura nacional' : data.dataset.level === 'state' ? 'Publicação estadual' : 'Piloto municipal' : 'Cobertura e fontes'}</span><p>{published ? data.dataset.level === 'state' ? `${officeLabel} · ${data.dataset.year} · ${data.dataset.uf} · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados${data.dataset.rounds ? ` em ${data.dataset.rounds.length === 2 ? 'dois turnos' : 'turno único'}` : ''}. Cada UF tem publicação própria, com fontes e cobertura na transparência.` : data.dataset.level === 'national' ? `Presidência · ${data.dataset.year} · ${data.dataset.coverage?.reconciled.toLocaleString('pt-BR')} municípios reconciliados nas 27 UFs. ${nationalData?.includesExterior ? 'Exterior incluído no consolidado Brasil.' : 'Exterior consultável à parte; confira a cobertura nas fontes.'}` : 'São Paulo · Presidência · 2022. A expansão nacional só aparece após a reconciliação.' : 'A disponibilidade depende do recorte consultado. Veja as versões publicadas e o andamento das importações na transparência.'}</p></div>
       </section>
 
       <section className="explorer" aria-labelledby="explorar">
         <div className="section-heading"><div><p className="eyebrow">CONSULTA ELEITORAL</p><h2 id="explorar">{national ? 'Resultado presidencial — Brasil' : stateView ? `${officeLabel} — ${UF_NAMES[stateView]}` : 'Resultados por município'}</h2></div><Link className="text-link" href="/metodologia">Como ler os dados <span aria-hidden="true">↗</span></Link></div>
         <p className="query-context"><span className="badge">Cargo: {officeLabel}</span> {stateOffice ? 'Cargo estadual: candidaturas e resultados são próprios de cada UF. Não há consolidado Brasil nem votação no exterior para este cargo.' : 'Consolidado Brasil, por UF e por município.'} Deputados estão fora do escopo atual do observatório.</p>
-        {valid && <RoundNote decided={rounds.decided} office={officeLabel} place={filters.uf ? `em ${UF_NAMES[filters.uf]}` : ''} />}
+        {valid && <RoundNote decided={rounds.decided} office={officeLabel} seats={officeSeats(filters.year, filters.office)} place={filters.uf ? `em ${UF_NAMES[filters.uf]}` : ''} />}
         <ErrorSummary errors={errors} targets={{ year: 'year', round: 'round-1', uf: 'uf', search: 'search', office: 'office-president' }} />
         <QueryForm key={JSON.stringify(raw)} action="/" className="municipality-filters home-filters" label="Filtros da consulta" submitLabel="Consultar" resultsId="resultados-consulta"
           secondary={!national && !stateOffice && <Link className="secondary-action" href={overviewHref(filters.year, filters.round, 'president')}>Voltar ao Brasil</Link>} hasErrors={errors.length > 0}>
@@ -124,8 +125,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
             choices={OFFICES.map((office) => ({ value: office, label: OFFICE_LABELS[office] }))} /></div>
           <div className="query-group group-election" role="group" aria-labelledby="group-election-title"><p className="group-title" id="group-election-title">Eleição</p>
             <div className="field"><label htmlFor="year">Ano</label><QuerySelect id="year" name="year" value={rawValue(raw, 'year', filters.year)} errors={errors}
-              choices={[{ value: '2022', label: '2022' }, { value: '2026', label: '2026 — ainda não publicado' }]} disabledValues={rawValue(raw, 'year', filters.year) === '2026' ? [] : ['2026']} /></div>
-            <RoundField availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
+              choices={years.choices} disabledValues={years.disabledValues} /></div>
+            <RoundField year={rawValue(raw, 'year', filters.year)} availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
           </div>
           <div className="query-group group-territory" role="group" aria-labelledby="group-territory-title"><p className="group-title" id="group-territory-title">Território</p>
             <UfField office={rawValue(raw, 'office', filters.office)} value={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors} choices={[{ value: '', label: 'Todo o Brasil' }, ...ufChoices]} />
@@ -172,7 +173,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
             <tbody>{items.length > 0 ? items.flatMap((item) => item.candidates.map((candidate) => <tr key={`${item.uf ?? 'BR'}/${item.code}/${candidate.number}`}>{!national && <td>{item.name} / {item.uf}</td>}<th scope="row">{candidate.name} <span className="candidate-number">{candidate.number}</span></th><td>{candidate.party}</td><td>{number(candidate.votes)}</td><td>{rate(candidate.percentValid)}</td></tr>)) : <tr><td colSpan={national ? 4 : 5}>
               <div className="empty-state" role="status">
                 <span className="empty-symbol" aria-hidden="true">≡</span>
-                {!valid ? <><h3>Consulta não aplicada</h3><p>Corrija o filtro indicado acima e consulte novamente.</p></> : state?.kind === 'unavailable' ? <><h3>Não foi possível consultar os dados</h3><p>O serviço está indisponível no momento. Tente consultar novamente em instantes.</p></> : roundNotHeld ? <><h3>Não houve {filters.round}º turno para {officeLabel}{filters.uf ? ` em ${UF_NAMES[filters.uf]}` : ''} em {filters.year}</h3><p>{singleRound ? `${officeLabel} é eleito por maioria simples, em turno único; a apuração do TSE registra somente o 1º turno.` : 'Segundo a apuração do TSE publicada para este cargo e UF, a eleição foi decidida no 1º turno.'} Isso não é ausência de dados.</p><Link className="text-link" href={firstRoundHref}>Ver o 1º turno</Link></> : published ? <><h3>Nenhum município nesta página da consulta</h3><p>Confira o nome pesquisado e a página. A cobertura está discriminada na transparência.</p><Link className="text-link" href={overviewHref('2022', filters.round, filters.office, filters.uf)}>Voltar à primeira página</Link></> : <><h3>Nenhuma base publicada para este recorte</h3><p>Os resultados aparecerão aqui após a importação e a conferência dos dados oficiais do TSE.</p><Link href="/fontes" className="text-link">Conheça a cobertura <span aria-hidden="true">↗</span></Link></>}
+                {!valid ? <><h3>Consulta não aplicada</h3><p>Corrija o filtro indicado acima e consulte novamente.</p></> : state?.kind === 'unavailable' ? <><h3>Não foi possível consultar os dados</h3><p>O serviço está indisponível no momento. Tente consultar novamente em instantes.</p></> : roundNotHeld ? <><h3>Não houve {filters.round}º turno para {officeLabel}{filters.uf ? ` em ${UF_NAMES[filters.uf]}` : ''} em {filters.year}</h3><p>{singleRound ? `${officeLabel} é eleito por maioria simples, em turno único; a apuração do TSE registra somente o 1º turno.` : 'Segundo a apuração do TSE publicada para este cargo e UF, a eleição foi decidida no 1º turno.'} Isso não é ausência de dados.</p><Link className="text-link" href={firstRoundHref}>Ver o 1º turno</Link></> : published ? <><h3>Nenhum município nesta página da consulta</h3><p>Confira o nome pesquisado e a página. A cobertura está discriminada na transparência.</p><Link className="text-link" href={overviewHref(filters.year, filters.round, filters.office, filters.uf)}>Voltar à primeira página</Link></> : <><h3>Nenhuma base publicada para este recorte</h3><p>Os resultados aparecerão aqui após a importação e a conferência dos dados oficiais do TSE.</p><Link href="/fontes" className="text-link">Conheça a cobertura <span aria-hidden="true">↗</span></Link></>}
               </div>
             </td></tr>}</tbody>
           </table>

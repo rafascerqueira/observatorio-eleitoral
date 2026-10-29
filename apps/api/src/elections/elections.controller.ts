@@ -44,7 +44,7 @@ export class ElectionsController {
     if (!coverage || !coverage.expected || coverage.blocked || coverage.expected !== coverage.reconciled || records.rows.length !== coverage.expected) {
       throw new ServiceUnavailableException('Consolidado nacional incompleto.');
     }
-    const exteriorDataset = await this.exteriorDataset();
+    const exteriorDataset = await this.exteriorDataset(filters.year);
     if (exteriorDataset && (dataset.sources.length !== exteriorDataset.sources.length || dataset.sources.some((source) => !exteriorDataset.sources.some((other) => other.file === source.file && other.entry === source.entry && other.sha256 === source.sha256)))) throw new ServiceUnavailableException('Originais domésticos e do exterior não correspondem à mesma versão.');
     const exterior = exteriorDataset ? await this.exteriorRecords(exteriorDataset, filters.year, filters.round) : [];
     try {
@@ -86,7 +86,7 @@ export class ElectionsController {
     const parsed = exteriorQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException('Filtros do exterior inválidos.');
     const filters = parsed.data;
-    const dataset = await this.exteriorDataset();
+    const dataset = await this.exteriorDataset(filters.year);
     if (!dataset || filters.year !== String(dataset.year)) return exteriorResponseSchema.parse({ status: 'awaiting-import', filters, dataset: null, summary: null, items: [], pagination: { page: filters.page, pageSize: filters.pageSize, total: 0 } });
     const records = await this.exteriorRecords(dataset, filters.year, filters.round);
     const search = (filters.search ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -311,9 +311,8 @@ export class ElectionsController {
     const level = uf ? 'municipality' as const : 'uf' as const;
     const base = { indicator, level, round, items: [], ...(census ? {} : { office }) };
     const empty = mapValuesSchema.parse({ ...base, status: 'awaiting-import' });
-    if (year !== '2022') return empty;
     await this.database.check();
-    let rows: Array<{ id: string; code: string; uf: string; name: string; numerator: string | null; denominator: string | null }>;
+    let rows: Array<{ id: string | null; code: string; uf: string; name: string; numerator: string | null; denominator: string | null }>;
     let publications: Array<{ role: 'results' | 'context'; id: string }>;
     if (census && indicator in URBAN_INDICATORS) {
       // Entorno dos domicílios: categorias do indicador ÷ moradores dos setores com a pesquisa (arquivo municipal do IBGE).
@@ -336,8 +335,9 @@ export class ElectionsController {
       if (!roundHeld(dataset, round)) return mapValuesSchema.parse({ ...base, status: 'round-not-held' });
       const context = await this.checkedPublication('2022/context/municipal');
       if (!context) return empty;
+      // Junção à esquerda: município criado depois do Censo 2022 (sem contexto nem polígono) continua nas somas e na tabela, sem `id`.
       const unit = await this.database.query<typeof rows[number]>(`SELECT c.ibge_code AS id, m.code, m.uf, m.result->>'name' AS name, m.result->'totals'->>'abstentions' AS numerator, m.result->'totals'->>'eligible' AS denominator
-        FROM municipality_results m JOIN municipality_context c ON c.batch_id=$4 AND c.uf=m.uf AND c.code=m.code
+        FROM municipality_results m LEFT JOIN municipality_context c ON c.batch_id=$4 AND c.uf=m.uf AND c.code=m.code
         WHERE m.batch_id=$1 AND m.round=$2::integer AND m.office=$5 AND m.uf<>'ZZ' AND ($3::text IS NULL OR m.uf=$3)`, [dataset.id, round, uf ?? null, context.id, office]);
       rows = unit.rows; publications = [{ role: 'results', id: dataset.id }, { role: 'context', id: context.id }];
     }
@@ -347,7 +347,8 @@ export class ElectionsController {
       // UF: soma de numeradores e de denominadores dos municípios (nunca média de percentuais); um nulo torna a UF nula.
       const byUf = new Map<string, { numerator: number | null; denominator: number | null }>();
       for (const item of items) { const sum = byUf.get(item.uf) ?? { numerator: 0, denominator: 0 }; byUf.set(item.uf, { numerator: sum.numerator === null || item.numerator === null ? null : sum.numerator + item.numerator, denominator: sum.denominator === null || item.denominator === null ? null : sum.denominator + item.denominator }); }
-      items = [...byUf].map(([code, sum]) => ({ id: items.find((item) => item.uf === code)!.id.slice(0, 2), code, uf: code, name: code, ...sum, value: value(sum.numerator, sum.denominator) }));
+      // Código IBGE da UF: os dois primeiros dígitos de qualquer município dela com correspondência IBGE.
+      items = [...byUf].map(([code, sum]) => ({ id: items.find((item) => item.uf === code && item.id !== null)?.id?.slice(0, 2) ?? null, code, uf: code, name: code, ...sum, value: value(sum.numerator, sum.denominator) }));
     }
     return mapValuesSchema.parse({ ...base, status: 'published', items: items.sort((a, b) => a.uf.localeCompare(b.uf) || a.name.localeCompare(b.name, 'pt-BR')), publications });
   }
@@ -371,13 +372,14 @@ export class ElectionsController {
     const context = await this.checkedPublication('2022/context/municipal');
     if (!context) return candidateMapSchema.parse({ ...base, status: 'awaiting-import' });
     const params = [dataset.id, Number(round), office, uf ?? null, context.id];
-    const scope = `FROM municipality_results m JOIN municipality_context x ON x.batch_id=$5 AND x.uf=m.uf AND x.code=m.code
+    // Junção à esquerda: município criado depois do Censo 2022 fica sem polígono (`id` nulo), mas nas somas e na tabela.
+    const scope = `FROM municipality_results m LEFT JOIN municipality_context x ON x.batch_id=$5 AND x.uf=m.uf AND x.code=m.code
       WHERE m.batch_id=$1 AND m.round=$2 AND m.office=$3 AND m.uf<>'ZZ' AND ($4::text IS NULL OR m.uf=$4)`;
     const unit = level === 'uf' ? `m.uf` : `m.code`;
     const [totals, units, votes] = await Promise.all([
       this.database.query<{ number: string; name: string; party: string; names: number; votes: string }>(`SELECT c->>'number' AS number, min(c->>'name') AS name, min(c->>'party') AS party, count(DISTINCT c->>'name')::integer AS names, sum((c->>'votes')::bigint)::text AS votes
         ${scope.replace('WHERE', 'CROSS JOIN LATERAL jsonb_array_elements(m.result->\'candidates\') c WHERE')} GROUP BY 1`, params),
-      this.database.query<{ key: string; id: string; uf: string; name: string; valid: string; municipalities: number }>(`SELECT ${unit} AS key, ${level === 'uf' ? 'left(min(x.ibge_code), 2)' : 'min(x.ibge_code)'} AS id, min(m.uf) AS uf,
+      this.database.query<{ key: string; id: string | null; uf: string; name: string; valid: string; municipalities: number }>(`SELECT ${unit} AS key, ${level === 'uf' ? 'left(min(x.ibge_code), 2)' : 'min(x.ibge_code)'} AS id, min(m.uf) AS uf,
         ${level === 'uf' ? 'm.uf' : "min(m.result->>'name')"} AS name, sum((m.result->'totals'->>'valid')::bigint)::text AS valid, count(*)::integer AS municipalities ${scope} GROUP BY 1`, params),
       this.database.query<{ key: string; number: string; votes: string; entries: number }>(`SELECT ${unit} AS key, c->>'number' AS number, sum((c->>'votes')::bigint)::text AS votes, count(*)::integer AS entries
         ${scope.replace('WHERE', 'CROSS JOIN LATERAL jsonb_array_elements(m.result->\'candidates\') c WHERE')} GROUP BY 1, 2`, params),
@@ -591,7 +593,7 @@ export class ElectionsController {
     if (!/^\d+$/.test(code)) throw new NotFoundException();
     const parsed = placesQuerySchema.extend({ uf: placesQuerySchema.shape.uf.unwrap().extract(['ZZ']).optional(), office: placesQuerySchema.shape.office.unwrap().extract(['president']).default('president') }).safeParse(query);
     if (!parsed.success) throw new BadRequestException('Filtros dos locais do exterior inválidos.');
-    return this.placesForDataset(code, { ...parsed.data, uf: 'ZZ' }, await this.exteriorDataset());
+    return this.placesForDataset(code, { ...parsed.data, uf: 'ZZ' }, await this.exteriorDataset(parsed.data.year));
   }
 
   private async placesForDataset(code: string, filters: PlacesQuery, dataset: ReturnType<typeof datasetSchema.parse> | null) {
@@ -754,19 +756,21 @@ export class ElectionsController {
       const dataset = datasetSchema.parse(result.rows[0].metadata);
       return String(dataset.year) === year && dataset.level === 'state' && dataset.office === office && dataset.uf === uf ? dataset : null;
     }
-    const dataset = await this.database.query<{ metadata: unknown }>("SELECT metadata FROM import_batches WHERE published AND scope IN ('2022/president/BR','2022/president/SP/71072') ORDER BY CASE WHEN scope='2022/president/BR' THEN 0 ELSE 1 END LIMIT 1");
+    // O piloto municipal (São Paulo) só existe em 2022.
+    const dataset = await this.database.query<{ metadata: unknown }>("SELECT metadata FROM import_batches WHERE published AND scope = ANY($1::text[]) ORDER BY CASE WHEN scope=$2 THEN 0 ELSE 1 END LIMIT 1",
+      [year === '2022' ? ['2022/president/BR', '2022/president/SP/71072'] : [`${year}/president/BR`], `${year}/president/BR`]);
     if (!dataset.rows[0]) return null;
     const published = datasetSchema.parse(dataset.rows[0].metadata);
     return String(published.year) === year && published.office === office ? published : null;
   }
 
-  private async exteriorDataset() {
+  private async exteriorDataset(year: string) {
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.import_batches')::text AS registry");
     if (!registry.rows[0]?.registry) return null;
-    const result = await this.database.query<{ metadata: unknown }>("SELECT metadata FROM import_batches WHERE published AND scope='2022/president/ZZ' LIMIT 1");
+    const result = await this.database.query<{ metadata: unknown }>('SELECT metadata FROM import_batches WHERE published AND scope=$1 LIMIT 1', [`${year}/president/ZZ`]);
     if (!result.rows[0]) return null;
     const dataset = datasetSchema.parse(result.rows[0].metadata);
-    return dataset.level === 'exterior' && dataset.uf === 'ZZ' ? dataset : null;
+    return dataset.level === 'exterior' && dataset.uf === 'ZZ' && String(dataset.year) === year ? dataset : null;
   }
   private async exteriorRecords(dataset: ReturnType<typeof datasetSchema.parse>, year: string, round: string) {
     const result = await this.database.query<{ result: unknown }>("SELECT result FROM municipality_results WHERE batch_id=$1 AND year=$2::integer AND round=$3::integer AND office='president' AND uf='ZZ' ORDER BY code", [dataset.id, year, round]);

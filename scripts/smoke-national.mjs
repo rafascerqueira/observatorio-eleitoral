@@ -12,7 +12,7 @@ async function request(base, path, status = 200) {
   return response;
 }
 const catalog = await (await request(api, '/elections/catalog')).json();
-const dataset = catalog.datasets.find((item) => item.level === 'national');
+const dataset = catalog.datasets.find((item) => item.year === 2022 && item.level === 'national');
 assert.ok(dataset, 'Publicação nacional precisa estar concluída.');
 assert.equal(dataset.coverage.blocked, 0);
 assert.equal(dataset.coverage.expected, dataset.coverage.reconciled);
@@ -77,7 +77,7 @@ const manausHtml = await (await request(web, '/?uf=AM&search=Manaus')).text();
 assert.match(manausHtml, /seção\(ões\) não instalada\(s\)/);
 assert.match(manausHtml, /Permanecem separados da abstenção/);
 const fontes = await (await request(web, '/fontes')).text();
-for (const label of ['Presidência 2022: cobertura nacional publicada', 'Baixar original preservado', 'Consultar arquivo atual no TSE', 'ZZ — exterior', 'Senador', 'SHA-256']) assert.ok(fontes.includes(label), label);
+for (const label of ['Presidência 2022 e 2026: cobertura nacional publicada', 'Baixar original preservado', 'Consultar arquivo atual no TSE', 'ZZ — exterior', 'Senador', 'SHA-256']) assert.ok(fontes.includes(label), label);
 const sample = domestic.find((item) => item.uf === 'RJ');
 const municipality = (await (await request(api, `/elections/municipalities?uf=${sample.uf}&pageSize=1`)).json()).items[0];
 const html = await (await request(web, `/municipios/${municipality.code}?uf=RJ&zone=1`)).text();
@@ -85,6 +85,6 @@ assert.ok(html.includes(municipality.name));
 await request(api, `/elections/municipalities/${municipality.code}/places?uf=SP`, 404);
 await request(api, '/elections/municipalities?uf=ZZ', 400);
 await request(api, '/elections/municipalities?office=senator', 400);
-const missing = await (await request(api, '/elections/municipalities?year=2026')).json();
-assert.equal(missing.status, 'awaiting-import');
+const current = await (await request(api, '/elections/municipalities?year=2026')).json();
+assert.equal(current.status, 'published'); assert.equal(current.dataset.year, 2026); assert.equal(current.pagination.total, 5571, '2026 inclui Boa Esperança do Norte (MT)');
 console.log(JSON.stringify({ status: 'ok', municipalities: dataset.coverage.reconciled, territories: 27, requests: timings.length, maximumResponseHeadersMilliseconds: Math.max(...timings.map((item) => item.milliseconds)), reportElapsedSeconds: report.elapsedSeconds, peakImporterRssMiB: report.peakRssMiB, originalChecksumsVerified: dataset.sources.length }, null, 2));

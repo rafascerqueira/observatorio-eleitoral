@@ -145,7 +145,7 @@ export default async function Profiles({ searchParams }: { searchParams: Promise
           choices={(Object.keys(PLACE_GROUP_INDICATORS) as PlaceGroupIndicator[]).map((key) => ({ value: key, label: PLACE_GROUP_INDICATORS[key].label }))} /></div>
         <div className="field"><label htmlFor="office">Cargo</label><QuerySelect id="office" name="office" value={rawValue(raw, 'office', filters.office)} errors={errors} choices={OFFICES.map((office) => ({ value: office, label: OFFICE_LABELS[office] }))} /></div>
         <UfField office={rawValue(raw, 'office', filters.office)} value={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors} choices={ufChoices} />
-        <RoundField availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
+        <RoundField year={filters.year} availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
       </QueryForm>
       <div id="grupos" className="query-results">
         {!valid ? <p className="notice scope-notice">Corrija os filtros acima para ver os grupos.</p>

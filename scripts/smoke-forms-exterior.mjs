@@ -20,7 +20,7 @@ for (const office of ['governor', 'senator']) assert.match(radio(form, `office-$
 // Turno único do Senado: o 2º turno não é oferecido nem no HTML do servidor.
 const senate = (await (await request(web, '/?office=senator&uf=RJ')).text()).match(/<form[\s\S]*?<\/form>/)?.[0] ?? '';
 assert.doesNotMatch(senate, /name="round"[^>]*value="2"/); assert.match(senate, /turno único/);
-for (const label of ['São Paulo — SP', 'Exterior — ZZ', '2026 — ainda não publicado']) assert.ok(home.includes(label));
+for (const label of ['São Paulo — SP', 'Exterior — ZZ', '<option value="2026">2026</option>']) assert.ok(home.includes(label));
 // Sugestões de município: trigramas (erro de digitação, palavra do meio), recorte por UF e proxy da web.
 const typo = await (await request(api, '/elections/municipalities/suggest?q=jaboatau')).json();
 assert.equal(typo.items[0]?.name, 'JABOATÃO DOS GUARARAPES'); assert.equal(typo.items[0]?.uf, 'PE');
@@ -72,10 +72,10 @@ const wrongUf = await (await request(web, '/exterior/29955?uf=SP', [200, 404])).
 assert.match(wrongUf, /Página não encontrada/);
 assert.match(wrongUf, /name="robots" content="noindex"/);
 assert.doesNotMatch(wrongUf, /<h1>LISBOA|class="places-query"/);
-const unavailable = await (await request(api, '/elections/exterior?year=2026')).json();
-assert.equal(unavailable.status, 'awaiting-import'); assert.equal(unavailable.summary, null);
-const unsupported = await (await request(web, '/exterior?year=2026')).text();
-assert.match(unsupported, /Nenhuma base publicada para este recorte/);
+const exterior2026 = await (await request(api, '/elections/exterior?year=2026')).json();
+assert.equal(exterior2026.status, 'published'); assert.equal(exterior2026.dataset.year, 2026); assert.equal(exterior2026.summary.exteriorCities, 186);
+const exteriorHtml = await (await request(web, '/exterior?year=2026')).text();
+assert.doesNotMatch(exteriorHtml, /Nenhuma base publicada para este recorte/);
 const route = await request(web, '/?uf=ZZ&round=2&search=Lisboa');
 const routeHtml = await route.text();
 assert.ok(route.url.includes('/exterior') || /http-equiv="refresh"[^>]*exterior/.test(routeHtml), 'Redirecionamento GET ou meta refresh para Exterior');

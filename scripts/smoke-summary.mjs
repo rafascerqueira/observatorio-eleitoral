@@ -88,12 +88,13 @@ for (const path of ['/?uf=SP&search=Sao%20Paulo', '/?search=Recife']) {
   assert.match(html, /href="\/municipios\/\d{5}\?[^"\n]*uf=[A-Z]{2}/, 'O detalhe municipal continua acessível pelo código e UF');
   assert.doesNotMatch(html, /Consolidado de 5\.570/);
 }
-const unavailable = await (await request(api, '/elections/national?year=2026')).json();
-assert.equal(unavailable.status, 'awaiting-import');
-assert.equal(unavailable.summary, null);
-const emptyHtml = await (await request(web, '/?year=2026')).text();
-assert.match(emptyHtml, /Nenhuma base publicada para este recorte/);
-assert.doesNotMatch(emptyHtml, /class="municipality-summary"/);
+// 2026: publicação nacional própria, nunca a de 2022 com outro rótulo.
+const current = await (await request(api, '/elections/national?year=2026')).json();
+const previous = await (await request(api, '/elections/national?year=2022')).json();
+assert.equal(current.status, 'published'); assert.equal(current.dataset.year, 2026); assert.notEqual(current.dataset.id, previous.dataset.id);
+assert.equal(current.exteriorDataset.year, 2026);
+const currentHtml = await (await request(web, '/?year=2026')).text();
+assert.match(currentHtml, /Presidência · 2026/); assert.doesNotMatch(currentHtml, /Nenhuma base publicada para este recorte/);
 await request(api, '/elections/national?uf=SP', 400);
 await request(api, '/elections/national?page=2', 400);
 console.log(JSON.stringify({ status: 'ok', requests, rounds: 2, allMunicipalitiesCompared: true }));

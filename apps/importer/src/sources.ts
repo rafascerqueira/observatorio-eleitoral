@@ -7,26 +7,31 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 export const ROOT = resolve(__dirname, '../../..');
-export type SourceSpec = { file: string; entry: string; directory: string };
-export const SOURCES = [
-  { file: 'detalhe_votacao_munzona_2022.zip', entry: 'detalhe_votacao_munzona_2022_BR.csv', directory: 'detalhe_votacao_munzona' },
-  { file: 'votacao_candidato_munzona_2022.zip', entry: 'votacao_candidato_munzona_2022_BR.csv', directory: 'votacao_candidato_munzona' },
-  { file: 'votacao_secao_2022_BR.zip', entry: 'votacao_secao_2022_BR.csv', directory: 'votacao_secao' },
-] as const satisfies readonly SourceSpec[];
+/** `year` escolhe a pasta de download (`data/raw/tse/<ano>`); ausente = 2022, como nas publicações existentes. */
+export type SourceSpec = { file: string; entry: string; directory: string; year?: number };
+/** Presidência: entradas BR (UFs e exterior) da apuração, do nominal e das seções do ano. */
+export function nationalSources(year = 2022): SourceSpec[] {
+  return [
+    { file: `detalhe_votacao_munzona_${year}.zip`, entry: `detalhe_votacao_munzona_${year}_BR.csv`, directory: 'detalhe_votacao_munzona', year },
+    { file: `votacao_candidato_munzona_${year}.zip`, entry: `votacao_candidato_munzona_${year}_BR.csv`, directory: 'votacao_candidato_munzona', year },
+    { file: `votacao_secao_${year}_BR.zip`, entry: `votacao_secao_${year}_BR.csv`, directory: 'votacao_secao', year },
+  ];
+}
+export const SOURCES = nationalSources(2022);
 /** Cargos estaduais: entradas por UF nos mesmos ZIPs de apuração/nominal; seções em ZIP próprio da UF. */
-export function stateSources(uf: string): SourceSpec[] {
+export function stateSources(uf: string, year = 2022): SourceSpec[] {
   if (!/^[A-Z]{2}$/.test(uf) || uf === 'ZZ' || uf === 'BR') throw new Error('UF inválida para fontes estaduais.');
   return [
-    { file: 'detalhe_votacao_munzona_2022.zip', entry: `detalhe_votacao_munzona_2022_${uf}.csv`, directory: 'detalhe_votacao_munzona' },
-    { file: 'votacao_candidato_munzona_2022.zip', entry: `votacao_candidato_munzona_2022_${uf}.csv`, directory: 'votacao_candidato_munzona' },
-    { file: `votacao_secao_2022_${uf}.zip`, entry: `votacao_secao_2022_${uf}.csv`, directory: 'votacao_secao' },
+    { file: `detalhe_votacao_munzona_${year}.zip`, entry: `detalhe_votacao_munzona_${year}_${uf}.csv`, directory: 'detalhe_votacao_munzona', year },
+    { file: `votacao_candidato_munzona_${year}.zip`, entry: `votacao_candidato_munzona_${year}_${uf}.csv`, directory: 'votacao_candidato_munzona', year },
+    { file: `votacao_secao_${year}_${uf}.zip`, entry: `votacao_secao_${year}_${uf}.csv`, directory: 'votacao_secao', year },
   ];
 }
 type DownloadRecord = { downloadedAt: string; lastModified: string | null; url: string; sha256: string };
 
 export async function sourceFile(source: SourceSpec) {
   const url = `https://cdn.tse.jus.br/estatistica/sead/odsele/${source.directory}/${source.file}`;
-  const directory = resolve(ROOT, 'data/raw/tse/2022');
+  const directory = resolve(ROOT, 'data/raw/tse', String(source.year ?? 2022));
   const path = resolve(directory, source.file);
   await mkdir(directory, { recursive: true });
   // Registro da resposta HTTP, gravado no download e válido só para os mesmos bytes.

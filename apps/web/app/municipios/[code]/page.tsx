@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { placesQuerySchema, OFFICE_LABELS, SINGLE_ROUND_OFFICES } from '@observatorio/contracts';
+import { placesQuerySchema, officeSeats, OFFICE_LABELS, SINGLE_ROUND_OFFICES } from '@observatorio/contracts';
 import { getCatalog, getContext, getPlaceTracts, getPlaces } from '../../../lib/results';
 import { MunicipalityContextPanel } from '../../../components/municipality-context';
-import { availabilityFromCatalog, roundOptions } from '../../../lib/rounds';
+import { availabilityFromCatalog, roundOptions, yearChoices } from '../../../lib/rounds';
 import { RoundField } from '../../../components/round-field';
 import { RoundNote } from '../../../components/round-note';
 import { ResultsTransition } from '../../../components/results-transition';
@@ -35,7 +35,8 @@ export default async function Municipality({ params, searchParams }: { params: P
   const tractData = tracts?.kind === 'ready' && tracts.data.status === 'published' ? tracts.data : null;
   const tractByPlace = new Map(tractData?.items.map((item) => [`${item.zone}/${item.code}`, item]) ?? []);
   const availability = availabilityFromCatalog(catalog?.datasets ?? []);
-  const rounds = roundOptions(availability, filters.office, filters.uf);
+  const rounds = roundOptions(availability, filters.office, filters.uf, filters.year);
+  const years = yearChoices(catalog?.datasets ?? null, rawValue(query, 'year', filters.year));
   const errors = [...(parsed.success ? [] : queryErrors(query, parsed.error.issues, 'places')), ...(scopeError ? [scopeError] : [])];
   const officeLabel = OFFICE_LABELS[filters.office];
   const invalidFields = new Set(errors.map((error) => error.field));
@@ -77,8 +78,8 @@ export default async function Municipality({ params, searchParams }: { params: P
         </div>
         <details className="advanced-filters" open={Boolean(filters.local || filters.year !== '2022' || filters.pageSize !== 10 || errors.some((error) => ['year', 'round', 'local', 'pageSize'].includes(error.field)))}>
           <summary>Ajustar eleição e opções avançadas</summary><div className="places-advanced">
-            <div className="field"><label htmlFor="places-year">Eleição</label><QuerySelect id="places-year" name="year" value={rawValue(query, 'year', filters.year)} errors={errors} choices={[{ value: '2022', label: '2022' }, { value: '2026', label: '2026 — ainda não publicado' }]} /></div>
-            <RoundField prefix="places-" availability={availability} office={filters.office} uf={filters.uf ?? ''} value={rawValue(query, 'round', filters.round)} errors={errors} />
+            <div className="field"><label htmlFor="places-year">Eleição</label><QuerySelect id="places-year" name="year" value={rawValue(query, 'year', filters.year)} errors={errors} choices={years.choices} disabledValues={years.disabledValues} /></div>
+            <RoundField prefix="places-" year={rawValue(query, 'year', filters.year)} availability={availability} office={filters.office} uf={filters.uf ?? ''} value={rawValue(query, 'round', filters.round)} errors={errors} />
             <div className="field"><label htmlFor="places-local">Código do local <span className="optional-label">(opcional)</span></label><input id="places-local" name="local" inputMode="numeric" pattern="[0-9]+" maxLength={5} placeholder="Ex.: 1015" defaultValue={value('local')} aria-invalid={invalidFields.has('local') || undefined} aria-describedby={describedBy('local')} /><p className="field-hint invalid-hint" id="places-local-format">Use apenas números.</p><FieldError field="local" errors={errors} prefix="places-" /></div>
             <div className="field"><label htmlFor="places-pageSize">Locais por página</label><QuerySelect id="places-pageSize" name="pageSize" value={rawValue(query, 'pageSize', filters.pageSize)} errors={errors} choices={[...new Set([10, 25, 50, filters.pageSize])].sort((a, b) => a - b).map((size) => ({ value: String(size), label: String(size) }))} /></div>
           </div>
@@ -89,9 +90,9 @@ export default async function Municipality({ params, searchParams }: { params: P
     <p className="query-context applied-context">{parsed.success && !scopeError ? 'Consulta aplicada' : 'Filtros não aplicados'}: {officeLabel} · {filters.year} · {filters.round}º turno{filters.zone ? ` · Zona ${filters.zone}` : ''}{filters.section ? ` · Seção ${filters.section}` : ''}. <Link className="secondary-action" href={overviewHref(filters.year, filters.round, filters.office, filters.uf)}>{filters.office === 'president' ? 'Voltar ao Brasil' : `Voltar a ${filters.uf && filters.uf !== 'ZZ' ? UF_NAMES[filters.uf] : 'consulta'}`}</Link></p>
     {/* Só há navegação entre turnos quando o recorte teve dois; a explicação do turno único aparece já no 1º turno. */}
     {rounds.rounds.length > 1 ? <nav className="pagination round-navigation" aria-label="Selecionar turno">{rounds.rounds.map((round) => <Link key={round} href={placesHref(code, filters, { round, page: 1 })} transitionTypes={round === filters.round ? undefined : [round > filters.round ? 'round-next' : 'round-prev']} aria-current={filters.round === round ? 'page' : undefined}>{round}º turno de {filters.year}</Link>)}</nav>
-      : <RoundNote decided={rounds.decided} office={officeLabel} place={filters.uf && filters.uf !== 'ZZ' ? `em ${UF_NAMES[filters.uf]}` : 'nesta UF'}>{filters.round !== '1' && <> <Link href={placesHref(code, filters, { round: '1', page: 1 })}>Ver o 1º turno</Link>.</>}</RoundNote>}
+      : <RoundNote decided={rounds.decided} office={officeLabel} seats={officeSeats(filters.year, filters.office)} place={filters.uf && filters.uf !== 'ZZ' ? `em ${UF_NAMES[filters.uf]}` : 'nesta UF'}>{filters.round !== '1' && <> <Link href={placesHref(code, filters, { round: '1', page: 1 })}>Ver o 1º turno</Link>.</>}</RoundNote>}
     <details className="notice place-context"><summary>Como interpretar os locais e seus dados</summary><p>Local de votação é onde o eleitor vota, não onde mora. O código do local só é único junto com a zona eleitoral. Prédios compartilhados entre zonas não foram unificados.</p><p>Aptos, comparecimento e abstenção por local não estão disponíveis neste recorte.</p>
-      {exterior ? <p>Locais do exterior não têm setor censitário do IBGE.</p> : <><p>Cada local mostra o setor censitário do Censo 2022 que contém o seu ponto no cadastro do TSE, quando a associação é possível; nos demais casos, nenhum setor é escolhido. O setor descreve o entorno do prédio, não os eleitores que votam nele. <Link href="/metodologia#perfis">Como a associação é feita</Link>.</p>
+      {exterior ? <p>Locais do exterior não têm setor censitário do IBGE.</p> : filters.year !== '2022' ? <p>A associação de locais a setores censitários usa o cadastro de locais de 2022; para {filters.year}, os locais aparecem sem setor.</p> : <><p>Cada local mostra o setor censitário do Censo 2022 que contém o seu ponto no cadastro do TSE, quando a associação é possível; nos demais casos, nenhum setor é escolhido. O setor descreve o entorno do prédio, não os eleitores que votam nele. <Link href="/metodologia#perfis">Como a associação é feita</Link>.</p>
         {tractData ? <><TractSummaryTable summary={tractData.summary} /><p><Link href={tractMapHref(code, filters.uf!)}>Ver os setores censitários e os locais de votação no mapa</Link>.</p></> : tracts?.kind === 'missing' ? <p>Este município não tem locais na associação publicada.</p> : tracts?.kind === 'ready' ? <p>Associação a setores ainda sem publicação para esta eleição.</p> : null}</>}</details>
     <section id="resultados" className="places-results" aria-labelledby="resultados-titulo" tabIndex={-1}>
       <h2 id="resultados-titulo">Locais encontrados</h2>

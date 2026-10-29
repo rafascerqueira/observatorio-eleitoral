@@ -81,6 +81,9 @@ export function Choropleth({ map, items, title, description, ramp, href, id = ra
   const titleId = `${id}-titulo`, descriptionId = `${id}-descricao`;
   const legend = legendEntries(breaks, ramp, Boolean(cuts));
   const missing = shapes.filter((shape) => byId.get(shape.id)?.value == null).length;
+  // Município criado depois do Censo 2022 não tem área na malha: fica fora do desenho, e o mapa diz isso.
+  const unmapped = items.filter((item) => item.id === null).length;
+  const unmappedNote = unmapped > 0 && <p className="query-note choropleth-note">{unmapped === 1 ? '1 município sem área na malha do IBGE de 2022 (criado depois do Censo) fica fora do desenho; está na tabela.' : `${unmapped.toLocaleString('pt-BR')} municípios sem área na malha do IBGE de 2022 (criados depois do Censo) ficam fora do desenho; estão na tabela.`}</p>;
   return <figure className="choropleth">
     <figcaption><span className="choropleth-title" id={titleId}>{title}</span><span className="source-note" id={descriptionId}>{description}</span></figcaption>
     {/* O desenho é complemento visual: leitores de tela e teclado usam a tabela com os mesmos valores. */}
@@ -103,5 +106,6 @@ export function Choropleth({ map, items, title, description, ramp, href, id = ra
     </ul>
     <p className="query-note choropleth-note">{cuts ? 'Escala fixa, igual em todos os recortes.' : `Quintis: cada cor reúne cerca de um quinto das ${values.length.toLocaleString('pt-BR')} unidades com dado; os limites mudam com o recorte.`}</p></>
       : missing > 0 && <p className="query-note choropleth-note">Sem dado: {missing}.</p>}
+    {unmappedNote}
   </figure>;
 }

@@ -56,6 +56,15 @@ Os dois últimos comandos carregam apenas SP; o escopo completo exige executar c
 
 `import:state` usa as entradas da UF nos ZIPs de apuração e votação nominal e baixa o ZIP de seções da UF. A conferência persistida é feita antes da publicação. A suplementar de RR é excluída somente pela declaração auditada, com contagem e aviso; não é misturada à eleição ordinária de 2022.
 
+As eleições de 2026 usam os mesmos comandos com `--year 2026` (o padrão continua `2022`, e as publicações de 2022 mantêm a identidade). Os arquivos vão para `data/raw/tse/2026`; cada ano tem publicações próprias (`2026/president/BR`, `2026/president/ZZ`, `2026/<cargo>/<UF>`), versões próprias (`president-2026-national-v1`, `president-2026-exterior-v1`, `governor-2026-state-v1`, `senator-2026-state-v1`) e regras auditadas nos originais de 2026: Senado com duas vagas (votos = 2 × comparecimento, por zona) e Presidência com nulos técnicos.
+
+```sh
+npm run import:national -- --year 2026
+npm run verify:national -w @observatorio/importer -- --year 2026
+npm run import:exterior -- --year 2026   # depois da nacional do mesmo ano (lê as partições dela)
+npm run import:state -- --office senator --uf SP --year 2026
+```
+
 As medidas históricas de cerca de 816 MiB para os ZIPs iniciais da Presidência e 3 GiB no banco referem-se à carga presidencial, **não ao projeto completo**. Cargos estaduais, perfis, IBGE, staging, versões antigas e backups aumentam o armazenamento; confira o espaço disponível antes de carregar.
 
 ### Contexto, mapas e derivados

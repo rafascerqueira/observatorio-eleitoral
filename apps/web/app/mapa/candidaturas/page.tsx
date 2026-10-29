@@ -10,7 +10,7 @@ import { Choropleth, legendEntries, MapShapeDefs, projectShapes, type Topology }
 import { MapHover } from '../../../components/map-hover';
 import { MapTabs } from '../../../components/map-tabs';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, type RawQuery } from '../../../lib/query-ui';
-import { availabilityFromCatalog } from '../../../lib/rounds';
+import { availabilityFromCatalog, yearChoices } from '../../../lib/rounds';
 
 export const metadata: Metadata = { title: 'Mapa por candidatura' };
 export const dynamic = 'force-dynamic';
@@ -28,6 +28,8 @@ export default async function CandidateMaps({ searchParams }: { searchParams: Pr
   const valid = parsed.success && !scopeError;
   const [catalog, geometry, data] = await Promise.all([getCatalog(), valid ? getMapGeometry(filters.uf) : null, valid ? getCandidateMap(filters) : null]);
   const availability = availabilityFromCatalog(catalog?.datasets ?? []);
+  const years = yearChoices(catalog?.datasets ?? null, rawValue(raw, 'year', filters.year));
+  const yearParam: Record<string, string> = filters.year === '2022' ? {} : { year: filters.year };
   const topology = geometry?.status === 'published' ? geometry.topology : null;
   const published = data?.status === 'published' && data.items.length > 0 ? data : null;
   const level = filters.uf ? 'municipality' : 'uf';
@@ -35,22 +37,23 @@ export default async function CandidateMaps({ searchParams }: { searchParams: Pr
   const place = filters.uf ? UF_NAMES[filters.uf] : 'Brasil';
   const map = topology ? projectShapes(topology as Topology) : { shapes: [], height: 0, insets: [] };
   const name = (item: CandidateMap['items'][number]) => level === 'uf' ? UF_NAMES[item.uf] : item.name;
-  const href = (item: { code: string; uf: string }) => level === 'uf' ? `/mapa/candidaturas?${new URLSearchParams({ office: filters.office, round: filters.round, uf: item.uf })}`
-    : `/municipios/${item.code}?${new URLSearchParams({ uf: item.uf, round: filters.round, office: filters.office })}`;
+  const href = (item: { code: string; uf: string }) => level === 'uf' ? `/mapa/candidaturas?${new URLSearchParams({ ...yearParam, office: filters.office, round: filters.round, uf: item.uf })}`
+    : `/municipios/${item.code}?${new URLSearchParams({ ...yearParam, uf: item.uf, round: filters.round, office: filters.office })}`;
   // Cada candidatura vira uma série de valores no formato do mapa (% dos válidos da unidade; sem válidos, sem dado).
   const series = (data: CandidateMap, index: number): MapValues['items'] => candidateSeries(data, index).map((item) => ({ ...item, name: level === 'uf' ? UF_NAMES[item.uf] : item.name }));
   const ufChoices = [{ value: '', label: 'Brasil, por UF' }, ...[...STATES].sort((a, b) => UF_NAMES[a].localeCompare(UF_NAMES[b], 'pt-BR')).map((uf) => ({ value: uf as string, label: `${UF_NAMES[uf]}, por município` }))];
   return <>
-    <section className="hero places-hero"><p className="eyebrow">MAPA · ELEIÇÕES 2022</p><h1>Votação por candidatura — {place}</h1>
+    <section className="hero places-hero"><p className="eyebrow">MAPA · ELEIÇÕES {filters.year}</p><h1>Votação por candidatura — {place}</h1>
       <p className="hero-description">Um mapa para cada candidatura, todos na mesma escala: a cor diz que parcela dos votos válidos da {unit === 'UF' ? 'UF' : 'cidade'} a candidatura recebeu. A cor não indica partido nem quem venceu; a área desenhada não é o número de eleitores.</p></section>
     <section className="explorer" aria-labelledby="candidaturas-filtros">
       <MapTabs current="candidates" />
       <div className="section-heading"><div><p className="eyebrow">ESCOLHA O RECORTE</p><h2 id="candidaturas-filtros">Cargo, território e turno</h2></div><Link className="text-link" href="/metodologia#mapas">Como ler <span aria-hidden="true">↗</span></Link></div>
-      <ErrorSummary errors={errors} targets={{ office: 'office', uf: 'uf', round: 'round-1' }} />
+      <ErrorSummary errors={errors} targets={{ year: 'year', office: 'office', uf: 'uf', round: 'round-1' }} />
       <QueryForm key={JSON.stringify(raw)} action="/mapa/candidaturas" className="municipality-filters" label="Filtros do mapa por candidatura" submitLabel="Ver mapas" resultsId="mapas" hasErrors={errors.length > 0}>
+        <div className="field"><label htmlFor="year">Eleição</label><QuerySelect id="year" name="year" value={rawValue(raw, 'year', filters.year)} errors={errors} choices={years.choices} disabledValues={years.disabledValues} /></div>
         <div className="field"><label htmlFor="office">Cargo</label><QuerySelect id="office" name="office" value={rawValue(raw, 'office', filters.office)} errors={errors} choices={OFFICES.map((office) => ({ value: office, label: OFFICE_LABELS[office] }))} /></div>
         <UfField office={rawValue(raw, 'office', filters.office)} value={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors} choices={ufChoices} />
-        <RoundField availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
+        <RoundField year={rawValue(raw, 'year', filters.year)} availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
       </QueryForm>
       <div id="mapas" className="query-results">
         {!valid ? <p className="notice scope-notice">Corrija os filtros acima para ver os mapas.</p>
@@ -71,11 +74,11 @@ export default async function CandidateMaps({ searchParams }: { searchParams: Pr
             <div className="table-scroll context-table" role="region" aria-label="Tabela dos mapas por candidatura" tabIndex={0}><table>
               <caption className="sr-only">Percentual dos votos válidos de cada candidatura por {unit}, com votos e votos válidos.</caption>
               <thead><tr><th scope="col">{level === 'uf' ? 'UF' : 'Município'}</th><th scope="col">Votos válidos</th>{published.candidates.map((candidate) => <th scope="col" key={candidate.number}>{candidate.name} <span className="candidate-number">{candidate.number}</span></th>)}</tr></thead>
-              <tbody>{published.items.map((item) => <tr key={item.id}><th scope="row"><Link href={href(item)}>{name(item)}</Link></th><td>{number(item.valid)}</td>
+              <tbody>{published.items.map((item) => <tr key={`${item.uf}-${item.code}`}><th scope="row"><Link href={href(item)}>{name(item)}</Link></th><td>{number(item.valid)}</td>
                 {item.votes.map((votes, index) => <td key={published.candidates[index]!.number}>{pct(percent(votes, item.valid))}<span className="source-note cell-count">{number(votes)}</span></td>)}</tr>)}</tbody>
             </table></div>
           </details>
-          {filters.uf && filters.office === 'president' && <p className="query-note"><Link href={`/mapa/candidaturas?${new URLSearchParams({ office: filters.office, round: filters.round })}`}>← Voltar ao Brasil por UF</Link></p>}
+          {filters.uf && filters.office === 'president' && <p className="query-note"><Link href={`/mapa/candidaturas?${new URLSearchParams({ ...yearParam, office: filters.office, round: filters.round })}`}>← Voltar ao Brasil por UF</Link></p>}
         </>}
       </div>
     </section>

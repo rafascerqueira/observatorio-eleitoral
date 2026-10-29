@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { exteriorQuerySchema, percent, STATES } from '@observatorio/contracts';
-import { getExterior } from '../../lib/results';
+import { getCatalog, getExterior } from '../../lib/results';
+import { yearChoices } from '../../lib/rounds';
 import { QueryForm } from '../../components/query-form';
 import { ErrorSummary, FieldError, QuerySelect, TurnField } from '../../components/query-fields';
 import { UF_NAMES, rawValue, recoverQuery, queryErrors, type RawQuery } from '../../lib/query-ui';
@@ -13,7 +14,8 @@ export default async function Exterior({ searchParams }: { searchParams: Promise
   const parsed = exteriorQuerySchema.safeParse(raw);
   const filters = parsed.success ? parsed.data : exteriorQuerySchema.parse(recoverQuery(raw, 'exterior'));
   const errors = parsed.success ? [] : queryErrors(raw, parsed.error.issues);
-  const state = parsed.success ? await getExterior(filters) : null;
+  const [state, catalog] = await Promise.all([parsed.success ? getExterior(filters) : null, getCatalog()]);
+  const years = yearChoices(catalog?.datasets ?? null, rawValue(raw, 'year', filters.year));
   const data = state?.kind === 'ready' && state.data.status === 'published' ? state.data : null;
   const number = (value: number | null) => value === null ? 'Indisponível' : value.toLocaleString('pt-BR');
   const rate = (value: number | null) => value === null ? 'Indisponível' : `${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
@@ -33,7 +35,7 @@ export default async function Exterior({ searchParams }: { searchParams: Promise
       <QueryForm key={JSON.stringify(raw)} action="/" label="Filtros do exterior" className="municipality-filters" submitLabel="Consultar" hintId="exterior-help" hasErrors={errors.length > 0}
         secondary={<Link className="secondary-action" href={brazilHref(filters.year, filters.round)}>Voltar ao Brasil</Link>}>
         <input type="hidden" name="office" value="president" />
-        <div className="field"><label htmlFor="year">Eleição</label><QuerySelect id="year" name="year" value={rawValue(raw, 'year', filters.year)} errors={errors} choices={[{ value: '2022', label: '2022' }, { value: '2026', label: '2026 — ainda não publicado' }]} /></div>
+        <div className="field"><label htmlFor="year">Eleição</label><QuerySelect id="year" name="year" value={rawValue(raw, 'year', filters.year)} errors={errors} choices={years.choices} disabledValues={years.disabledValues} /></div>
         <TurnField value={rawValue(raw, 'round', filters.round)} errors={errors} />
         <div className="field"><label htmlFor="uf">Abrangência</label><QuerySelect id="uf" name="uf" value="ZZ" errors={errors} choices={[{ value: '', label: 'Todo o Brasil' }, ...choices, { value: 'ZZ', label: 'Exterior — ZZ' }]} /></div>
         <div className="field"><label htmlFor="search">Cidade no exterior <span className="optional-label">(opcional)</span></label><input id="search" type="search" name="search" maxLength={100} defaultValue={rawValue(raw, 'search', filters.search ?? '')} placeholder="Ex.: Lisboa, Boston ou Tóquio" aria-invalid={invalidSearch || undefined} aria-describedby={invalidSearch ? 'search-error exterior-help' : 'exterior-help'} /><FieldError field="search" errors={errors} /></div>

@@ -9,12 +9,12 @@ import { useFormSelection } from './use-form-selection';
 const asOffice = (value: string): Office => (OFFICES as readonly string[]).includes(value) ? value as Office : 'president';
 
 /** Mostra só os turnos realizados no recorte; ao mudar cargo ou UF no navegador, recompõe o campo e avisa a troca. */
-export function RoundField({ availability, office, uf, value, errors, prefix = '' }: {
-  availability: RoundAvailability; office: string; uf: string; value: string; errors: QueryError[]; prefix?: string;
+export function RoundField({ availability, office, uf, value, errors, prefix = '', year = '2022' }: {
+  availability: RoundAvailability; office: string; uf: string; value: string; errors: QueryError[]; prefix?: string; year?: string;
 }) {
   const anchor = useRef<HTMLDivElement>(null);
-  const selection = useFormSelection(anchor, { office, uf, round: value });
-  const options = roundOptions(availability, asOffice(selection.office), selection.uf || undefined);
+  const selection = useFormSelection(anchor, { office, uf, round: value, year });
+  const options = roundOptions(availability, asOffice(selection.office), selection.uf || undefined, selection.year);
   const unavailable = ['1', '2'].includes(selection.round) && !options.rounds.includes(selection.round as '1' | '2');
   const [announcement, setAnnouncement] = useState('');
   const first = useRef(true);

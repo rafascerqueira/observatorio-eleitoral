@@ -16,6 +16,15 @@ export const OFFICE_LABELS: Record<Office, string> = { president: 'Presidência'
 export const STATE_OFFICES: readonly Office[] = ['governor', 'senator'];
 /** Cargos eleitos por maioria simples em turno único: não existe 2º turno, nem a ser importado. */
 export const SINGLE_ROUND_OFFICES: readonly Office[] = ['senator'];
+/** Eleições gerais publicadas ou previstas. Cada ano tem publicações próprias (`<ano>/<cargo>/<território>`). */
+export const ELECTION_YEARS = ['2022', '2026'] as const;
+export type ElectionYear = typeof ELECTION_YEARS[number];
+/**
+ * Vagas por cargo e eleição: o Senado renova um terço (uma vaga por UF, 2022) ou dois terços (duas vagas, 2026). Com duas vagas,
+ * cada eleitor vota duas vezes: os votos somam o dobro do comparecimento, e o percentual de cada candidatura é sobre os votos
+ * válidos, não sobre eleitores. Os eleitos são as candidaturas mais votadas, tantas quantas as vagas.
+ */
+export function officeSeats(year: string | number, office: Office): 1 | 2 { return office === 'senator' && String(year) === '2026' ? 2 : 1; }
 export const isStateOffice = (office: Office) => STATE_OFFICES.includes(office);
 const integerParameter = (minimum: number, maximum: number, fallback: number) =>
   z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(minimum).max(maximum)).default(fallback);
@@ -28,7 +37,7 @@ const CONTROL_CHARACTERS_MESSAGE = 'A busca não aceita caracteres de controle.'
 const searchInput = (maximum: number) => z.string().trim().max(maximum).refine((value) => !hasControlCharacters(value), CONTROL_CHARACTERS_MESSAGE);
 
 export const municipalityQuerySchema = z.object({
-  year: z.enum(['2022', '2026']).default('2022'),
+  year: z.enum(ELECTION_YEARS).default('2022'),
   round: z.enum(['1', '2']).default('1'),
   office: z.enum(OFFICES).default('president'),
   uf: z.enum(STATES).optional(),
@@ -91,13 +100,15 @@ export const sourceSchema = z.object({
   downloadedAtBasis: z.enum(['filesystem-mtime', 'download-response']).optional(),
 });
 export const datasetSchema = z.object({
-  id: z.string(), year: z.literal(2022), office: z.enum(OFFICES), municipalityCode: z.string().optional(),
+  id: z.string(), year: z.union([z.literal(2022), z.literal(2026)]), office: z.enum(OFFICES), municipalityCode: z.string().optional(),
   municipalityName: z.string().optional(), uf: z.enum(TERRITORIES).optional(), importedAt: z.string(), importerVersion: z.string(),
   sources: z.array(sourceSchema), scope: z.string(), validation: z.literal('reconciled'),
   level: z.enum(['municipality', 'national', 'exterior', 'state']).default('municipality'),
   // Ausente nas versões antigas (Presidência, dois turnos): não significa turno único.
   rounds: z.array(z.enum(['1', '2'])).min(1).optional(),
   coverage: z.object({ expected: nonnegative, reconciled: nonnegative, blocked: nonnegative, excluded: nonnegative }).optional(),
+  // Vagas do cargo na eleição (votos por eleitor). Ausente nas versões de 2022: lido por `officeSeats`, nunca como zero.
+  seats: z.union([z.literal(1), z.literal(2)]).optional(),
   // Linhas de outra eleição presentes nas entradas e excluídas explicitamente (ex.: suplementar posterior).
   exclusions: z.array(z.object({ electionCode: z.string(), description: z.string(), reason: z.string(), rows: z.record(z.string(), nonnegative) })).optional(),
 });
@@ -137,7 +148,7 @@ export const catalogSchema = z.object({
   tractDisplayDatasets: z.array(z.lazy(() => tractDisplayDatasetSchema)).default([]),
   proposalsDatasets: z.array(z.lazy(() => proposalsDatasetSchema)).default([]),
 });
-const filtersSchema = z.object({ year: z.enum(['2022', '2026']), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
+const filtersSchema = z.object({ year: z.enum(ELECTION_YEARS), round: z.enum(['1', '2']), office: z.enum(OFFICES), uf: z.enum(STATES).optional(), search: z.string().optional(), sort: z.enum(['municipality', 'uf']), direction: z.enum(['asc', 'desc']) });
 export const emptyMunicipalitiesSchema = z.object({
   status: z.literal('awaiting-import'),
   items: z.array(z.never()).length(0),
@@ -342,7 +353,7 @@ export type MapIndicator = keyof typeof MAP_INDICATORS;
 export const MAP_INDICATOR_KEYS = Object.keys(MAP_INDICATORS) as [MapIndicator, ...MapIndicator[]];
 /** Indicadores do Censo (lado esquerdo de `/mapa`); a abstenção é uma das séries comparadas. */
 export const CENSUS_MAP_INDICATORS = MAP_INDICATOR_KEYS.filter((key) => MAP_INDICATORS[key].family === 'ibge') as [MapIndicator, ...MapIndicator[]];
-export const mapQuerySchema = z.object({ year: z.enum(['2022', '2026']).default('2022'), round: z.enum(['1', '2']).default('1'), uf: z.enum(STATES).optional(), indicator: z.enum(MAP_INDICATOR_KEYS),
+export const mapQuerySchema = z.object({ year: z.enum(ELECTION_YEARS).default('2022'), round: z.enum(['1', '2']).default('1'), uf: z.enum(STATES).optional(), indicator: z.enum(MAP_INDICATOR_KEYS),
   // Cargo dos resultados na abstenção (cargo estadual exige UF); os indicadores do Censo não dependem de cargo.
   office: z.enum(OFFICES).default('president') }).strict();
 /** Publicações lidas numa resposta de mapa: resultados do TSE e contexto municipal (Censo e correspondência TSE–IBGE). */
@@ -351,8 +362,9 @@ export const mapValuesSchema = z.object({
   status: z.enum(['published', 'awaiting-import', 'round-not-held']), indicator: z.enum(MAP_INDICATOR_KEYS), level: z.enum(['uf', 'municipality']), round: z.enum(['1', '2']),
   // Só na abstenção: cargo dos resultados. Ausente nas respostas anteriores, que eram sempre da Presidência.
   office: z.enum(OFFICES).optional(),
-  // `id`: código IBGE (polígono); `code`: UF ou código TSE do município. Valor `null` quando numerador ou denominador faltam.
-  items: z.array(z.object({ id: z.string(), code: z.string(), uf: z.enum(STATES), name: z.string(), numerator: sourceCount, denominator: sourceCount, value: z.number().min(0).max(100).nullable() })),
+  // `id`: código IBGE (polígono); `null` para município sem correspondência no Censo 2022 (criado depois), que fica só na tabela.
+  // `code`: UF ou código TSE do município. Valor `null` quando numerador ou denominador faltam.
+  items: z.array(z.object({ id: z.string().nullable(), code: z.string(), uf: z.enum(STATES), name: z.string(), numerator: sourceCount, denominator: sourceCount, value: z.number().min(0).max(100).nullable() })),
   publications: mapPublicationsSchema.optional(),
 });
 export type MapValues = z.infer<typeof mapValuesSchema>;
@@ -375,8 +387,9 @@ export const candidateMapSchema = z.object({
   status: z.enum(['published', 'awaiting-import', 'round-not-held']), office: z.enum(OFFICES), round: z.enum(['1', '2']), level: z.enum(['uf', 'municipality']), uf: z.enum(STATES).nullable(),
   // Ordem por votos no recorte (sem exterior); `votes` de cada unidade segue esta ordem.
   candidates: z.array(z.object({ number: z.string(), name: z.string(), party: z.string(), votes: nonnegative, percentValid: z.number().nullable() })),
-  // `id`: código IBGE do polígono; `valid`: votos válidos da unidade (denominador). O exterior não tem polígono e fica fora.
-  items: z.array(z.object({ id: z.string(), code: z.string(), uf: z.enum(STATES), name: z.string(), valid: nonnegative, votes: z.array(nonnegative) })),
+  // `id`: código IBGE do polígono (`null`: município criado depois do Censo 2022, só na tabela); `valid`: votos válidos da unidade
+  // (denominador). O exterior não tem polígono e fica fora.
+  items: z.array(z.object({ id: z.string().nullable(), code: z.string(), uf: z.enum(STATES), name: z.string(), valid: nonnegative, votes: z.array(nonnegative) })),
   publications: mapPublicationsSchema.optional(),
 });
 export type CandidateMap = z.infer<typeof candidateMapSchema>;

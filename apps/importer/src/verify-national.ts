@@ -2,16 +2,23 @@ import { config } from 'dotenv';
 import { resolve } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { Pool } from 'pg';
+import { parseArgs } from 'node:util';
+import { ELECTION_YEARS, type ElectionYear } from '@observatorio/contracts';
+import { SCOPES } from './model';
 import { ROOT } from './sources';
 import assert from 'node:assert/strict';
 import { rows, count as sourceCount } from './csv';
 import { municipalityCode } from './territory';
 
 async function run() {
+  const { values } = parseArgs({ options: { year: { type: 'string', default: '2022' } } });
+  if (!(ELECTION_YEARS as readonly string[]).includes(values.year!)) throw new Error(`Uso: --year ${ELECTION_YEARS.join('|')}`);
+  const year = values.year as ElectionYear;
+  const scope = SCOPES[year].president;
   config({ path: resolve(ROOT, '.env'), quiet: true });
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
   try {
-    const batch = await pool.query("SELECT id,metadata FROM import_batches WHERE published AND scope='2022/president/BR'");
+    const batch = await pool.query('SELECT id,metadata FROM import_batches WHERE published AND scope=$1', [`${year}/president/BR`]);
     const dataset = batch.rows[0]?.metadata;
     assert.ok(dataset, 'Publicação nacional não concluída.');
     const id = batch.rows[0]!.id;
@@ -36,18 +43,19 @@ async function run() {
     const stored = await pool.query(`SELECT round,vote_number,sum(votes)::text AS votes FROM national_section_votes WHERE batch_id=$1 GROUP BY round,vote_number ORDER BY round,vote_number`, [id]);
     const expected = await pool.query(`SELECT round,c->>'number' AS vote_number,sum((c->>'votes')::bigint)::text AS votes FROM municipality_results CROSS JOIN LATERAL jsonb_array_elements(result->'candidates') c WHERE batch_id=$1 GROUP BY round,c->>'number'
       UNION ALL SELECT round,'95',sum((result->'totals'->>'blank')::bigint)::text FROM municipality_results WHERE batch_id=$1 GROUP BY round
-      UNION ALL SELECT round,'96',sum((result->'totals'->>'null')::bigint)::text FROM municipality_results WHERE batch_id=$1 GROUP BY round ORDER BY round,vote_number`, [id]);
+      UNION ALL SELECT round,n->>'number',sum((n->>'votes')::bigint)::text FROM municipality_results CROSS JOIN LATERAL jsonb_array_elements(coalesce(result->'nonValidVotes','[]'::jsonb)) n WHERE batch_id=$1 GROUP BY round,n->>'number'
+      UNION ALL SELECT round,'96',sum((result->'totals'->>'null')::bigint - coalesce((result->'totals'->>'technicalNull')::bigint,0))::text FROM municipality_results WHERE batch_id=$1 GROUP BY round ORDER BY round,vote_number`, [id]);
     assert.deepEqual(stored.rows, expected.rows, 'Votos persistidos devem reproduzir todas as candidaturas/brancos/nulos dos dois turnos.');
     const wrongCount = await pool.query(`SELECT count(*)::integer AS count FROM (
       SELECT uf,municipality_code,count(*) AS rows FROM national_section_votes WHERE batch_id=$1 GROUP BY uf,municipality_code
     ) s FULL JOIN (SELECT uf,code,section_rows FROM import_coverage WHERE batch_id=$1 AND status='reconciled') c ON s.uf=c.uf AND s.municipality_code=c.code WHERE s.rows IS DISTINCT FROM c.section_rows::bigint`, [id]);
     assert.equal(wrongCount.rows[0]!.count, 0, 'Cada município precisa conservar todos os registros selecionados.');
-    const dimensions = await pool.query(`SELECT count(*)::integer AS count FROM national_section_votes WHERE batch_id=$1 AND (year<>2022 OR office<>'president' OR uf='ZZ' OR election_code<>CASE WHEN round=1 THEN '544' ELSE '545' END)`, [id]);
+    const dimensions = await pool.query(`SELECT count(*)::integer AS count FROM national_section_votes WHERE batch_id=$1 AND (year<>$2 OR office<>'president' OR uf='ZZ' OR election_code<>CASE WHEN round=1 THEN $3 ELSE $4 END)`, [id, scope.year, scope.electionCodes['1'], scope.electionCodes['2']]);
     assert.equal(dimensions.rows[0]!.count, 0);
     const volumes = await pool.query(`SELECT pg_database_size(current_database())::text AS database_bytes,pg_total_relation_size('national_section_votes')::text AS section_table_and_indexes_bytes`);
     const nonInstalled = [];
     const detailSource = dataset.sources[0];
-    for await (const row of rows(resolve(ROOT, 'data/originals', detailSource.sha256, detailSource.file), detailSource.entry, (row) => row.SG_UF !== 'ZZ' && row.ANO_ELEICAO === '2022' && row.CD_CARGO === '1' && sourceCount(row, 'QT_SECOES_NAO_INSTALADAS') > 0)) {
+    for await (const row of rows(resolve(ROOT, 'data/originals', detailSource.sha256, detailSource.file), detailSource.entry, (row) => row.SG_UF !== 'ZZ' && row.ANO_ELEICAO === year && row.CD_CARGO === scope.cargo && sourceCount(row, 'QT_SECOES_NAO_INSTALADAS') > 0)) {
       const code = municipalityCode(row.CD_MUNICIPIO!);
       const actual = await pool.query('SELECT count(DISTINCT section)::integer AS sections FROM national_section_votes WHERE batch_id=$1 AND uf=$2 AND municipality_code=$3 AND round=$4 AND zone=$5', [id, row.SG_UF, code, Number(row.NR_TURNO), Number(row.NR_ZONA)]);
       const principal = sourceCount(row, 'QT_SECOES_PRINCIPAIS'), missing = sourceCount(row, 'QT_SECOES_NAO_INSTALADAS'), missingEligible = sourceCount(row, 'QT_ELEITORES_SECOES_NAO_INSTALADAS');

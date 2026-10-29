@@ -9,11 +9,12 @@ async function request(base, path, status = 200) {
 }
 
 assert.deepEqual(await (await request(api, '/health/ready')).json(), { status: 'ok', database: 'ok' });
+// 2026 tem publicação própria (desde 28/10/2026): o ano pedido é o ano da publicação lida.
 const data = await (await request(api, '/elections/municipalities?year=2026&round=1&uf=SP&pageSize=10')).json();
-assert.equal(data.status, 'awaiting-import');
-assert.equal(data.dataset, null);
-assert.equal(data.pagination.total, 0);
-assert.deepEqual(data.items, []);
+assert.equal(data.status, 'published');
+assert.equal(data.dataset.year, 2026);
+assert.ok(data.pagination.total > 600 && data.items.length === 10);
+assert.ok(data.items.every((item) => item.electionCode === '6257'));
 await request(api, '/elections/municipalities?pageSize=101', 400);
 
 const home = await (await request(web, '/')).text();
