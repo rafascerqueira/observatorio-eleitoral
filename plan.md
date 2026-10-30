@@ -1071,3 +1071,21 @@ Pendente:
 - decidir se 2026 terá contexto, perfis e associação local → setor (cadastro de locais e perfis do TSE de 2026; ~7,5 GB a mais, item 61);
 - se o TSE publicar nova versão dos arquivos de 2026, nova publicação com nova identidade;
 - liberar espaço dos lotes de 2022 não publicados (~3,5 GB no banco e ~2,6 GB em staging), se Rafael decidir.
+
+## 63. Limpeza de armazenamento e originais por hard link — 29/10/2026
+
+A pedido de Rafael, depois da carga de 2026 (disco a 83%, 40 GB livres). Nenhum dado de fonte nem publicação foi alterado.
+
+- **`data/raw` × `data/originals`:** 311 arquivos do TSE estavam gravados duas vezes (`sources.ts` copiava). Cada um foi comparado byte a byte com o original (`cmp`, nenhuma divergência) e o original em `data/originals/<sha256>/` passou a ser hard link do arquivo em `data/raw`, na mesma direção de `sidra.ts`. Assim, o mtime de `data/raw` continua a base de `downloadedAt` dos três ZIPs nacionais de 2022 sem `.download.json`. Depois disso, todos os ZIPs em `originals` conferem com o SHA-256 da pasta. Os arquivos de `data/raw` ficam somente leitura (444), como os do IBGE. Ganho: 8,1 GB.
+- **`data/staging/state` e `data/staging/national` apagados (8,5 GB):** era cache de retomada (manifestos e NDJSON por município), sem importação em andamento nem partição `.partial-*`. A API não lê o staging. Uma reimportação refaz a preparação a partir dos originais, só que mais devagar. Ficaram o staging das propostas e `sao-paulo-2022.json` (86 MB).
+- **Fora do projeto:** build cache e imagens órfãs do Docker, caches do npm, pnpm e pip (~11 GB).
+- **`sources.ts`:** o original agora é criado com `link` (com cópia só em `EXDEV`), para que downloads novos não dupliquem os bytes. Identidade das publicações inalterada (mesmos bytes e hashes).
+
+Resultado: `data/` 30 → 13 GB; disco livre 40 → 68 GB (71%).
+
+**Verificação:** typecheck do importador sem erros; testes unitários do importador 59/59; `sourceFile(stateSources('AC', 2026)[2])` executado sobre os dados reais devolve o original no mesmo inode de `data/raw` (2 links), com `downloadedAtBasis: download-response`. Smoke tests não rodados (a mudança não toca API nem web).
+
+Pendente:
+- backups de 17, 18 e 19/10 (0,9 GB) mantidos; apagar só por decisão de Rafael (o de 28/10 é o mais recente);
+- lotes não publicados no banco (~3,5 GB, mais `VACUUM FULL`), se Rafael decidir;
+- merge do ramo `chore/originais-hardlink` no `main`.

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, stat, rename, copyFile, chmod, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, stat, rename, copyFile, chmod, link, readFile, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
 import { Readable } from 'node:stream';
@@ -71,8 +71,11 @@ export async function sourceFile(source: SourceSpec) {
   const originalDirectory = resolve(ROOT, 'data/originals', sha256);
   await mkdir(originalDirectory, { recursive: true });
   const original = resolve(originalDirectory, source.file);
-  try { await copyFile(path, original, constants.COPYFILE_EXCL); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  // Hard link, como em sidra.ts: o original preservado não duplica os bytes do download.
+  try { await link(path, original); } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EXDEV') await copyFile(path, original, constants.COPYFILE_EXCL); else if (code !== 'EEXIST') throw error;
+  }
   // Um original preexistente também é verificado; não confiar apenas no nome.
   const originalHash = createHash('sha256');
   for await (const chunk of createReadStream(original)) originalHash.update(chunk);
