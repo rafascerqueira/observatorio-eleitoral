@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { config } from 'dotenv';
 import { Pool, type PoolClient } from 'pg';
-import { tractsDatasetSchema, STATES } from '@observatorio/contracts';
+import { ELECTION_YEARS, tractsDatasetSchema, STATES } from '@observatorio/contracts';
+import { parseArgs } from 'node:util';
 import { count, entries, rows } from './csv';
 import { ROOT, sourceFile } from './sources';
 import { preservedDownload, sidraValue } from './sidra';
@@ -17,8 +18,9 @@ import { municipalityCode } from './territory';
  * outro município ou na divisa de dois setores ficam sem associação, contados e declarados.
  */
 // v2: aceita coordenadas sem zero inicial (".85"); a v1 as descartava e deixava sem associação locais perto do Equador.
-const VERSION = 'polling-place-tracts-2022-v3';
-const SCOPE = '2022/places/tracts';
+// 2026 (`--year 2026`, 31/10/2026): publicação própria com o cadastro de locais de 2026 (arquivo `_BRASIL`) e a mesma malha do Censo 2022.
+// 2026-v2: a v1 leu como inválidas as coordenadas com vírgula decimal do cadastro de 2026 (nenhum local associado); fica como registro.
+const versionOf = (year: 2022 | 2026) => year === 2022 ? 'polling-place-tracts-2022-v3' : `polling-place-tracts-${year}-v2`;
 export const IBGE = 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios';
 const STATUSES = ['associated', 'no-coordinate', 'conflicting-coordinates', 'relocated', 'outside-tracts', 'other-municipality', 'ambiguous'] as const;
 type Status = typeof STATUSES[number];
@@ -36,10 +38,11 @@ export function gpkgWkb(blob: Uint8Array): Buffer | null {
 }
 /** Coordenada do TSE válida para o Brasil continental e ilhas; sentinelas e zeros não viram ponto. */
 export function coordinate(latitude: string | undefined, longitude: string | undefined): [number, number] | null {
-  // O TSE grava valores entre −1 e 1 sem o zero inicial (".85", "-.5"): são decimais válidos.
-  const decimal = /^-?(\d+(\.\d*)?|\.\d+)$/;
+  // O TSE grava valores entre −1 e 1 sem o zero inicial (".85", "-.5"): são decimais válidos. Em 2026, o separador decimal
+  // é a vírgula ("-10,5721373"); um valor com ponto e vírgula juntos não é aceito.
+  const decimal = /^-?(\d+([.,]\d*)?|[.,]\d+)$/;
   if (!latitude || !longitude || !decimal.test(latitude) || !decimal.test(longitude)) return null;
-  const lat = Number(latitude), lon = Number(longitude);
+  const lat = Number(latitude.replace(',', '.')), lon = Number(longitude.replace(',', '.'));
   return lat > -34 && lat < 6 && lon > -74 && lon < -28 ? [lat, lon] : null;
 }
 
@@ -100,11 +103,15 @@ export async function tractValues(zip: string, wanted: Set<string> | null, field
 async function run() {
   config({ path: resolve(ROOT, '.env'), quiet: true });
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL obrigatória.');
+  const { values: args } = parseArgs({ options: { year: { type: 'string', default: '2022' } } });
+  if (!(ELECTION_YEARS as readonly string[]).includes(args.year!)) throw new Error(`Uso: --year ${ELECTION_YEARS.join('|')}`);
+  const YEAR = Number(args.year) as 2022 | 2026;
+  const VERSION = versionOf(YEAR), SCOPE = `${YEAR}/places/tracts`;
   const started = performance.now();
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
-    const inputs = await publishedInputs(client, ['2022/president/BR']);
+    const inputs = await publishedInputs(client, [`${YEAR}/president/BR`]);
     const lock = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [`observatorio:${SCOPE}`]);
     if (!lock.rows[0]?.locked) throw new Error(`Já há uma importação de ${SCOPE} em execução.`);
     await client.query(await readFile(resolve(__dirname, 'schema.sql'), 'utf8'));
@@ -114,7 +121,8 @@ async function run() {
     const correspondence = await sourceFile({ file: 'municipio_tse_ibge.zip', entry: 'municipio_tse_ibge.csv', directory: 'municipio_tse_ibge' });
     const ibgeOf = new Map<string, string>();
     for await (const row of rows(correspondence.path, correspondence.entry)) ibgeOf.set(`${row.SG_UF}/${municipalityCode(row.CD_MUNICIPIO_TSE!)}`, row.CD_MUNICIPIO_IBGE!);
-    const locais = await sourceFile({ file: 'eleitorado_local_votacao_2022.zip', entry: 'eleitorado_local_votacao_2022.csv', directory: 'eleitorado_locais_votacao' });
+    const locais = YEAR === 2022 ? await sourceFile({ file: 'eleitorado_local_votacao_2022.zip', entry: 'eleitorado_local_votacao_2022.csv', directory: 'eleitorado_locais_votacao' })
+      : await sourceFile({ file: `eleitorado_local_votacao_${YEAR}.zip`, entry: `eleitorado_local_votacao_${YEAR}_BRASIL.csv`, directory: 'eleitorado_locais_votacao', year: YEAR });
     const gpkg = await preservedDownload('br_setores_cd2022', `${IBGE}/malha_com_atributos/setores/gpkg/BR/BR_setores_CD2022.gpkg`, 'setores', 'BR_setores_CD2022.gpkg (malha de setores com atributos)', [], 'gpkg');
     const income = await preservedDownload('agregados_setores_renda_responsavel', `${IBGE}_Rendimento_do_Responsavel/Agregados_por_setores_renda_responsavel_BR_20260508_csv.zip`, 'setores', 'Agregados_por_setores_renda_responsavel_BR_20260508_csv.zip', [], 'zip');
     const basic = await preservedDownload('agregados_setores_basico', `${IBGE}/Agregados_por_Setor_csv/Agregados_por_setores_basico_BR_20260520.zip`, 'setores', 'Agregados_por_setores_basico_BR_20260520.zip', [], 'zip');
@@ -142,7 +150,7 @@ async function run() {
     }
     // Cobertura frente aos locais com votos publicados (Presidência nacional, 1º turno).
     const resultPlaces = await client.query<{ key: string }>(`SELECT DISTINCT p.uf || '/' || p.municipality_code || '/' || p.zone || '/' || p.code AS key FROM national_place_results p
-      JOIN import_batches b ON b.id=p.batch_id AND b.published AND b.scope='2022/president/BR' WHERE p.round=1 AND p.uf<>'ZZ'`);
+      JOIN import_batches b ON b.id=p.batch_id AND b.published AND b.scope=$1 WHERE p.round=1 AND p.uf<>'ZZ'`, [`${YEAR}/president/BR`]);
     const withoutLocal = resultPlaces.rows.filter((row) => !places.has(row.key)).map((row) => row.key);
     console.log(`${places.size.toLocaleString('pt-BR')} locais no cadastro do TSE; ${resultPlaces.rows.length.toLocaleString('pt-BR')} com votos publicados; ${withoutLocal.length} destes sem linha no cadastro de locais.`);
 
@@ -196,12 +204,12 @@ async function run() {
       const tse = (file: Awaited<ReturnType<typeof sourceFile>>, generatedAt: string[], rowsRead: number, rowsSelected: number) => { const { path: _path, ...metadata } = file; return { ...metadata, generatedAt, rowsRead, rowsSelected }; };
       const sources = [tse(correspondence, [], 5571, 5570), tse(locais, [...generated], localRows, places.size), { ...gpkg.source, rowsRead: loaded.rows, rowsSelected: tractCount },
         { ...income.source, rowsRead: incomeValues.size, rowsSelected: incomeValues.size }, { ...basic.source, rowsRead: basicValues.size, rowsSelected: basicValues.size }];
-      const dataset = tractsDatasetSchema.parse({ id, kind: 'polling-place-tracts', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources, coverage,
-        scope: 'Locais de votação de 2022 (cadastro do TSE, 1º turno, sem exterior) associados ao setor censitário do Censo 2022 que contém a coordenada informada pelo TSE.',
+      const dataset = tractsDatasetSchema.parse({ id, kind: 'polling-place-tracts', year: YEAR, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources, coverage,
+        scope: `Locais de votação de ${YEAR} (cadastro do TSE, 1º turno, sem exterior) associados ao setor censitário do Censo 2022 que contém a coordenada informada pelo TSE.`,
         method: 'v1 — setor que contém o ponto (PostGIS ST_Intersects, SIRGAS 2000). Associado só quando há uma única coordenada para o local, um único setor contendo o ponto e esse setor pertence ao município esperado pelo código IBGE oficial. A coordenada do TSE indica onde fica o local, não onde moram os eleitores.',
         notes: [`${withoutLocal.length} locais com votos publicados não aparecem no cadastro de locais do TSE (chave: código original do local, o do dia da eleição).`,
           `Malha: ${loaded.rows.toLocaleString('pt-BR')} linhas, ${tractCount.toLocaleString('pt-BR')} setores; ${loaded.multipart} setores descontínuos tiveram as partes unidas (atributos idênticos conferidos).`,
-          'Locais com alguma seção realocada depois de 2022 no cadastro do TSE não são associados: a coordenada pode ser do prédio novo.', 'Locais de nomes diferentes na mesma coordenada exata são contados (indício de ponto padrão); continuam associados, com o aviso.',
+          `Locais com alguma seção realocada depois de ${YEAR} no cadastro do TSE não são associados: a coordenada pode ser do prédio novo.`, ...(YEAR === 2022 ? [] : ['A malha e os agregados por setor são os do Censo 2022: a associação de 2026 usa o território de 2022, e municípios criados depois do Censo não têm setor próprio.']), 'Locais de nomes diferentes na mesma coordenada exata são contados (indício de ponto padrão); continuam associados, com o aviso.',
           'Coordenadas do TSE tratadas como SIRGAS 2000 (diferença para WGS 84 desprezível nesta escala).', 'A geometria dos setores não é guardada no banco; o GeoPackage preservado permite refazer a associação.'] });
       await client.query('UPDATE import_batches SET metadata=$2 WHERE id=$1', [id, dataset]);
       const totals = coverage.reduce((sum, item) => ({ places: sum.places + item.places, electors: sum.electors + item.electors, associated: sum.associated + item.byStatus.associated!.places, associatedElectors: sum.associatedElectors + item.byStatus.associated!.electors }), { places: 0, electors: 0, associated: 0, associatedElectors: 0 });

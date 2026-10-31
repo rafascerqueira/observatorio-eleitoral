@@ -144,6 +144,7 @@ export const catalogSchema = z.object({
   tractDemographyDatasets: z.array(z.lazy(() => tractDemographyDatasetSchema)).default([]),
   turnoutProfilesDatasets: z.array(z.lazy(() => turnoutProfilesDatasetSchema)).default([]),
   urbanSurroundingsDatasets: z.array(z.lazy(() => urbanSurroundingsDatasetSchema)).default([]),
+  censusIndicatorsDatasets: z.array(z.lazy(() => censusIndicatorsDatasetSchema)).default([]),
   tractGeometriesDatasets: z.array(z.lazy(() => tractGeometriesDatasetSchema)).default([]),
   tractDisplayDatasets: z.array(z.lazy(() => tractDisplayDatasetSchema)).default([]),
   proposalsDatasets: z.array(z.lazy(() => proposalsDatasetSchema)).default([]),
@@ -220,12 +221,15 @@ export const contextDistributionSchema = z.object({
   undistributed: nonnegative.optional(),
   // Estimativas da amostra arredondadas célula a célula: soma das categorias − total, dentro do limite do arredondamento.
   roundingDifference: z.number().int().optional(),
+  // Recortes da fonte somados ou subtraídos para formar esta distribuição (ex.: 15+ = total − 0–4 − 5–9 − 10–14 → 4). Cada recorte
+  // da amostra traz o próprio arredondamento, então o limite cresce com eles. Ausente (versões anteriores) = 1.
+  slices: z.number().int().positive().optional(),
 }).superRefine((data, ctx) => {
   const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
   if (new Set(data.categories.map((item) => item.key)).size !== data.categories.length) fail('Categorias duplicadas na distribuição.');
   if (data.undistributed !== undefined && data.roundingDifference !== undefined) fail('Diferença não discriminada e arredondamento não podem explicar a mesma distribuição.');
   if (data.roundingDifference !== undefined && data.kind !== 'amostra') fail('Arredondamento só é admitido na amostra.');
-  const limit = data.kind === 'amostra' ? Math.ceil((data.categories.length + 1) / 2) : 0;
+  const limit = data.kind === 'amostra' ? Math.ceil((data.categories.length + 1) / 2) * (data.slices ?? 1) : 0;
   const known = data.categories.reduce((sum, item) => sum + (item.value ?? 0), 0);
   if (data.total === null || data.categories.some((item) => item.value === null)) {
     if (data.undistributed !== undefined || data.roundingDifference !== undefined) fail('Células indisponíveis não permitem deduzir a diferença.');
@@ -332,23 +336,102 @@ export const urbanSurroundingsDatasetSchema = z.object({
   totals: z.object({ municipalities: nonnegative, tracts: nonnegative, suppressedTracts: nonnegative, residents: nonnegative, associatedTracts: nonnegative, associatedSurveyed: nonnegative, associatedSuppressed: nonnegative }),
 });
 
-const URBAN_SOURCE = 'IBGE, Censo 2022 — características urbanísticas do entorno dos domicílios';
-/** Indicadores do mapa: cada um com fonte, tipo de dado, numerador e denominador explícitos. */
+/**
+ * Indicadores do Censo 2022 pela idade de voto (`census-indicators-2022-v1`; docs/plano-indicadores-censo-2022.md). Cada tema
+ * guarda uma distribuição por recorte de idade, sempre com a base da própria tabela (amostra com denominador da amostra).
+ * `15+` só onde a fonte agrupa 15–19 anos; o desvio máximo em relação a 16+ é `age15.age15 ÷ age15.age15plus` (em p.p. × 100).
+ * `all`: a tabela não tem idade (tempo de residência de quem mora há menos de 10 anos no município).
+ */
+export const CENSUS_THEMES = {
+  race: ['16+', '15+', '16-17', '18-69', '70+'], religion: ['15+', '70+'], education: ['18+', '18-69', '70+'], literacy: ['16+', '16-17', '18-64', '65+'],
+  labor: ['14+', '18-69', '70+'], laborForce: ['14+', '18-69', '70+'], socialSecurity: ['14+'], activity: ['14+'], position: ['14+'], workIncome: ['14+'],
+  internet: ['15+', '70+'], tenure: ['15+', '70+'], crowding: ['15+', '70+'], water: ['15+'], sewage: ['15+'], bathroom: ['15+'], garbage: ['15+'],
+  urbanRural: ['15+', '70+'], residenceTime: ['all'],
+} as const satisfies Record<string, readonly string[]>;
+export type CensusTheme = keyof typeof CENSUS_THEMES;
+export const CENSUS_THEME_KEYS = Object.keys(CENSUS_THEMES) as [CensusTheme, ...CensusTheme[]];
+/** Parcela com numerador e denominador da fonte (contagens `null` = indisponíveis, nunca zero presumido). */
+export const censusShareSchema = z.object({ kind: z.enum(['universo', 'amostra']), source: z.string(), numerator: sourceCount, denominator: sourceCount })
+  .refine((data) => data.numerator === null || data.denominator === null || data.numerator <= data.denominator, 'Numerador acima do denominador.');
+export type CensusShare = z.infer<typeof censusShareSchema>;
+/**
+ * Favelas e comunidades urbanas: `present` (na SIDRA 9884/9883), `not-delimited` (ausente das tabelas e sem setor de favela nos
+ * agregados por setor; zero conferido) ou `divergent` (fontes em desacordo, declarado no importador; sem valor).
+ */
+export const FAVELA_STATUSES = ['present', 'not-delimited', 'divergent'] as const;
+const favelaSchema = z.object({ status: z.enum(FAVELA_STATUSES), favelas: sourceCount, '15+': censusShareSchema.nullable(), note: z.string().optional() }).superRefine((data, ctx) => {
+  const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
+  if (data.status === 'present' && (!data.favelas || !data['15+'])) fail('Município com favela sem contagem ou parcela.');
+  if (data.status === 'not-delimited' && (data.favelas !== 0 || data['15+']?.numerator !== 0)) fail('Sem favela delimitada exige zero conferido.');
+  if (data.status === 'divergent' && (data.favelas !== null || data['15+'] !== null || !data.note)) fail('Divergência sem valor e com nota.');
+});
+export const censusIndicatorsSchema = z.object({
+  ibgeCode: z.string().regex(/^\d{7}$/), code: z.string(), uf: z.enum(STATES), name: z.string(),
+  // Pessoas de 15 anos e de 15+ (SIDRA 9606, universo): o desvio declarado dos recortes `15+`.
+  age15: z.object({ age15: sourceCount, age15plus: sourceCount }),
+  distributions: z.record(z.enum(CENSUS_THEME_KEYS), z.record(z.string(), contextDistributionSchema)),
+  disability: z.object({ '15+': censusShareSchema, '70+': censusShareSchema, types: z.array(censusShareSchema.and(z.object({ key: z.string(), label: z.string() }))) }),
+  migration: z.object({ '15+': censusShareSchema, '70+': censusShareSchema }),
+  favela: favelaSchema,
+}).superRefine((data, ctx) => {
+  for (const theme of CENSUS_THEME_KEYS) {
+    const slices = Object.keys(data.distributions[theme] ?? {}).sort();
+    if (slices.join() !== [...CENSUS_THEMES[theme]].sort().join()) ctx.addIssue({ code: 'custom', message: `Recortes de ${theme} divergentes: ${slices.join(', ')}.` });
+  }
+});
+export type CensusIndicators = z.infer<typeof censusIndicatorsSchema>;
+const censusUfCheckSchema = z.object({ table: z.number().int(), kind: z.enum(['universo', 'amostra']), cells: nonnegative, exact: nonnegative, maxAbsDifference: nonnegative });
+export const censusIndicatorsDatasetSchema = z.object({
+  inputs: publicationInputsSchema.optional(),
+  id: z.string(), kind: z.literal('census-indicators'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
+  scope: z.string(), notes: z.array(z.string()),
+  totals: z.object({ municipalities: nonnegative, queries: nonnegative, favela: z.record(z.enum(FAVELA_STATUSES), nonnegative) }),
+  // Soma dos municípios × valor da UF publicado pelo IBGE, por tabela: exata no universo; na amostra, diferença de arredondamento.
+  ufChecks: z.array(censusUfCheckSchema),
+});
+export type CensusIndicatorsDataset = z.infer<typeof censusIndicatorsDatasetSchema>;
+
+/**
+ * Indicador do Censo lido de `census_indicators` (publicação `census-indicators-2022-v1`): numerador = soma das categorias `keys`
+ * do recorte (ou o total de `numeratorSlice`), denominador = total do recorte. Parcelas (`disability`, `migration`, `favela`)
+ * têm a chave `numerator`. Recorte `15+` traz o desvio declarado (pessoas de 15 anos ÷ 15+).
+ */
+export type CensusMapSpec = { theme: string; slice: string; keys?: readonly string[]; numeratorSlice?: string };
+type MapIndicatorDefinition = { label: string; short: string; source: string; kind: 'universo' | 'amostra' | 'resultados'; family: 'ibge' | 'tse'; group: string; census?: CensusMapSpec };
+const sidraSource = (tables: string) => `IBGE, Censo 2022 — SIDRA ${tables}`;
+/** Indicadores do mapa: cada um com fonte, tipo de dado, numerador, denominador e grupo do seletor explícitos. */
 export const MAP_INDICATORS = {
-  'income-upto-half-mw': { label: 'Moradores com rendimento domiciliar per capita de até ½ salário mínimo (inclui sem rendimento)', source: 'IBGE, Censo 2022 — SIDRA 10296', kind: 'amostra', family: 'ibge' },
-  'college-18': { label: 'Pessoas de 18 anos ou mais com superior completo', source: 'IBGE, Censo 2022 — SIDRA 10061', kind: 'amostra', family: 'ibge' },
-  'literacy-15': { label: 'Pessoas de 15 anos ou mais alfabetizadas', source: 'IBGE, Censo 2022 — SIDRA 9542', kind: 'universo', family: 'ibge' },
-  abstention: { label: 'Abstenção (abstenções ÷ eleitores aptos)', source: 'TSE, resultados de 2022 reconciliados, do cargo escolhido', kind: 'resultados', family: 'tse' },
-  // Entorno dos domicílios: denominador = moradores dos setores com a pesquisa (V05200); fora dela não é ausência do item.
-  'urban-sidewalk': { label: 'Moradores em face de quadra com calçada (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
-  'urban-ramp': { label: 'Moradores em face de quadra com rampa para cadeirante (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
-  'urban-obstacle': { label: 'Moradores em face de quadra com obstáculo na calçada (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
-  'urban-lighting': { label: 'Moradores em face de quadra com iluminação pública (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
-  'urban-paving': { label: 'Moradores em face de quadra com via pavimentada (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
-  'urban-drain': { label: 'Moradores em face de quadra com bueiro (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
-  'urban-bus-stop': { label: 'Moradores em face de quadra com ponto de ônibus (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
-  'urban-trees': { label: 'Moradores em face de quadra com ao menos uma árvore (setores com pesquisa do entorno)', source: URBAN_SOURCE, kind: 'entorno', family: 'ibge' },
-} as const;
+  'race-white-16': { label: 'Pessoas de 16 anos ou mais de cor ou raça branca', short: 'Cor ou raça branca (16+)', source: sidraSource('9606'), kind: 'universo', family: 'ibge', group: 'Cor ou raça', census: { theme: 'race', slice: '16+', keys: ['branca'] } },
+  'race-black-16': { label: 'Pessoas de 16 anos ou mais de cor ou raça preta', short: 'Cor ou raça preta (16+)', source: sidraSource('9606'), kind: 'universo', family: 'ibge', group: 'Cor ou raça', census: { theme: 'race', slice: '16+', keys: ['preta'] } },
+  'race-brown-16': { label: 'Pessoas de 16 anos ou mais de cor ou raça parda', short: 'Cor ou raça parda (16+)', source: sidraSource('9606'), kind: 'universo', family: 'ibge', group: 'Cor ou raça', census: { theme: 'race', slice: '16+', keys: ['parda'] } },
+  'race-asian-16': { label: 'Pessoas de 16 anos ou mais de cor ou raça amarela', short: 'Cor ou raça amarela (16+)', source: sidraSource('9606'), kind: 'universo', family: 'ibge', group: 'Cor ou raça', census: { theme: 'race', slice: '16+', keys: ['amarela'] } },
+  'race-indigenous-16': { label: 'Pessoas de 16 anos ou mais de cor ou raça indígena', short: 'Cor ou raça indígena (16+)', source: sidraSource('9606'), kind: 'universo', family: 'ibge', group: 'Cor ou raça', census: { theme: 'race', slice: '16+', keys: ['indigena'] } },
+  'religion-catholic-15': { label: 'Pessoas de 15 anos ou mais católicas (Católica Apostólica Romana)', short: 'Católicas (15+)', source: sidraSource('9537'), kind: 'amostra', family: 'ibge', group: 'Religião', census: { theme: 'religion', slice: '15+', keys: ['catolica-apostolica-romana'] } },
+  'religion-evangelical-15': { label: 'Pessoas de 15 anos ou mais evangélicas', short: 'Evangélicas (15+)', source: sidraSource('9537'), kind: 'amostra', family: 'ibge', group: 'Religião', census: { theme: 'religion', slice: '15+', keys: ['evangelicas'] } },
+  'religion-none-15': { label: 'Pessoas de 15 anos ou mais sem religião', short: 'Sem religião (15+)', source: sidraSource('9537'), kind: 'amostra', family: 'ibge', group: 'Religião', census: { theme: 'religion', slice: '15+', keys: ['sem-religiao'] } },
+  'age-16-17': { label: 'Pessoas de 16 e 17 anos entre as de 16 anos ou mais (voto facultativo)', short: '16 e 17 anos (÷ 16+)', source: sidraSource('9606'), kind: 'universo', family: 'ibge', group: 'Idade', census: { theme: 'race', slice: '16+', numeratorSlice: '16-17' } },
+  'age-70-plus': { label: 'Pessoas de 70 anos ou mais entre as de 16 anos ou mais (voto facultativo)', short: '70 anos ou mais (÷ 16+)', source: sidraSource('9606'), kind: 'universo', family: 'ibge', group: 'Idade', census: { theme: 'race', slice: '16+', numeratorSlice: '70+' } },
+  'college-18': { label: 'Pessoas de 18 anos ou mais com superior completo', short: 'Superior completo (18+)', source: sidraSource('10061'), kind: 'amostra', family: 'ibge', group: 'Escolaridade e alfabetização', census: { theme: 'education', slice: '18+', keys: ['superior-completo'] } },
+  'education-low-18': { label: 'Pessoas de 18 anos ou mais sem instrução ou com fundamental incompleto', short: 'Sem instrução ou fundamental incompleto (18+)', source: sidraSource('10061'), kind: 'amostra', family: 'ibge', group: 'Escolaridade e alfabetização', census: { theme: 'education', slice: '18+', keys: ['sem-instrucao-e-fundamental-incompleto'] } },
+  'illiterate-16': { label: 'Pessoas de 16 anos ou mais não alfabetizadas', short: 'Não alfabetizadas (16+)', source: sidraSource('9542'), kind: 'universo', family: 'ibge', group: 'Escolaridade e alfabetização', census: { theme: 'literacy', slice: '16+', keys: ['nao-alfabetizadas'] } },
+  'income-upto-half-mw': { label: 'Moradores com rendimento domiciliar per capita de até ½ salário mínimo (inclui sem rendimento)', short: 'Até ½ salário mínimo per capita', source: sidraSource('10296'), kind: 'amostra', family: 'ibge', group: 'Renda' },
+  'unemployment-18-69': { label: 'Desocupação de 18 a 69 anos (desocupados ÷ força de trabalho)', short: 'Desocupação (18–69)', source: sidraSource('10299'), kind: 'amostra', family: 'ibge', group: 'Trabalho', census: { theme: 'laborForce', slice: '18-69', keys: ['forca-de-trabalho-desocupada'] } },
+  'non-contributors-14': { label: 'Ocupados de 14 anos ou mais que não contribuem para a previdência oficial', short: 'Ocupados sem contribuição à previdência (14+)', source: sidraSource('10264'), kind: 'amostra', family: 'ibge', group: 'Trabalho', census: { theme: 'socialSecurity', slice: '14+', keys: ['nao-contribuintes'] } },
+  'agriculture-14': { label: 'Ocupados de 14 anos ou mais na agropecuária, produção florestal, pesca e aquicultura', short: 'Ocupados na agropecuária (14+)', source: sidraSource('10262'), kind: 'amostra', family: 'ibge', group: 'Trabalho', census: { theme: 'activity', slice: '14+', keys: ['agricultura-pecuaria-producao-florestal-pesca-e-aquicultura'] } },
+  'public-sector-14': { label: 'Ocupados de 14 anos ou mais empregados no setor público (como na fonte: sem militares e sem empresas estatais)', short: 'Empregados no setor público (14+)', source: sidraSource('10261'), kind: 'amostra', family: 'ibge', group: 'Trabalho', census: { theme: 'position', slice: '14+', keys: ['empregado-no-setor-publico'] } },
+  'internet-15': { label: 'Moradores de 15 anos ou mais em domicílio com conexão à internet', short: 'Domicílio com internet (15+)', source: sidraSource('9942'), kind: 'amostra', family: 'ibge', group: 'Internet e moradia', census: { theme: 'internet', slice: '15+', keys: ['sim'] } },
+  'rented-15': { label: 'Moradores de 15 anos ou mais em domicílio alugado', short: 'Domicílio alugado (15+)', source: sidraSource('9938'), kind: 'amostra', family: 'ibge', group: 'Internet e moradia', census: { theme: 'tenure', slice: '15+', keys: ['alugado'] } },
+  'crowding-15': { label: 'Moradores de 15 anos ou mais em domicílio com mais de 3 moradores por dormitório', short: 'Mais de 3 por dormitório (15+)', source: sidraSource('9940'), kind: 'amostra', family: 'ibge', group: 'Internet e moradia', census: { theme: 'crowding', slice: '15+', keys: ['mais-de-3-moradores'] } },
+  'water-network-15': { label: 'Moradores de 15 anos ou mais em domicílio ligado à rede geral de água, usada como forma principal', short: 'Rede geral de água (15+)', source: sidraSource('6894'), kind: 'universo', family: 'ibge', group: 'Saneamento', census: { theme: 'water', slice: '15+', keys: ['possui-ligacao-a-rede-geral-e-a-utiliza-como-forma-principal'] } },
+  'sewage-network-15': { label: 'Moradores de 15 anos ou mais em domicílio com esgoto pela rede geral, pluvial ou fossa ligada à rede', short: 'Esgoto pela rede (15+)', source: sidraSource('7555'), kind: 'universo', family: 'ibge', group: 'Saneamento', census: { theme: 'sewage', slice: '15+', keys: ['rede-geral-rede-pluvial-ou-fossa-ligada-a-rede'] } },
+  'garbage-collected-15': { label: 'Moradores de 15 anos ou mais em domicílio com lixo coletado', short: 'Lixo coletado (15+)', source: sidraSource('9541'), kind: 'universo', family: 'ibge', group: 'Saneamento', census: { theme: 'garbage', slice: '15+', keys: ['coletado'] } },
+  'urban-15': { label: 'Pessoas de 15 anos ou mais em situação urbana', short: 'Situação urbana (15+)', source: sidraSource('10089'), kind: 'universo', family: 'ibge', group: 'Território', census: { theme: 'urbanRural', slice: '15+', keys: ['urbana'] } },
+  'favela-15': { label: 'Pessoas de 15 anos ou mais em favelas e comunidades urbanas', short: 'Em favelas e comunidades urbanas (15+)', source: sidraSource('9884 ÷ 9606'), kind: 'universo', family: 'ibge', group: 'Território', census: { theme: 'favela', slice: '15+', keys: ['numerator'] } },
+  'disability-15': { label: 'Pessoas de 15 anos ou mais com deficiência', short: 'Com deficiência (15+)', source: sidraSource('10125'), kind: 'amostra', family: 'ibge', group: 'Deficiência', census: { theme: 'disability', slice: '15+', keys: ['numerator'] } },
+  'disability-70': { label: 'Pessoas de 70 anos ou mais com deficiência', short: 'Com deficiência (70+)', source: sidraSource('10125'), kind: 'amostra', family: 'ibge', group: 'Deficiência', census: { theme: 'disability', slice: '70+', keys: ['numerator'] } },
+  'migrants-15': { label: 'Pessoas de 15 anos ou mais que não moravam no município 5 anos antes', short: 'Não moravam no município 5 anos antes (15+)', source: sidraSource('10160 ÷ 9537'), kind: 'amostra', family: 'ibge', group: 'Migração', census: { theme: 'migration', slice: '15+', keys: ['numerator'] } },
+  abstention: { label: 'Abstenção (abstenções ÷ eleitores aptos)', short: 'Abstenção', source: 'TSE, resultados reconciliados, do cargo escolhido', kind: 'resultados', family: 'tse', group: 'Eleições' },
+} as const satisfies Record<string, MapIndicatorDefinition>;
 export type MapIndicator = keyof typeof MAP_INDICATORS;
 export const MAP_INDICATOR_KEYS = Object.keys(MAP_INDICATORS) as [MapIndicator, ...MapIndicator[]];
 /** Indicadores do Censo (lado esquerdo de `/mapa`); a abstenção é uma das séries comparadas. */
@@ -364,7 +447,9 @@ export const mapValuesSchema = z.object({
   office: z.enum(OFFICES).optional(),
   // `id`: código IBGE (polígono); `null` para município sem correspondência no Censo 2022 (criado depois), que fica só na tabela.
   // `code`: UF ou código TSE do município. Valor `null` quando numerador ou denominador faltam.
-  items: z.array(z.object({ id: z.string().nullable(), code: z.string(), uf: z.enum(STATES), name: z.string(), numerator: sourceCount, denominator: sourceCount, value: z.number().min(0).max(100).nullable() })),
+  items: z.array(z.object({ id: z.string().nullable(), code: z.string(), uf: z.enum(STATES), name: z.string(), numerator: sourceCount, denominator: sourceCount, value: z.number().min(0).max(100).nullable(),
+    // Só nos recortes 15+: desvio máximo em pontos percentuais em relação a 16+ (pessoas de 15 anos ÷ 15+ × 100). Ausente nos demais.
+    deviation: z.number().min(0).max(100).nullable().optional() })),
   publications: mapPublicationsSchema.optional(),
 });
 export type MapValues = z.infer<typeof mapValuesSchema>;
@@ -398,7 +483,7 @@ export const TRACT_STATUSES = ['associated', 'no-coordinate', 'conflicting-coord
 const statusCountSchema = z.object({ places: nonnegative, electors: nonnegative });
 export const tractsDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
-  id: z.string(), kind: z.literal('polling-place-tracts'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
+  id: z.string(), kind: z.literal('polling-place-tracts'), year: z.union([z.literal(2022), z.literal(2026)]), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
   scope: z.string(), method: z.string(), notes: z.array(z.string()),
   coverage: z.array(z.object({ uf: z.enum(STATES), places: nonnegative, electors: nonnegative, sharedCoordinate: nonnegative, byStatus: z.record(z.enum(TRACT_STATUSES), statusCountSchema) })),
 });
@@ -484,7 +569,7 @@ export const tractMapSchema = z.discriminatedUnion('status', [
 export type TractMap = z.infer<typeof tractMapSchema>;
 export const placeProfilesDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
-  id: z.string(), kind: z.literal('place-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),
+  id: z.string(), kind: z.literal('place-profiles'), year: z.union([z.literal(2022), z.literal(2026)]), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(),
   // Ordem das categorias de cada dimensão nos vetores de contagem guardados por local.
   order: z.record(z.enum(TURNOUT_DIMENSIONS), z.array(z.string())),
   totals: z.object({ places: nonnegative, eligible: nonnegative, contextEligible: nonnegative, resultPlaces: nonnegative, resultPlacesWithoutProfile: nonnegative }), notes: z.array(z.string()),
@@ -496,16 +581,28 @@ export const PLACE_GROUP_INDICATORS = {
   'education-low': { label: 'Eleitores aptos do local com até o fundamental incompleto (analfabeto, lê e escreve ou fundamental incompleto; escolaridade declarada)', short: 'eleitores com até o fundamental incompleto', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
   women: { label: 'Eleitoras entre os eleitores aptos do local (gênero do cadastro eleitoral)', short: 'eleitoras (gênero feminino no cadastro)', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
   'age-16-24': { label: 'Eleitores aptos do local com 16 a 24 anos', short: 'eleitores de 16 a 24 anos', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
-  'age-60-plus': { label: 'Eleitores aptos do local com 60 anos ou mais', short: 'eleitores de 60 anos ou mais', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  'age-60-plus': { label: 'Eleitores aptos do local com 60 anos ou mais (pessoa idosa)', short: 'eleitores de 60 anos ou mais', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  // 70+: voto facultativo por idade (decisão de Rafael, 31/10/2026: acrescentar, mantendo 60+).
+  'age-70-plus': { label: 'Eleitores aptos do local com 70 anos ou mais (voto facultativo)', short: 'eleitores de 70 anos ou mais', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
   'income-median': { label: 'Rendimento mediano do responsável pelo domicílio no setor censitário do local', short: 'renda mediana do responsável no setor', source: 'IBGE, Censo 2022 — agregados por setor (rendimento do responsável); local → setor pelo ponto do TSE', kind: 'universo', unit: 'reais' },
+  // Grupos por categoria do setor que contém o local (decisão de Rafael, 31/10/2026); o local não indica onde os eleitores moram.
+  'tract-situation': { label: 'Situação do setor censitário do local (urbana ou rural)', short: 'situação do setor', source: 'IBGE, Censo 2022 — situação do setor (associação local → setor); local → setor pelo ponto do TSE', kind: 'universo', unit: 'category' },
+  'tract-favela': { label: 'Setor censitário do local em favela ou comunidade urbana', short: 'setor em favela ou comunidade urbana', source: 'IBGE, Censo 2022 — agregados por setor (favelas e comunidades urbanas); local → setor pelo ponto do TSE', kind: 'universo', unit: 'category' },
 } as const;
+/** Grupos dos indicadores por categoria do setor: índice, nome e definição de cada um, na ordem da tabela. */
+export const PLACE_GROUP_CATEGORIES = {
+  'tract-situation': [{ index: 1, name: 'Setor urbano', definition: 'Locais em setor censitário de situação urbana' }, { index: 2, name: 'Setor rural', definition: 'Locais em setor censitário de situação rural' }],
+  'tract-favela': [{ index: 1, name: 'Setor de favela ou comunidade urbana', definition: 'Locais em setor censitário de favela ou comunidade urbana delimitada pelo IBGE' }, { index: 2, name: 'Outros setores', definition: 'Locais em setor censitário fora de favelas e comunidades urbanas' }],
+} as const;
+export type PlaceGroupCategoryIndicator = keyof typeof PLACE_GROUP_CATEGORIES;
 /** Categorias do perfil por local somadas no numerador de cada indicador percentual (chaves de `tseOrder`). */
-export const PLACE_GROUP_NUMERATORS: Record<Exclude<PlaceGroupIndicator, 'income-median'>, { dimension: 'gender' | 'age' | 'education'; keys: readonly string[] }> = {
+export const PLACE_GROUP_NUMERATORS: Record<Exclude<PlaceGroupIndicator, 'income-median' | PlaceGroupCategoryIndicator>, { dimension: 'gender' | 'age' | 'education'; keys: readonly string[] }> = {
   college: { dimension: 'education', keys: ['college-complete'] },
   'education-low': { dimension: 'education', keys: ['illiterate', 'reads-writes', 'fundamental-incomplete'] },
   women: { dimension: 'gender', keys: ['female'] },
   'age-16-24': { dimension: 'age', keys: ['a16', 'a17', 'a18', 'a19', 'a20', 'a21-24'] },
   'age-60-plus': { dimension: 'age', keys: ['a60-64', 'a65-69', 'a70-74', 'a75-79', 'a80-84', 'a85-89', 'a90-94', 'a95-99', 'a100+'] },
+  'age-70-plus': { dimension: 'age', keys: ['a70-74', 'a75-79', 'a80-84', 'a85-89', 'a90-94', 'a95-99', 'a100+'] },
 };
 export type PlaceGroupIndicator = keyof typeof PLACE_GROUP_INDICATORS;
 /** Salário mínimo vigente na data de referência do Censo 2022 (31/07/2022): R$ 1.212 (Lei 14.358/2022). */
@@ -540,7 +637,8 @@ export const incomeBandPopulationSchema = z.object({
 });
 export type IncomeBandPopulation = z.infer<typeof incomeBandPopulationSchema>;
 /** Por município: para cada indicador de demografia, moradores de 15+ por faixa do setor (mesmo formato das faixas de renda). */
-export const tractDemographySchema = z.object({ residents: nonnegative, indicators: z.object({ women: incomeBandPopulationSchema, 'age-16-24': incomeBandPopulationSchema, 'age-60-plus': incomeBandPopulationSchema }) });
+// `age-70-plus` desde a v3 (31/10/2026); ausente na v2, lido como indisponível (nunca zero).
+export const tractDemographySchema = z.object({ residents: nonnegative, indicators: z.object({ women: incomeBandPopulationSchema, 'age-16-24': incomeBandPopulationSchema, 'age-60-plus': incomeBandPopulationSchema, 'age-70-plus': incomeBandPopulationSchema.optional() }) });
 export const tractDemographyDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('tract-demography'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
@@ -553,7 +651,7 @@ export const incomeBandsDatasetSchema = z.object({
 });
 export type IncomeBandsDataset = z.infer<typeof incomeBandsDatasetSchema>;
 /** Como os grupos foram formados: quintis ponderados por eleitores aptos (v2–v3) ou faixas fixas (v4: todos). Ausente (v1): quintis. */
-export const PLACE_GROUP_METHODS = { college: 'bands', 'education-low': 'bands', women: 'bands', 'age-16-24': 'bands', 'age-60-plus': 'bands', 'income-median': 'bands' } as const;
+export const PLACE_GROUP_METHODS = { college: 'bands', 'education-low': 'bands', women: 'bands', 'age-16-24': 'bands', 'age-60-plus': 'bands', 'age-70-plus': 'bands', 'income-median': 'bands', 'tract-situation': 'categories', 'tract-favela': 'categories' } as const;
 /**
  * Limites superiores (incluídos) das faixas fixas de cada indicador, na unidade dele (% dos eleitores aptos do local ou reais);
  * a última faixa é aberta. Iguais em todos os recortes (decisão de Rafael, 17/10/2026: números redondos perto da distribuição
@@ -561,6 +659,10 @@ export const PLACE_GROUP_METHODS = { college: 'bands', 'education-low': 'bands',
  */
 export const PLACE_GROUP_CUTS: Record<PlaceGroupIndicator, readonly number[]> = {
   college: [5, 10, 20, 30], 'education-low': [20, 30, 40, 50], women: [50, 52, 54, 56], 'age-16-24': [10, 12.5, 15, 20], 'age-60-plus': [15, 20, 25, 30],
+  // 70+ (31/10/2026): números redondos perto da distribuição nacional (eleitores em locais por faixa: 20,5 / 21,1 / 18,7 / 24,8 / 14,9%).
+  'age-70-plus': [5, 7.5, 10, 15],
+  // Categorias não têm cortes: o grupo é a categoria do setor.
+  'tract-situation': [], 'tract-favela': [],
   'income-median': INCOME_BANDS.flatMap((band) => band.upper === null ? [] : [band.upper * MINIMUM_WAGE_2022]),
 };
 /** Faixa fixa (1–5) de um percentual `numerator`/`denominator` (contagens inteiras), mesma regra do SQL: superior incluído, sem arredondar. */
@@ -577,6 +679,7 @@ export const TRACT_DEMOGRAPHY_INDICATORS = {
   women: { definition: 'mulheres entre os moradores de 15 anos ou mais', numerator: ['V01023', 'V01024', 'V01025', 'V01026', 'V01027', 'V01028', 'V01029', 'V01030'] },
   'age-16-24': { definition: 'moradores de 15 a 24 anos entre os de 15 anos ou mais', numerator: ['V01034', 'V01035'] },
   'age-60-plus': { definition: 'moradores de 60 anos ou mais entre os de 15 anos ou mais', numerator: ['V01040', 'V01041'] },
+  'age-70-plus': { definition: 'moradores de 70 anos ou mais entre os de 15 anos ou mais', numerator: ['V01041'] },
 } as const satisfies Partial<Record<PlaceGroupIndicator, { definition: string; numerator: readonly string[] }>>;
 export type TractDemographyIndicator = keyof typeof TRACT_DEMOGRAPHY_INDICATORS;
 /** Moradores de 15 anos ou mais (denominador dos indicadores de demografia por setor). */
@@ -590,7 +693,8 @@ export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true,
 export const placeGroupsSchema = z.object({
   status: z.enum(['published', 'awaiting-import', 'round-not-held']), indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]),
   office: z.enum(OFFICES), round: z.enum(['1', '2']), uf: z.enum(STATES).nullable(),
-  method: z.enum(['quintiles', 'bands']).optional(),
+  // `categories` (v6): o grupo é a categoria do setor do local (situação urbana/rural, favela), sem valores nem limites.
+  method: z.enum(['quintiles', 'bands', 'categories']).optional(),
   // `from`/`to`: menor e maior valor observado no grupo (null na sensibilidade por raio, em que o local tem só a faixa). `lower`/`upper` (só faixas): limites da faixa em reais, null quando aberta.
   groups: z.array(z.object({ index: z.number().int().min(1).max(5), from: z.number().nullable(), to: z.number().nullable(), lower: z.number().nullable().optional(), upper: z.number().nullable().optional(),
     places: nonnegative, eligible: nonnegative, valid: nonnegative, blank: nonnegative, null: nonnegative, totalVotes: nonnegative, candidates: z.array(candidateSchema) })),
@@ -652,7 +756,8 @@ export const turnoutProfilesQuerySchema = municipalityQuerySchema.pick({ year: t
 export type TurnoutProfilesQuery = z.infer<typeof turnoutProfilesQuerySchema>;
 const categoryLabelSchema = z.object({ key: z.string(), label: z.string() });
 export const turnoutProfilesSchema = z.object({
-  status: z.enum(['published', 'awaiting-import', 'not-in-source']), round: z.enum(['1', '2']), uf: z.enum(STATES).nullable(),
+  // `round-not-in-source`: a fonte do ano não traz o turno (2026: só o 1º turno no arquivo gerado em 13/10/2026).
+  status: z.enum(['published', 'awaiting-import', 'not-in-source', 'round-not-in-source']), round: z.enum(['1', '2']), uf: z.enum(STATES).nullable(),
   // UFs somadas (Brasil = UFs da fonte) e UFs que a fonte não traz (DF em 2022).
   ufs: z.array(z.enum(STATES)), missingUfs: z.array(z.enum(STATES)),
   // Município consultado (código TSE) e, com UF, a lista dos municípios da UF na publicação.
@@ -667,8 +772,10 @@ export const turnoutProfilesSchema = z.object({
 export type TurnoutProfiles = z.infer<typeof turnoutProfilesSchema>;
 export const turnoutProfilesDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
-  id: z.string(), kind: z.literal('turnout-profiles'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
+  id: z.string(), kind: z.literal('turnout-profiles'), year: z.union([z.literal(2022), z.literal(2026)]), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema),
   scope: z.string(), notes: z.array(z.string()), missingUfs: z.array(z.enum(STATES)),
+  // Turnos presentes na fonte (2026: só o 1º). Ausente nas versões de 2022, que têm os dois.
+  rounds: z.array(z.enum(['1', '2'])).min(1).optional(),
   totals: z.array(z.object({ round: z.enum(['1', '2']), eligible: nonnegative, turnout: nonnegative, abstentions: nonnegative, resultsEligible: nonnegative })),
   // v2: células em vetores int4 (`turnout_profile_cells`), uma linha por UF e por município, nesta ordem de categorias.
   cellFormat: z.literal('int4-groups-v2').optional(), order: z.object({ gender: z.array(z.string()), age: z.array(z.string()), education: z.array(z.string()), maritalStatus: z.array(z.string()) }).optional(),
@@ -677,7 +784,11 @@ export const turnoutProfilesDatasetSchema = z.object({
 export type TurnoutProfilesDataset = z.infer<typeof turnoutProfilesDatasetSchema>;
 export const contextResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('awaiting-import'), dataset: z.null(), item: z.null() }),
-  z.object({ status: z.literal('published'), dataset: contextDatasetSchema, item: municipalityContextSchema, incomeBands: incomeBandPopulationSchema.nullable().optional(), urbanSurroundings: urbanSurroundingsSchema.nullable().optional() }),
+  z.object({ status: z.literal('published'), dataset: contextDatasetSchema, item: municipalityContextSchema, incomeBands: incomeBandPopulationSchema.nullable().optional(),
+    // Entorno dos domicílios: fora da interface desde 31/10/2026 (decisão de Rafael); a API não o envia mais. Mantido para respostas anteriores.
+    urbanSurroundings: urbanSurroundingsSchema.nullable().optional(),
+    // Indicadores do Censo pela idade de voto; `null` sem a publicação, ausente nas respostas anteriores.
+    censusIndicators: censusIndicatorsSchema.nullable().optional(), censusIndicatorsId: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional() }),
 ]);
 export type ContextResponse = z.infer<typeof contextResponseSchema>;
 
@@ -753,17 +864,21 @@ export const PROPOSAL_METHODS = ['native', 'ocr', 'empty'] as const;
 export const PROPOSAL_LISTINGS = ['candidate', 'no-votes', 'same-document'] as const;
 export const proposalsDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
-  id: z.string(), kind: z.literal('proposals'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(), notes: z.array(z.string()),
+  id: z.string(), kind: z.literal('proposals'), year: z.union([z.literal(2022), z.literal(2026)]), importedAt: z.string(), importerVersion: z.string(), sources: z.array(sourceSchema), scope: z.string(), notes: z.array(z.string()),
   // Da v2 em diante: extração em ordem de leitura, distância mínima entre palavras, versão da normalização e limiares de texto
   // ilegível. Ausentes na v1 (texto do `-layout`, normalização anterior), nunca presumidos.
   method: z.object({ textPageMinChars: nonnegative, pdftotext: z.string(), tesseract: z.string(), ocrLanguage: z.string(), ocrDpi: nonnegative,
     extraction: z.literal('bbox-layout').optional(), wordSpace: z.number().positive().optional(), normalization: z.string().optional(),
+    // Conferência da ordem de leitura com o modo padrão do pdftotext: ausente = exata (v2 de 2022); `non-whitespace` em 2026.
+    readingCheck: z.enum(['exact', 'non-whitespace']).optional(),
+    // 2026: página com texto do PDF ilegível vai para o OCR (qualidade do OCR medida pelos mesmos limiares). Ausente = bloqueia (v2 de 2022).
+    illegibleToOcr: z.boolean().optional(),
     quality: z.object({ maxBadRatio: z.number().positive(), maxVowellessRatio: z.number().positive() }).optional() }),
   totals: z.object({ candidacies: nonnegative, documents: nonnegative, pages: nonnegative, nativePages: nonnegative, ocrPages: nonnegative, emptyPages: nonnegative }),
 });
 export type ProposalsDataset = z.infer<typeof proposalsDatasetSchema>;
 /** Busca literal: de 3 a 80 caracteres depois da normalização, sem caracteres de controle. Sem `q`, só a cobertura. */
-export const proposalsQuerySchema = z.object({ year: z.literal('2022').default('2022'), q: z.string().max(200).refine((value) => !hasControlCharacters(value), CONTROL_CHARACTERS_MESSAGE).optional()
+export const proposalsQuerySchema = z.object({ year: z.enum(ELECTION_YEARS).default('2022'), q: z.string().max(200).refine((value) => !hasControlCharacters(value), CONTROL_CHARACTERS_MESSAGE).optional()
   .refine((value) => value === undefined || value.trim() === '' || (searchText(value).length >= 3 && searchText(value).length <= 80), 'A busca precisa ter de 3 a 80 caracteres.') }).strict();
 const proposalDocumentSchema = z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), file: z.string(), pages: nonnegative, nativePages: nonnegative, ocrPages: nonnegative, emptyPages: nonnegative })
   .refine((item) => item.nativePages + item.ocrPages + item.emptyPages === item.pages, 'Páginas por método não somam o documento.');

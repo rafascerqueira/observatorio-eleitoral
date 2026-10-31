@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { contextDistributionSchema, percent, type IncomeBandPopulation, type MunicipalityContext, type UrbanSurroundings } from '@observatorio/contracts';
+import { contextDistributionSchema, percent, type CensusIndicators, type IncomeBandPopulation, type MunicipalityContext } from '@observatorio/contracts';
 import { bandName, bandRange, residentsShare } from '../lib/income-bands';
-import { UrbanSurroundingsTable } from './urban-surroundings';
+import { CensusSections } from './census-indicators';
 
 type Distribution = MunicipalityContext['race'];
 const MINIMUM_WAGE = 1212;
@@ -55,7 +55,7 @@ function IncomeBandsTable({ data }: { data: IncomeBandPopulation }) {
 const DIMENSION_LABEL = { age: 'Idade', education: 'Escolaridade declarada', gender: 'Gênero', maritalStatus: 'Estado civil' } as const;
 
 /** Contexto do município: o que descreve o território (IBGE) separado do que descreve o eleitorado (TSE). Nada é atribuído a eleitores individualmente. */
-export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands, urbanSurroundings }: { item: MunicipalityContext; round: '1' | '2'; sourcesHref: string; incomeBands?: IncomeBandPopulation | null; urbanSurroundings?: UrbanSurroundings | null }) {
+export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands, censusIndicators }: { item: MunicipalityContext; round: '1' | '2'; sourcesHref: string; incomeBands?: IncomeBandPopulation | null; censusIndicators?: CensusIndicators | null }) {
   const turnout = item.turnout[round];
   const resultsEligible = item.resultsEligible[round];
   const difference = resultsEligible === null ? null : item.electorate.eligible - resultsEligible;
@@ -71,7 +71,8 @@ export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands
         ['Eleitores aptos no cadastro', number(item.electorate.eligible), 'perfil do eleitorado, TSE'],
         ['Cadastro ÷ população de 16+', rate(share(item.electorate.eligible, item.population.age16plus)), 'fontes e datas diferentes'],
         ['Rendimento domiciliar per capita mediano', money(item.incomePerCapita.median), item.incomePerCapita.median === null ? 'estimativa da amostra' : `${(item.incomePerCapita.median / MINIMUM_WAGE).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} salário mínimo (R$ 1.212,00) · amostra`],
-        ['Alfabetização (15 anos ou mais)', rate(share(item.literacy15.categories.find((entry) => entry.key === 'literate')?.value ?? null, item.literacy15.total)), 'Censo 2022, universo'],
+        censusIndicators ? ['Não alfabetizadas (16 anos ou mais)', rate(share(censusIndicators.distributions.literacy['16+']?.categories.find((entry) => entry.key === 'nao-alfabetizadas')?.value ?? null, censusIndicators.distributions.literacy['16+']?.total ?? null)), 'Censo 2022, universo']
+          : ['Alfabetização (15 anos ou mais)', rate(share(item.literacy15.categories.find((entry) => entry.key === 'literate')?.value ?? null, item.literacy15.total)), 'Censo 2022, universo'],
       ] as const).map(([label, value, detail]) => <div key={label}><dt>{label}</dt><dd>{value}<span className="totals-detail">{detail}</span></dd></div>)}
     </dl>
     <p className="notice scope-notice">O cadastro do TSE é uma base própria: soma {number(item.electorate.eligible)} eleitores aptos, enquanto os resultados do {round}º turno registram {number(resultsEligible)}{difference ? ` (diferença de ${number(Math.abs(difference))})` : ''}. Domicílio eleitoral não é residência: a razão entre cadastro e população pode passar de 100% sem indicar irregularidade. <Link href={sourcesHref}>Fontes e cobertura</Link>.</p>
@@ -115,14 +116,10 @@ export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands
       {incomeBands && <IncomeBandsTable data={incomeBands} />}
     </details>
 
-    {urbanSurroundings && <details className="context-section"><summary>Entorno dos domicílios (IBGE)</summary>
-      <UrbanSurroundingsTable data={urbanSurroundings} population={item.population.total} />
-    </details>}
-
-    <details className="context-section"><summary>Cor ou raça e alfabetização (IBGE)</summary>
-      <p className="query-note">O cadastro do TSE de 2022 não informa cor ou raça dos eleitores; estes dados descrevem a população do município.</p>
+    {censusIndicators ? <CensusSections data={censusIndicators} /> : <details className="context-section"><summary>Cor ou raça e alfabetização (IBGE)</summary>
+      <p className="query-note">O cadastro do TSE de 2022 não informa cor ou raça dos eleitores; estes dados descrevem a população do município. Os indicadores pela idade de voto (cor ou raça, religião, trabalho, moradia, saneamento, deficiência e migração) ainda não foram publicados.</p>
       <DistributionTable title="População por cor ou raça" data={item.race} unit="Pessoas" />
       <DistributionTable title="Pessoas de 15 anos ou mais por alfabetização" data={item.literacy15} unit="Pessoas" />
-    </details>
+    </details>}
   </section>;
 }

@@ -82,6 +82,7 @@ Execute sequencialmente, após a Presidência nacional e os resultados estaduais
   npm run import:turnout-profiles    # participação cruzada por UF/município
   npm run import:tract-demography    # moradores de 15+ por faixas de perfil do setor
   npm run import:urban-surroundings  # entorno dos domicílios (calçada, rampa, iluminação...)
+  npm run import:census-indicators   # indicadores do Censo pela idade de voto (23 tabelas da SIDRA, ~0,6 GB de originais)
   npm run import:tract-geometries    # malha de setores com a geometria exata (~1,4 GB)
   npm run import:tract-display       # desenho simplificado dos setores para o mapa local → setor
   npm run import:proposals           # propostas de governo da Presidência (exige poppler-utils, tesseract-ocr e tesseract-ocr-por)
@@ -89,6 +90,8 @@ Execute sequencialmente, após a Presidência nacional e os resultados estaduais
   npm run import:tract-sensitivity   # grupos alternativos nos três raios
 )
 ```
+
+Para 2026 (publicações próprias, decisão de 31/10/2026), depois dos resultados de 2026 e na mesma ordem: `npm run import:sectors -- --year 2026`, `import:place-profiles -- --year 2026`, `import:place-groups -- --year 2026`, `import:turnout-profiles -- --year 2026` e `import:proposals -- --year 2026`. O contexto, os indicadores do Censo e a demografia por setor são de 2022 e valem para os dois anos; a sensibilidade só existe para 2022.
 
 Pare ao primeiro erro; não trate uma cadeia parcial como concluída. A troca é atômica **por escopo**, não para a cadeia inteira. Durante uma atualização completa dos derivados, mantenha API/web desligadas até concluir as dependências e verificações; a API recusa entradas registradas que ficaram desatualizadas.
 
@@ -100,15 +103,21 @@ Pare ao primeiro erro; não trate uma cadeia parcial como concluída. A troca é
 | `import:place-profiles` | `place-profiles-2022-v2` | Contexto + Presidência nacional |
 | `import:income-bands` | `income-bands-2022-v3` | Contexto |
 | `import:turnout-profiles` | `turnout-profiles-2022-v3` | Contexto + Presidência nacional |
-| `import:tract-demography` | `tract-demography-2022-v2` | Contexto |
+| `import:tract-demography` | `tract-demography-2022-v3` | Contexto |
 | `import:urban-surroundings` | `urban-surroundings-2022-v1` | Contexto + associação aos setores |
+| `import:census-indicators` | `census-indicators-2022-v1` | Contexto (confere 16+ e população total) |
 | `import:tract-geometries` | `tract-geometries-2022-v1` | Nenhuma (confere com a associação aos setores publicada) |
 | `import:tract-display` | `tract-display-2022-v1` | Malha de setores |
 | `import:proposals` | `proposals-2022-v2` | Presidência nacional e exterior |
-| `import:place-groups` | `place-groups-2022-v5` | Resultados publicados + perfil por local + associação aos setores |
+| `import:place-groups` | `place-groups-2022-v6` | Resultados publicados + perfil por local + associação aos setores (e o arquivo básico por setor preservado, para as favelas) |
 | `import:tract-sensitivity` | `tract-sensitivity-2022-v2` | Entradas dos grupos + publicação dos grupos |
+| `import:sectors -- --year 2026` | `polling-place-tracts-2026-v2` | Presidência de 2026 (malha do Censo 2022) |
+| `import:place-profiles -- --year 2026` | `place-profiles-2026-v1` | Presidência de 2026 |
+| `import:place-groups -- --year 2026` | `place-groups-2026-v1` | Resultados de 2026 + perfil por local e associação de 2026 |
+| `import:turnout-profiles -- --year 2026` | `turnout-profiles-2026-v1` | Presidência de 2026 (só o 1º turno na fonte) |
+| `import:proposals -- --year 2026` | `proposals-2026-v1` | Presidência de 2026 e exterior (conferência da leitura sem espaços e OCR para texto ilegível do PDF) |
 
-As identidades incluem também os originais e a configuração pertinente. Refaça grupos/sensibilidade após uma nova publicação de resultados; mudanças em qualquer entrada registrada exigem atualizar os dependentes. Renda e demografia fornecem as comparações territoriais da interface; o entorno dos domicílios usa só os agregados em contagens de moradores (por setor e município) e guarda, por setor, apenas os associados a locais de votação. Métodos, cobertura e dicionários em [plano IBGE](plano-ibge.md); IDs e prova de idempotência em [reimportações](reimportacoes-2026-10-18.md).
+As identidades incluem também os originais e a configuração pertinente. Refaça grupos/sensibilidade após uma nova publicação de resultados; mudanças em qualquer entrada registrada exigem atualizar os dependentes. Renda e demografia fornecem as comparações territoriais da interface; o entorno dos domicílios usa só os agregados em contagens de moradores (por setor e município) e guarda, por setor, apenas os associados a locais de votação. Os indicadores do Censo pela idade de voto (cor ou raça, religião, trabalho, internet e moradia, saneamento, urbano × rural, favelas, deficiência e migração) estão em [indicadores do Censo 2022](plano-indicadores-censo-2022.md). Métodos, cobertura e dicionários em [plano IBGE](plano-ibge.md); IDs e prova de idempotência em [reimportações](reimportacoes-2026-10-18.md).
 
 ### Validação e publicação
 

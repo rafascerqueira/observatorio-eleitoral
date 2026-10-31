@@ -1,4 +1,4 @@
-import { CANDIDATE_MAP_CUTS, OFFICE_LABELS, percent, type CandidateMap, type MapPageQuery, type MapValues } from '@observatorio/contracts';
+import { CANDIDATE_MAP_CUTS, OFFICE_LABELS, percent, type CandidateMap, type MapPageQuery, type MapValues, type Office } from '@observatorio/contracts';
 
 type Item = MapValues['items'][number];
 /**
@@ -13,6 +13,25 @@ export function candidateSeries(data: CandidateMap, index: number): Item[] {
   return data.items.map((item) => ({ id: item.id, code: item.code, uf: item.uf, name: item.name, numerator: item.votes[index]!, denominator: item.valid, value: percent(item.votes[index]!, item.valid) }));
 }
 const publication = (list: MapValues['publications'], role: 'results' | 'context') => list?.find((item) => item.role === role)?.id ?? null;
+
+const share = (item: Item | null | undefined, unit: string) => item?.value == null ? 'sem dado'
+  : `${item.value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% (${item.numerator!.toLocaleString('pt-BR')} de ${item.denominator!.toLocaleString('pt-BR')}${unit ? ` ${unit}` : ''})`;
+/**
+ * Dica de uma unidade nos dois mapas: o indicador do Censo e a série comparada, cada um com o seu nome, percentual, numerador e
+ * denominador, em duas linhas. A unidade sem polígono (sem `id`) não tem área, então não tem dica.
+ */
+export function pairDetail(rows: MapRow[], censusName: string, series: Pick<ComparedSeries, 'kind' | 'title' | 'weight'>) {
+  const byId = new Map(rows.flatMap((row) => row.id === null ? [] : [[row.id, row] as const]));
+  const seriesName = series.kind === 'abstention' ? series.title : series.title.replace(/ — % dos votos válidos$/, '');
+  return (item: Item) => { const row = item.id === null ? undefined : byId.get(item.id);
+    return `${censusName}: ${share(row?.census, '')}\n${seriesName}: ${share(row?.series, series.weight)}`; };
+}
+
+/** Opções de “Comparar com”: abstenção do cargo e as candidaturas do recorte, em ordem de votos (a mesma lista na página e na rota). */
+export function seriesChoices(office: Office, candidates: CandidateMap | null) {
+  return [{ value: 'abstention', label: `Abstenção (${OFFICE_LABELS[office]})` },
+    ...(candidates?.status === 'published' ? candidates.candidates.map((candidate) => ({ value: candidate.number, label: `${candidate.name} (${candidate.number}, ${candidate.party})` })) : [])];
+}
 
 /** Resolve a série pedida a partir das respostas da API; candidatura fora do recorte é erro do filtro, não série vazia. */
 export function resolveSeries(filters: Pick<MapPageQuery, 'series' | 'office' | 'round'>, candidates: CandidateMap | null, abstention: MapValues | null): SeriesState {

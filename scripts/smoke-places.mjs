@@ -73,6 +73,6 @@ const invalid = await (await request(web, '/municipios/71072?zone=-1')).text();
 assert.match(invalid, /Confira os filtros/);
 assert.match(invalid, /aria-invalid="true"/);
 const current = await (await request(web, '/municipios/71072?year=2026&uf=SP')).text();
-assert.match(current, /<option value="2026" selected="">/); assert.match(current, /locais aparecem sem setor/);
+assert.match(current, /<option value="2026" selected="">/); assert.match(current.replaceAll('<!-- -->', ''), /usa o cadastro de locais do TSE de 2026 e a malha de setores do Censo 2022/);
 console.log('Smoke de locais OK: zona/seção, códigos, texto e acentos, variantes, paginação e estados da interface.');
 console.log(JSON.stringify({ requests: timings.length, maximumMilliseconds: Math.max(...timings.map((timing) => timing.milliseconds)), lookupTimings: timings.filter((timing) => timing.path.includes('zone=0001')) }, null, 2));

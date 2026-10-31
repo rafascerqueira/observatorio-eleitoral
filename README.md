@@ -20,10 +20,10 @@ O projeto não parte de uma tese política a confirmar. Ele mostra os números, 
 
 ## O que você encontra
 
-Resultados de **2022**, com turnos sempre separados:
+Resultados de **2022 e 2026**, cada ano em publicações próprias e com turnos sempre separados:
 
-- **Presidência, no Brasil e no exterior:** consolidado dos 5.570 municípios e das 181 localidades do exterior. O exterior tem consulta própria por localidade, sem equivalência presumida a país.
-- **Governador e Senador nas 27 UFs:** resultado da UF, dos municípios e dos locais de votação, com o 2º turno de Governador nas 12 UFs onde ocorreu.
+- **Presidência, no Brasil e no exterior:** consolidado dos municípios (5.570 em 2022; 5.571 em 2026, com Boa Esperança do Norte, MT) e das localidades do exterior. O exterior tem consulta própria por localidade, sem equivalência presumida a país.
+- **Governador e Senador nas 27 UFs:** resultado da UF, dos municípios e dos locais de votação, com o 2º turno de Governador onde ocorreu. Em 2026, cada UF elegeu duas vagas ao Senado (dois votos por eleitor).
 - **Consulta municipal:** filtros por cargo, turno, UF e nome, com sugestões tolerantes a acentos e erros de digitação. O detalhe mostra todas as candidaturas, brancos, nulos e votos não válidos, e funciona sem JavaScript.
 - **Locais de votação:** busca por zona, seção, código, nome ou endereço, com as seções de cada local e o setor censitário associado ao ponto.
 
@@ -31,11 +31,11 @@ Votos anulados, anulados sub judice e nulos técnicos mantêm a classificação 
 
 Território e perfis:
 
-- **Contexto municipal:** população, cor ou raça, alfabetização, instrução e rendimento (Censo 2022); entorno dos domicílios (calçada, rampa, iluminação, pavimentação, ponto de ônibus e árvores); cadastro e comparecimento do eleitorado por perfil (TSE).
-- **Participação** (`/participacao`): comparecimento e abstenção por UF e município, turno, gênero, idade, escolaridade, estado civil e obrigatoriedade do voto.
-- **Perfis dos locais** (`/perfis`): votos somados por grupos de locais com perfis parecidos (escolaridade, idade, parcela de eleitoras ou renda do setor), com cobertura e limites declarados.
-- **Mapas** (`/mapa`): um indicador do Censo ao lado da abstenção ou da votação de uma candidatura, com dispersão e exportação em CSV; mapas por candidatura em escala comum; e o mapa dos locais de votação sobre os setores censitários de cada município. Cada visualização tem uma tabela equivalente.
-- **Propostas de governo** (`/propostas`): busca literal no texto dos planos que as candidaturas à Presidência de 2022 registraram no TSE. Todas as candidaturas aparecem na ordem do número, nunca por quantidade de menções.
+- **Contexto municipal (Censo 2022) pela idade de voto:** cor ou raça, religião, escolaridade e alfabetização, rendimento, trabalho, internet e moradia, saneamento, situação urbana ou rural, favelas, pessoas com deficiência e migração. A base é de 16 anos ou mais quando a tabela do IBGE permite, com o voto obrigatório (18 a 69) separado do facultativo (16 e 17, 70 ou mais). Onde a tabela agrupa 15 a 19 anos, a base é 15+ com o desvio máximo declarado. Inclui também o cadastro e o comparecimento do eleitorado por perfil (TSE).
+- **Participação** (`/participacao`): comparecimento e abstenção por UF e município, turno, gênero, idade, escolaridade, estado civil e obrigatoriedade do voto, em 2022 e em 2026 (em 2026, só o 1º turno, o único na fonte).
+- **Perfis dos locais** (`/perfis`): votos somados por grupos de locais com perfis parecidos, em 2022 e em 2026. Os grupos usam o perfil dos eleitores (escolaridade, eleitoras, 16 a 24 anos, 60 ou mais e 70 ou mais) ou o setor censitário do local (renda, situação urbana ou rural e favela), com cobertura e limites declarados.
+- **Mapas** (`/mapa`): um indicador do Censo, escolhido por tema, ao lado da abstenção ou da votação de uma candidatura, com as duas medidas na dica de cada unidade, dispersão e exportação em CSV. Há ainda mapas por candidatura em escala comum e o mapa dos locais de votação sobre os setores censitários de cada município. Cada visualização tem uma tabela equivalente.
+- **Propostas de governo** (`/propostas`): busca literal no texto dos planos que as candidaturas à Presidência de 2022 e de 2026 registraram no TSE. Todas as candidaturas aparecem na ordem do número, nunca por quantidade de menções.
 - **Fontes** (`/fontes`): versões, cobertura, relatórios de auditoria e arquivos originais preservados.
 
 ## Fontes de dados
@@ -47,7 +47,7 @@ Os cruzamentos entre TSE e IBGE usam códigos oficiais, nunca nomes de municípi
 
 ## Situação
 
-O projeto roda **localmente**, ainda sem endereço público. O escopo atual é a eleição de 2022. A carga de 2026 vem depois do 2º turno, e os cargos de deputado estão fora do escopo. A codificação documental das propostas (uma rubrica de acessibilidade e mobilidade e uma bússola política com dois eixos) está em preparação e ainda não publica nada.
+O projeto roda **localmente**, ainda sem endereço público. O escopo atual são as eleições de 2022 e 2026 (Presidência, Governador e Senador). O contexto do território vem do Censo 2022 nos dois anos, e os cargos de deputado estão fora do escopo. A codificação documental das propostas (uma rubrica de acessibilidade e mobilidade e uma bússola política com dois eixos) está em preparação e ainda não publica nada.
 
 ## Executar localmente
 
@@ -91,7 +91,8 @@ docs/                Operação, decisões técnicas, contrato da API, auditoria
 
 - [Operação local](docs/operacao.md): execução, importações, validação, verificações e codificação das propostas.
 - [Decisões técnicas](docs/decisoes-tecnicas.md) e [contrato da API](docs/api.md).
-- Auditorias das cargas: [Presidência](docs/importacao-nacional-2022.md), [exterior](docs/exterior-2022.md), [Governador](docs/governador-2022.md), [Senador](docs/senador-2022.md) e [IBGE e perfis](docs/plano-ibge.md).
+- Auditorias das cargas: [Presidência](docs/importacao-nacional-2022.md), [exterior](docs/exterior-2022.md), [Governador](docs/governador-2022.md), [Senador](docs/senador-2022.md), [IBGE e perfis](docs/plano-ibge.md) e [indicadores do Censo pela idade de voto](docs/plano-indicadores-censo-2022.md), com o [estudo das faixas de idade do IBGE](docs/estudo-faixas-etarias-ibge.md).
+- Leitura crítica de reportagem com os dados do projeto: [municípios com maior presença evangélica e o 2º turno de 2026](docs/analise-g1-evangelicos-2026.md).
 - [Acessibilidade](docs/acessibilidade.md) e [identidade visual](docs/identidade/2026-10-19/README.md).
 - [Planejamento](plan.md): finalidade, princípios, decisões, histórico e pendências.
 - [`AGENTS.md`](AGENTS.md): orientações para assistentes de código.

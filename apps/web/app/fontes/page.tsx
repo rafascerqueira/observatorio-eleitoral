@@ -7,6 +7,8 @@ import { importWithoutCoverage, scopeLabel } from '../../lib/import-scopes';
 export const metadata: Metadata = { title: 'Fontes' };
 export const dynamic = 'force-dynamic';
 const date = (value: string) => new Date(value).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+/** Âncora de uma seção com publicação por ano: a de 2022 mantém o endereço antigo; as demais levam o ano (ids únicos). */
+const anchor = (base: string, year: number) => year === 2022 ? base : `${base}-${year}`;
 const statusLabel = { reconciled: 'Reconciliado', blocked: 'Bloqueado', pending: 'Pendente', excluded: 'Separado / não publicado' };
 
 function ImportWithoutCoverage({ scope, published }: { scope: string; published: boolean }) {
@@ -50,15 +52,15 @@ export default async function Sources() {
     </section>)}
     {(catalog?.tractsDatasets ?? []).map((dataset) => { const total = dataset.coverage.reduce((sum, item) => ({ places: sum.places + item.places, electors: sum.electors + item.electors, associated: sum.associated + (item.byStatus.associated?.electors ?? 0) }), { places: 0, electors: 0, associated: 0 });
       const STATUS = TRACT_STATUS_LABELS;
-      return <section key={dataset.id} id="setores"><h2>Locais de votação e setores censitários</h2><p>{dataset.scope}</p><p><strong>Método:</strong> {dataset.method}</p>
+      return <section key={dataset.id} id={anchor('setores', dataset.year)}><h2>Locais de votação e setores censitários — {dataset.year}</h2><p>{dataset.scope}</p><p><strong>Método:</strong> {dataset.method}</p>
         <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · {total.places.toLocaleString('pt-BR')} locais, {(total.associated / total.electors * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% dos eleitores aptos em locais associados.</p>
         <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>
-        <div className="table-scroll" role="region" aria-label="Associação por UF" tabIndex={0}><table><caption>Eleitores aptos por situação da associação, por UF</caption>
+        <div className="table-scroll" role="region" aria-label={`Associação por UF — ${dataset.year}`} tabIndex={0}><table><caption>Eleitores aptos por situação da associação, por UF — {dataset.year}</caption>
           <thead><tr><th scope="col">UF</th>{(Object.keys(STATUS) as Array<keyof typeof STATUS>).map((status) => <th scope="col" key={status}>{STATUS[status]}</th>)}</tr></thead>
           <tbody>{dataset.coverage.map((item) => <tr key={item.uf}><th scope="row">{item.uf}</th>{(Object.keys(STATUS) as Array<keyof typeof STATUS>).map((status) => <td key={status}>{(item.byStatus[status]?.electors ?? 0).toLocaleString('pt-BR')}</td>)}</tr>)}</tbody></table></div>
         <details className="dataset-files"><summary>Arquivos preservados ({dataset.sources.length})</summary>{dataset.sources.map((source) => <article key={`${source.file}/${source.sha256}`}><h3>{source.file}</h3><p><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>Baixar original preservado</a> · <a href={source.url}>Consultar na fonte</a></p><p>{source.entry} · SHA-256 <span className="source-hash">{source.sha256}</span></p></article>)}</details>
       </section>; })}
-    {(catalog?.placeProfilesDatasets ?? []).map((dataset) => <section key={dataset.id} id="perfil-locais"><h2>Perfil do eleitorado por local de votação</h2><p>{dataset.scope}</p>
+    {(catalog?.placeProfilesDatasets ?? []).map((dataset) => <section key={dataset.id} id={anchor('perfil-locais', dataset.year)}><h2>Perfil do eleitorado por local de votação — {dataset.year}</h2><p>{dataset.scope}</p>
       <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · {dataset.totals.places.toLocaleString('pt-BR')} locais, {dataset.totals.eligible.toLocaleString('pt-BR')} eleitores aptos.</p>
       <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>
       <details className="dataset-files"><summary>Arquivos preservados ({dataset.sources.length})</summary>{dataset.sources.map((source) => <article key={`${source.file}/${source.sha256}`}><h3>{source.file}</h3><p><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>Baixar original preservado</a> · <a href={source.url}>Consultar arquivo atual no TSE</a></p><p>Geração: {source.generatedAt.join(', ')} · SHA-256 <span className="source-hash">{source.sha256}</span></p></article>)}</details>
@@ -77,12 +79,25 @@ export default async function Sources() {
       <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · {dataset.totals.tracts.toLocaleString('pt-BR')} setores de {dataset.totals.municipalities.toLocaleString('pt-BR')} municípios, {dataset.totals.servedViews.toLocaleString('pt-BR')} vistas desenhadas ({dataset.totals.districtViews.toLocaleString('pt-BR')} de distrito e {dataset.totals.subdistrictViews.toLocaleString('pt-BR')} de subdistrito).</p>
       <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>
     </section>)}
-    {(catalog?.proposalsDatasets ?? []).map((dataset) => <section key={dataset.id} id="propostas"><h2>Propostas de governo (TSE)</h2><p>{dataset.scope}</p>
+    {(catalog?.proposalsDatasets ?? []).map((dataset) => <section key={dataset.id} id={anchor('propostas', dataset.year)}><h2>Propostas de governo (TSE) — {dataset.year}</h2><p>{dataset.scope}</p>
       <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · {dataset.totals.candidacies.toLocaleString('pt-BR')} candidaturas, {dataset.totals.documents.toLocaleString('pt-BR')} documentos, {dataset.totals.pages.toLocaleString('pt-BR')} páginas ({dataset.totals.nativePages.toLocaleString('pt-BR')} com texto do PDF, {dataset.totals.ocrPages.toLocaleString('pt-BR')} por OCR, {dataset.totals.emptyPages.toLocaleString('pt-BR')} sem texto). Extração: {dataset.method.pdftotext}{dataset.method.extraction ? ', em ordem de leitura (-bbox-layout, conferida com o modo padrão)' : ''}; OCR: {dataset.method.tesseract} ({dataset.method.ocrLanguage}, {dataset.method.ocrDpi} dpi){dataset.method.normalization ? `; busca: ${dataset.method.normalization}` : ''}.</p>
       <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>
       <details className="dataset-files"><summary>Arquivos preservados ({dataset.sources.length})</summary>{dataset.sources.map((source) => <article key={`${source.file}/${source.sha256}`}><h3>{source.file}</h3><p><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>Baixar original preservado</a> · <a href={source.url}>Consultar na fonte</a></p><p>{source.entry} · SHA-256 <span className="source-hash">{source.sha256}</span></p></article>)}</details>
     </section>)}
-    {(catalog?.urbanSurroundingsDatasets ?? []).map((dataset) => <section key={dataset.id} id="entorno"><h2>Entorno dos domicílios (IBGE)</h2><p>{dataset.scope}</p>
+    {(catalog?.censusIndicatorsDatasets ?? []).map((dataset) => { const tables = [...new Set(dataset.sources.flatMap((source) => /^cdi_(\d+)_/.exec(source.file)?.[1] ?? []))].sort((a, b) => Number(a) - Number(b));
+      return <section key={dataset.id} id="indicadores-censo"><h2>Indicadores do Censo pela idade de voto (IBGE)</h2><p>{dataset.scope}</p>
+      <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · {dataset.totals.municipalities.toLocaleString('pt-BR')} municípios, {dataset.totals.queries.toLocaleString('pt-BR')} consultas à SIDRA. <a href={`/arquivos/imports/${dataset.id}/report`}>Relatório da publicação (JSON)</a> · <Link href="/metodologia#indicadores-censo">Como ler</Link>.</p>
+      <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>
+      <div className="table-scroll" role="region" aria-label="Soma dos municípios e valor da UF por tabela" tabIndex={0}><table><caption>Soma dos municípios × valor da UF publicado pelo IBGE, por tabela</caption>
+        <thead><tr><th scope="col">Tabela SIDRA</th><th scope="col">Fonte</th><th scope="col">Células conferidas</th><th scope="col">Iguais</th><th scope="col">Maior diferença (pessoas)</th></tr></thead>
+        <tbody>{dataset.ufChecks.map((check) => <tr key={check.table}><th scope="row">{check.table}</th><td>{check.kind === 'universo' ? 'Universo' : 'Amostra'}</td><td>{check.cells.toLocaleString('pt-BR')}</td><td>{check.exact.toLocaleString('pt-BR')}</td><td>{check.maxAbsDifference.toLocaleString('pt-BR')}</td></tr>)}</tbody></table></div>
+      <details className="dataset-files"><summary>Arquivos preservados ({dataset.sources.length})</summary>
+        {dataset.sources.filter((source) => !source.file.startsWith('cdi_') || source.file.startsWith('cdi_meta_')).map((source) => <article key={`${source.file}/${source.sha256}`}><h3>{source.file}</h3><p><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>Baixar original preservado</a> · <a href={source.url}>Consultar na fonte</a></p><p>{source.entry} · SHA-256 <span className="source-hash">{source.sha256}</span></p></article>)}
+        {tables.map((table) => { const queries = dataset.sources.filter((source) => source.file.startsWith(`cdi_${table}_`)); return <details key={table}><summary>Tabela {table}: {queries.length} consultas (por UF e Brasil por UF)</summary>
+          <ul>{queries.map((source) => <li key={source.sha256}><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>{source.file}</a> · <a href={source.url}>consulta na SIDRA</a> · <span className="source-hash">{source.sha256}</span></li>)}</ul></details>; })}
+      </details>
+    </section>; })}
+    {(catalog?.urbanSurroundingsDatasets ?? []).map((dataset) => <section key={dataset.id} id="entorno"><h2>Entorno dos domicílios (IBGE)</h2><p className="notice">Fora da interface desde 31/10/2026 (decisão do projeto): os itens da face de quadra pouco descreviam o território para quem compara com o voto, cobriam só parte de cada município, e rampa e obstáculo dividiam também por quem não tem calçada. A publicação continua guardada como registro.</p><p>{dataset.scope}</p>
       <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · {dataset.totals.municipalities.toLocaleString('pt-BR')} municípios, {dataset.totals.tracts.toLocaleString('pt-BR')} setores com a pesquisa, {dataset.totals.residents.toLocaleString('pt-BR')} moradores na base.</p>
       <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>
       <details className="dataset-files"><summary>Arquivos preservados ({dataset.sources.length})</summary>{dataset.sources.map((source) => <article key={`${source.file}/${source.sha256}`}><h3>{source.file}</h3><p><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>Baixar original preservado</a> · <a href={source.url}>Consultar na fonte</a></p><p>{source.entry} · SHA-256 <span className="source-hash">{source.sha256}</span></p></article>)}</details>
@@ -99,7 +114,7 @@ export default async function Sources() {
         {(['250', '500', '1000'] as const).map((radius) => { const agreement = catalog.tractSensitivityImport!.national[radius]; const total = Object.values(agreement).reduce((sum, item) => sum + item.eligible, 0);
           return <li key={radius}>Brasil, {radius === '1000' ? '1 km' : `${radius} m`}: {(agreement.same.eligible / total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% dos eleitores aptos dos locais associados na mesma faixa do setor do ponto, {(agreement.adjacent.eligible / total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% numa faixa vizinha e {(agreement.distant.eligible / total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% a duas ou mais.</li>; })}</ul>
     </section>}
-    {(catalog?.turnoutProfilesDatasets ?? []).map((dataset) => <section key={dataset.id} id="participacao"><h2>Comparecimento e abstenção por perfil (TSE)</h2><p>{dataset.scope}</p>
+    {(catalog?.turnoutProfilesDatasets ?? []).map((dataset) => <section key={dataset.id} id={anchor('participacao', dataset.year)}><h2>Comparecimento e abstenção por perfil (TSE) — {dataset.year}</h2><p>{dataset.scope}</p>
       <p>Versão: <span className="source-hash">{dataset.id}</span> · Importador: {dataset.importerVersion} · Registro: {date(dataset.importedAt)} (Brasília).</p>
       <ul>{dataset.notes.map((note) => <li key={note}>{note}</li>)}</ul>
       <details className="dataset-files"><summary>Arquivos preservados ({dataset.sources.length})</summary>{dataset.sources.map((source) => <article key={`${source.file}/${source.sha256}`}><h3>{source.file}</h3><p><a href={`/arquivos/sources/${source.sha256}/${source.file}`}>Baixar original preservado</a> · <a href={source.url}>Consultar arquivo atual no TSE</a></p><p>Geração: {source.generatedAt.join(', ')} · SHA-256 <span className="source-hash">{source.sha256}</span></p></article>)}</details>

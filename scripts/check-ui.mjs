@@ -46,7 +46,7 @@ async function executable(browser) {
   assert.ok(versions[0], 'Configure UI_EXECUTABLE_PATH com um Chromium/Chrome instalado.');
   return resolve(directory, versions[0], 'chrome-linux64/chrome');
 }
-const urls = ['/', '/?uf=SP', '/?office=senator&uf=SE', '/municipios/71072?uf=SP', '/municipios/26310?uf=PE', '/perfis?indicator=income-median&uf=MA', '/participacao?uf=SP&municipality=71072', '/mapa?uf=PE', '/mapa/candidaturas?uf=SP&round=2', '/fontes', '/mapa?uf=SP&office=governor&round=2&series=10', '/mapa?indicator=urban-ramp&uf=SE', '/municipios/71072/setores?uf=SP', '/municipios/71072/setores?uf=SP&view=355030830', '/propostas', '/propostas?q=acessibilidade'];
+const urls = ['/', '/?uf=SP', '/?office=senator&uf=SE', '/municipios/71072?uf=SP', '/municipios/26310?uf=PE', '/perfis?indicator=income-median&uf=MA', '/perfis?indicator=tract-favela', '/participacao?uf=SP&municipality=71072', '/mapa?uf=PE', '/mapa/candidaturas?uf=SP&round=2', '/fontes', '/mapa?uf=SP&office=governor&round=2&series=10', '/mapa?indicator=favela-15&uf=SE', '/municipios/71072/setores?uf=SP', '/municipios/71072/setores?uf=SP&view=355030830', '/propostas', '/propostas?q=acessibilidade', '/propostas?year=2026', '/perfis?year=2026&indicator=tract-situation', '/participacao?year=2026&round=2'];
 for (const name of browserNames) {
   const launch = async () => puppeteer.launch({ browser: name, executablePath: await executable(name), headless: true, args: name === 'chrome' ? ['--no-sandbox', '--disable-dev-shm-usage'] : [], acceptInsecureCerts: false,
     ...(name === 'firefox' ? { extraPrefsFirefox: { 'ui.prefersReducedMotion': 1 } } : {}) });
@@ -80,7 +80,7 @@ for (const name of browserNames) {
         { path: '/municipios/71072?uf=SP', form: 'form[action^="/municipios/"]', fill: { zone: '0001' }, params: { zone: '0001', page: '1', uf: 'SP' } },
         { path: '/perfis?indicator=college&uf=SP', form: 'form[action="/perfis"]', select: { indicator: 'women' }, params: { indicator: 'women', uf: 'SP' } },
         { path: '/participacao?uf=SP', form: 'form[action="/participacao"]', select: { rows: 'education', cols: 'maritalStatus' }, params: { rows: 'education', cols: 'maritalStatus', uf: 'SP' } },
-        { path: '/mapa?uf=SP', form: 'form[action="/mapa"]', select: { indicator: 'literacy-15' }, params: { indicator: 'literacy-15', uf: 'SP' } },
+        { path: '/mapa?uf=SP', form: 'form[action="/mapa"]', select: { indicator: 'religion-evangelical-15' }, params: { indicator: 'religion-evangelical-15', uf: 'SP' } },
         { path: '/mapa/candidaturas?uf=SP', form: 'form[action="/mapa/candidaturas"]', select: { office: 'governor' }, params: { office: 'governor', uf: 'SP' } },
       ];
       for (const item of cases) {
@@ -152,6 +152,49 @@ for (const name of browserNames) {
       assert.match(await page.$eval('#search', (element) => element.value), /campo grande/i); assert.ok(await page.$eval('[name="uf"]', (element) => element.value)); assert.equal(new URL(page.url()).searchParams.get('search'), null);
       await go(page, '/?uf=SP'); await page.click('[name="office"][value="senator"]');
       assert.equal(await page.$('[name="round"][value="2"]'), null); assert.equal(await page.$eval('[name="round"][value="1"]', (element) => element.checked), true);
+    });
+    await scenario('Mapa: "Comparar com" acompanha ano e turno antes do envio', 'Opções consultadas por GET em /mapa/comparacoes; trocar o recorte não envia o formulário.', async (page) => {
+      await go(page, '/mapa?indicator=college-18');
+      await page.select('form[action="/mapa"] [name="year"]', '2026'); await page.click('#round-2');
+      await page.waitForFunction(() => { const field = document.querySelector('#series'); return field && !field.disabled && [...field.options].some((option) => option.value === '22'); }, { timeout: 30000 });
+      assert.equal(new URL(page.url()).searchParams.get('round'), null, 'Trocar o turno não envia o formulário');
+      const options = await page.$$eval('#series option', (items) => items.map((item) => item.value)); assert.deepEqual(options, ['abstention', '13', '22']);
+      await page.select('#series', '22'); await page.click('form[action="/mapa"] button[type="submit"]');
+      await page.waitForFunction(() => new URL(location.href).searchParams.get('series') === '22', { timeout: 45000 }); await page.waitForNetworkIdle({ idleTime: 500, timeout: 45000 });
+      const url = new URL(page.url()); assert.equal(url.searchParams.get('round'), '2'); assert.equal(url.searchParams.get('year'), '2026');
+      assert.match(await page.evaluate(() => document.body.innerText), /FLAVIO BOLSONARO \(22\)/);
+      // A escolha continua quando a candidatura existe no recorte novo (a mesma no 1º turno).
+      await page.click('#round-1');
+      await page.waitForFunction(() => { const field = document.querySelector('#series'); return field && !field.disabled && field.options.length > 3; }, { timeout: 30000 });
+      assert.equal(await page.$eval('#series', (field) => field.value), '22');
+      return { options };
+    });
+    await scenario('Participação: município e aviso de turno acompanham UF e ano antes do envio', 'Municípios consultados por GET em /participacao/municipios; trocar o recorte não envia o formulário.', async (page) => {
+      const options = () => page.$$eval('#municipality option', (items) => items.map((item) => item.value));
+      const ready = (count) => page.waitForFunction((count) => { const field = document.querySelector('#municipality'); return field && !field.disabled && field.options.length === count; }, { timeout: 30000 }, count);
+      await go(page, '/participacao');
+      assert.equal(await page.$eval('#municipality', (field) => field.disabled), true, 'Sem UF, não há município a escolher');
+      await page.select('form[action="/participacao"] [name="uf"]', 'MT'); await ready(142); // 141 municípios de 2022 + "Toda a UF"
+      assert.equal(new URL(page.url()).searchParams.get('uf'), null, 'Trocar a UF não envia o formulário');
+      await page.select('#municipality', '90670');
+      await page.select('form[action="/participacao"] [name="year"]', '2026'); await ready(143); // Boa Esperança do Norte só existe em 2026
+      assert.equal(await page.$eval('#municipality', (field) => field.value), '90670', 'Cuiabá continua escolhida no outro ano');
+      assert.match(await page.$eval('#round-hint', (hint) => hint.textContent), /só o 1º turno \(gerado em \d{2}\/\d{2}\/2026\)/);
+      await page.select('#municipality', '73709');
+      await page.select('form[action="/participacao"] [name="year"]', '2022'); await ready(142);
+      assert.equal(await page.$eval('#municipality', (field) => field.value), '', 'Município ausente do ano volta a "Toda a UF"');
+      assert.equal(await page.$('#round-hint'), null, 'Em 2022 a fonte traz os dois turnos');
+      await page.select('form[action="/participacao"] [name="uf"]', 'DF');
+      await page.waitForFunction(() => document.querySelector('#municipality')?.disabled && /não traz Distrito Federal/.test(document.querySelector('#municipality-hint').textContent), { timeout: 10000 });
+      await page.select('form[action="/participacao"] [name="uf"]', 'MT'); await page.select('form[action="/participacao"] [name="year"]', '2026'); await ready(143);
+      await page.select('#municipality', '90670'); await page.click('form[action="/participacao"] button[type="submit"]');
+      await page.waitForFunction(() => new URL(location.href).searchParams.get('municipality') === '90670', { timeout: 45000 }); await page.waitForNetworkIdle({ idleTime: 500, timeout: 45000 });
+      assert.match(await page.evaluate(() => document.body.innerText), /Participação por perfil — CUIABÁ \/ MT/);
+      // Turno ausente da fonte: aviso com a data da publicação e lista de municípios disponível.
+      await go(page, '/participacao?year=2026&round=2&uf=MT');
+      assert.match(await page.evaluate(() => document.body.innerText), /traz só o 1º turno \(gerado em \d{2}\/\d{2}\/2026\)/);
+      assert.equal((await options()).length, 143);
+      return { municipalities2022: 141, municipalities2026: 142 };
     });
     await scenario('Movimento reduzido, foco e estabilidade após consulta', 'Emulação apenas da aba, sem mudar preferências do sistema.', async (page) => {
       if (name === 'chrome') await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

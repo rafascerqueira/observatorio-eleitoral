@@ -6,14 +6,18 @@ export function FieldError({ field, errors, prefix = '' }: { field: string; erro
 }
 
 export function QuerySelect({ id, name, value, choices, errors, hintId, disabledValues = [] }: {
-  id: string; name: string; value: string; choices: Array<{ value: string; label: string }>; errors: QueryError[]; hintId?: string; disabledValues?: readonly string[];
+  id: string; name: string; value: string; choices: Array<{ value: string; label: string; group?: string }>; errors: QueryError[]; hintId?: string; disabledValues?: readonly string[];
 }) {
   const invalid = errors.some((error) => error.field === name);
   const prefix = id.slice(0, id.length - name.length);
+  const option = (choice: { value: string; label: string }) => <option key={choice.value} value={choice.value} disabled={disabledValues.includes(choice.value) || undefined}>{choice.label}</option>;
+  // Com `group`, as opções vêm em <optgroup> nativos, na ordem em que cada grupo aparece; sem ele, lista simples.
+  const groups = [...new Set(choices.map((choice) => choice.group))];
   return <><select id={id} name={name} defaultValue={value} aria-invalid={invalid || undefined}
     aria-describedby={[hintId, invalid ? `${id}-error` : undefined].filter(Boolean).join(' ') || undefined}>
     {!choices.some((choice) => choice.value === value) && <option value={value}>Valor informado: {value}</option>}
-    {choices.map((choice) => <option key={choice.value} value={choice.value} disabled={disabledValues.includes(choice.value) || undefined}>{choice.label}</option>)}
+    {groups.length === 1 && groups[0] === undefined ? choices.map(option)
+      : groups.map((group) => <optgroup key={group ?? ''} label={group ?? 'Outros'}>{choices.filter((choice) => choice.group === group).map(option)}</optgroup>)}
   </select><FieldError field={name} errors={errors} prefix={prefix} /></>;
 }
 

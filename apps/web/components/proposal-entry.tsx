@@ -3,6 +3,15 @@ import type { ProposalsResponse } from '@observatorio/contracts';
 const number = (value: number) => value.toLocaleString('pt-BR');
 export type Candidacy = Extract<ProposalsResponse, { status: 'published' }>['candidacies'][number];
 
+/**
+ * Âncora e chave únicas de uma candidatura: o número se repete entre candidaturas (2026: duas com o 28, ambas sem votos), então
+ * entram também a situação de listagem e o nome de urna.
+ */
+export function candidacyId(item: Pick<Candidacy, 'number' | 'listing' | 'ballotName'>) {
+  const name = item.ballotName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return `candidatura-${item.number}-${item.listing}-${name}`;
+}
+
 /** Como o texto de um documento foi obtido, página a página. */
 function coverage(document: NonNullable<Candidacy['document']>) {
   const parts = [`${number(document.nativePages)} com o texto do próprio PDF`, document.ocrPages ? `${number(document.ocrPages)} por OCR` : null, document.emptyPages ? `${number(document.emptyPages)} sem texto` : null].filter(Boolean);
@@ -15,8 +24,9 @@ function coverage(document: NonNullable<Candidacy['document']>) {
  */
 export function CandidacyEntry({ item, query, level = 3 }: { item: Candidacy; query: string | null; level?: 3 | 4 }) {
   const title = `${item.number} · ${item.ballotName} (${item.party})`, Heading = level === 4 ? 'h4' : 'h3';
-  return <article className="proposal-entry" aria-labelledby={`candidatura-${item.number}-${item.listing}`}>
-    <Heading id={`candidatura-${item.number}-${item.listing}`}>{title}</Heading>
+  const id = candidacyId(item);
+  return <article className="proposal-entry" aria-labelledby={id}>
+    <Heading id={id}>{title}</Heading>
     {item.listing === 'no-votes' && <p className="source-note">Situação no cadastro do TSE: {item.situation.toLowerCase()}; sem votos nos resultados publicados.</p>}
     {item.document ? <p className="source-note">{coverage(item.document)}</p> : <p className="source-note">Sem documento no arquivo do TSE.</p>}
     {item.sameDocumentAs.map((other) => <p key={other.ballotName} className="source-note">O mesmo arquivo foi registrado também pela candidatura {other.number} · {other.ballotName} (situação no cadastro: {other.situation.toLowerCase()}); ele aparece uma vez, aqui.</p>)}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CandidacyEntry, type Candidacy } from '../components/proposal-entry';
+import { candidacyId, CandidacyEntry, type Candidacy } from '../components/proposal-entry';
 
 // Candidatura e trechos sintéticos.
 const base: Candidacy = { number: '14', ballotName: 'CANDIDATURA C', party: 'P2', situation: 'APTO', listing: 'candidate',
@@ -30,7 +30,12 @@ test('propostas: trecho do PDF é texto, não marcação; OCR identificado e pá
 test('propostas: candidatura sem votos com a própria situação e cabeçalho sob o título do grupo', () => {
   const noVotes: Candidacy = { ...base, number: '90', ballotName: 'CANDIDATURA D', situation: 'INAPTO', listing: 'no-votes', sameDocumentAs: [] };
   const html = renderToStaticMarkup(createElement(CandidacyEntry, { item: noVotes, query: null, level: 4 }));
-  assert.match(html, /<h4 id="candidatura-90-no-votes">90 · CANDIDATURA D \(P2\)<\/h4>/);
+  assert.match(html, /<h4 id="candidatura-90-no-votes-candidatura-d">90 · CANDIDATURA D \(P2\)<\/h4>/);
   assert.match(html, /Situação no cadastro do TSE: inapto; sem votos nos resultados publicados\./);
-  assert.match(render(base, null), /<h3 id="candidatura-14-candidate">/); assert.doesNotMatch(render(base, null), /Situação no cadastro/);
+  assert.match(render(base, null), /<h3 id="candidatura-14-candidate-[a-z0-9-]+">/); assert.doesNotMatch(render(base, null), /Situação no cadastro/);
+});
+
+test('propostas: duas candidaturas com o mesmo número e a mesma listagem têm âncoras diferentes (2026, número 28)', () => {
+  const a = candidacyId({ number: '28', listing: 'no-votes', ballotName: 'LEONARDO AVALANCHE' }), b = candidacyId({ number: '28', listing: 'no-votes', ballotName: 'PABLO MARÇAL' });
+  assert.notEqual(a, b); assert.equal(b, 'candidatura-28-no-votes-pablo-marcal');
 });

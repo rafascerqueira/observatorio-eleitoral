@@ -12,11 +12,12 @@ import { IBGE } from './sectors';
 
 /**
  * Moradores por faixa de perfil do setor (Censo 2022, agregados por setor de demografia, universo): o equivalente censitário
- * dos indicadores de eleitoras, 16 a 24 anos e 60 anos ou mais de `/perfis`. Cada setor entra inteiro na faixa (mesmos
+ * dos indicadores de eleitoras, 16 a 24 anos, 60 anos ou mais e 70 anos ou mais de `/perfis`. Cada setor entra inteiro na faixa (mesmos
  * cortes de `PLACE_GROUP_CUTS`) pela parcela calculada entre os seus moradores de 15 anos ou mais — o agregado por setor
  * agrupa 15 a 19 anos, então a base é 15+ e a faixa jovem é 15 a 24. Descreve o território, não o eleitorado.
  */
-const VERSION = 'tract-demography-2022-v2';
+// v3 (31/10/2026): 70 anos ou mais (voto facultativo), ao lado de 60+; os demais indicadores e regras sem mudança.
+const VERSION = 'tract-demography-2022-v3';
 const SCOPE = '2022/context/tract-demography';
 const SEX_AGE = { male: ['V01009', 'V01010', 'V01011', 'V01012', 'V01013', 'V01014', 'V01015', 'V01016', 'V01017', 'V01018', 'V01019'], female: ['V01020', 'V01021', 'V01022', 'V01023', 'V01024', 'V01025', 'V01026', 'V01027', 'V01028', 'V01029', 'V01030'],
   age: ['V01031', 'V01032', 'V01033', 'V01034', 'V01035', 'V01036', 'V01037', 'V01038', 'V01039', 'V01040', 'V01041'] };
@@ -104,7 +105,7 @@ async function run() {
     const residents = [...byMunicipality.values()].reduce((sum, item) => sum + item.residents, 0);
     const undisclosed = [...byMunicipality.values()].reduce((sum, item) => sum + item.undisclosed, 0);
     const dataset = tractDemographyDatasetSchema.parse({ id, kind: 'tract-demography', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources,
-      scope: 'Moradores de 15 anos ou mais de todos os setores censitários (Censo 2022, universo, agregados de demografia), somados pela faixa do setor em mulheres, 15 a 24 anos e 60 anos ou mais entre os moradores de 15+, nos mesmos cortes de /perfis.',
+      scope: 'Moradores de 15 anos ou mais de todos os setores censitários (Censo 2022, universo, agregados de demografia), somados pela faixa do setor em mulheres, 15 a 24 anos, 60 anos ou mais e 70 anos ou mais entre os moradores de 15+, nos mesmos cortes de /perfis.',
       totals: { municipalities: byMunicipality.size, tracts: read, residents, undisclosedTracts: undisclosed },
       notes: [`Rótulos de ${Object.keys(LABELS).length} variáveis conferidos no dicionário do IBGE. Em cada setor sem célula omitida, sexo e faixas etárias somam os moradores; com células omitidas, a soma do divulgado não passa do total.`,
         `Soma dos setores igual à população do Censo (contexto municipal) nos ${(byMunicipality.size - withOmission).toLocaleString('pt-BR')} municípios sem setor omitido; nos ${withOmission.toLocaleString('pt-BR')} com setores omitidos ("X", ${undisclosed.toLocaleString('pt-BR')} setores), a soma fica abaixo e nada é estimado.`,

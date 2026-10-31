@@ -10,7 +10,8 @@ const SECTION_SCOPES: Record<string, { label: string; href: string }> = {
   '2022/context/income-bands': { label: 'Moradores por faixa de renda do setor 2022 (IBGE)', href: '#faixas-renda' },
   '2022/context/turnout-profiles': { label: 'Comparecimento e abstenção por perfil 2022 (TSE)', href: '#participacao' },
   '2022/context/tract-demography': { label: 'Moradores por faixa de perfil do setor 2022 (IBGE)', href: '#demografia-setores' },
-  '2022/context/urban-surroundings': { label: 'Entorno dos domicílios 2022 (IBGE)', href: '#entorno' },
+  '2022/context/urban-surroundings': { label: 'Entorno dos domicílios 2022 (IBGE), fora da interface', href: '#entorno' },
+  '2022/context/census-indicators': { label: 'Indicadores do Censo 2022 pela idade de voto (IBGE)', href: '#indicadores-censo' },
   '2022/maps/ibge': { label: 'Malhas para mapas 2022 (IBGE)', href: '#malhas' },
   '2022/places/tracts': { label: 'Locais de votação e setores censitários 2022', href: '#setores' },
   '2022/places/profiles': { label: 'Perfil do eleitorado por local de votação 2022', href: '#perfil-locais' },
@@ -19,6 +20,11 @@ const SECTION_SCOPES: Record<string, { label: string; href: string }> = {
   '2022/geo/tracts': { label: 'Malha de setores censitários 2022 (IBGE)', href: '#malha-setores' },
   '2022/geo/tract-display': { label: 'Desenho dos setores para o mapa 2022', href: '#desenho-setores' },
   '2022/proposals/president': { label: 'Propostas de governo da Presidência 2022 (TSE)', href: '#propostas' },
+  '2026/places/tracts': { label: 'Locais de votação e setores censitários 2026', href: '#setores-2026' },
+  '2026/places/profiles': { label: 'Perfil do eleitorado por local de votação 2026', href: '#perfil-locais-2026' },
+  '2026/places/groups': { label: 'Grupos de locais de votação 2026 (métrica E)', href: '/metodologia#perfis' },
+  '2026/context/turnout-profiles': { label: 'Comparecimento e abstenção por perfil 2026 (TSE)', href: '#participacao-2026' },
+  '2026/proposals/president': { label: 'Propostas de governo da Presidência 2026 (TSE)', href: '#propostas-2026' },
 };
 
 /** Escopo de importação: ano/cargo/território (ex.: 2022/governor/SP) ou uma publicação com seção própria. */

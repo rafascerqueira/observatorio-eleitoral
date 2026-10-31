@@ -14,7 +14,10 @@ const json = async (path, status) => (await request(api, path, status)).json();
 const html = async (path) => (await (await request(web, path)).text()).replaceAll('<!-- -->', '');
 const sum = (items, field = 'value') => items.reduce((total, item) => total + item[field], 0);
 
-const catalog = await json('/elections/catalog');
+const fullCatalog = await json('/elections/catalog');
+// Publicações por ano (2022 e 2026): as conferências abaixo são de 2022; as de 2026 ficam no fim, com o ano explícito.
+const byYear = (list, year) => (list ?? []).filter((item) => item.year === year);
+const catalog = { ...fullCatalog, ...Object.fromEntries(['tractsDatasets', 'placeProfilesDatasets', 'turnoutProfilesDatasets', 'proposalsDatasets'].map((key) => [key, byYear(fullCatalog[key], 2022)])) };
 const [dataset] = catalog.contextDatasets;
 assert.ok(dataset, 'Contexto municipal precisa estar publicado.');
 assert.equal(catalog.contextDatasets.length, 1);
@@ -62,12 +65,12 @@ assert.equal(catalog.mapDatasets.length, 1); assert.equal(catalog.mapDatasets[0]
 const brGeometry = await json('/elections/map/geometry');
 assert.equal(Object.values(brGeometry.topology.objects)[0].geometries.length, 27);
 assert.equal(Object.values((await json('/elections/map/geometry?uf=MG')).topology.objects)[0].geometries.length, 853);
-const literacyUf = await json('/elections/map/values?indicator=literacy-15');
-assert.equal(literacyUf.items.length, 27);
-assert.deepEqual([sum(literacyUf.items, 'numerator'), sum(literacyUf.items, 'denominator')], [151547694, 162951495], 'Alfabetização 15+, Brasil (Censo 2022)');
-const literacySp = await json('/elections/map/values?indicator=literacy-15&uf=SP');
-assert.equal(literacySp.items.length, 645);
-assert.equal(sum(literacySp.items, 'numerator'), literacyUf.items.find((item) => item.uf === 'SP').numerator, 'UF = soma dos municípios');
+const illiterateUf = await json('/elections/map/values?indicator=illiterate-16');
+assert.equal(illiterateUf.items.length, 27);
+assert.deepEqual([sum(illiterateUf.items, 'numerator'), sum(illiterateUf.items, 'denominator')], [11355195, 160131985], 'Não alfabetizadas 16+, Brasil (Censo 2022, auditoria de 31/10/2026)');
+const illiterateSp = await json('/elections/map/values?indicator=illiterate-16&uf=SP');
+assert.equal(illiterateSp.items.length, 645);
+assert.equal(sum(illiterateSp.items, 'numerator'), illiterateUf.items.find((item) => item.uf === 'SP').numerator, 'UF = soma dos municípios');
 const abstentionSp = (await json('/elections/map/values?indicator=abstention&round=2')).items.find((item) => item.uf === 'SP');
 const stateSp = await json('/elections/state?office=president&uf=SP&round=2');
 assert.deepEqual([abstentionSp.numerator, abstentionSp.denominator], [stateSp.summary.totals.abstentions, stateSp.summary.totals.eligible], 'Abstenção do mapa = resultado publicado da UF');
@@ -88,7 +91,7 @@ if (catalog.tractsDatasets?.length) {
   assert.ok((await html('/fontes')).includes('Locais de votação e setores censitários'));
 }
 if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
-  for (const indicator of ['college', 'education-low', 'women', 'age-16-24', 'age-60-plus', 'income-median']) {
+  for (const indicator of ['college', 'education-low', 'women', 'age-16-24', 'age-60-plus', 'age-70-plus', 'income-median']) {
     const groups = await json(`/elections/places/groups?indicator=${indicator}&round=2`);
     assert.equal(groups.status, 'published'); assert.ok(groups.groups.length >= 3, `${indicator}: faixas com locais`);
     assert.equal(groups.method, 'bands');
@@ -118,6 +121,19 @@ if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
     assert.ok((await html('/municipios/71072?uf=SP&round=1')).includes('Moradores por faixa de renda mediana do setor'));
     assert.ok((await html('/perfis?indicator=income-median&uf=MA')).includes('Moradores do território em setores da faixa'));
   }
+  // Grupos por categoria do setor do local (v6): sem valores nem limites; mesmos locais da renda, sem exigir mediana.
+  const income1 = await json('/elections/places/groups?indicator=income-median&round=1');
+  for (const indicator of ['tract-situation', 'tract-favela']) {
+    const groups = await json(`/elections/places/groups?indicator=${indicator}&round=1`);
+    assert.equal(groups.method, 'categories'); assert.deepEqual(groups.groups.map((group) => group.index), [1, 2], `${indicator}: duas categorias com locais`);
+    for (const group of groups.groups) { assert.equal(sum(group.candidates, 'votes'), group.valid); assert.deepEqual([group.from, group.to, group.lower, group.upper], [null, null, null, null]); }
+    assert.equal(groups.coverage.places, income1.coverage.places, `${indicator}: mesmo universo de locais do recorte`);
+    assert.ok(groups.coverage.placesInGroups >= income1.coverage.placesInGroups, `${indicator}: ao menos os locais da renda`);
+    assert.equal(groups.population ?? null, null, `${indicator}: sem moradores por faixa`);
+  }
+  const favela = await json('/elections/places/groups?indicator=tract-favela&round=1');
+  assert.ok(favela.groups[0].places > 1000 && favela.groups[0].places < 1522, 'Locais em setor de favela (com coordenada própria)');
+  for (const [path, text] of [['/perfis?indicator=tract-favela', 'Setor de favela ou comunidade urbana'], ['/perfis?indicator=tract-favela', 'não diz que os eleitores do local moram em favela'], ['/perfis?indicator=tract-situation&uf=MA', 'Setor rural'], ['/perfis?indicator=age-70-plus', 'Mais de 5% a 7,5%']]) assert.ok((await html(path)).includes(text), `${path}: ${text}`);
   const page = await html('/perfis?indicator=income-median&round=2');
   for (const text of ['Resultados por perfil dos locais', 'Grupos de locais', 'descrevem locais, não pessoas', 'Mais de 3 SM', '3.636']) assert.ok(page.includes(text), text);
   await request(api, '/elections/places/groups?indicator=college&office=governor', 400);
@@ -139,7 +155,7 @@ if (catalog.placeProfilesDatasets?.length && catalog.tractsDatasets?.length) {
   // Demografia por setor (Censo): moradores de 15+ por faixa de eleitoras e de idade; escolaridade não tem equivalente.
   if (catalog.tractDemographyDatasets?.length) {
     const [demography] = catalog.tractDemographyDatasets;
-    for (const indicator of ['women', 'age-16-24', 'age-60-plus']) {
+    for (const indicator of ['women', 'age-16-24', 'age-60-plus', 'age-70-plus']) {
       const population = (await json(`/elections/places/groups?indicator=${indicator}&round=1`)).population;
       assert.ok(population, `${indicator}: moradores por faixa`);
       assert.equal(sum(population.bands, 'residents'), population.total, `${indicator}: faixas = total de 15+`);
@@ -218,7 +234,7 @@ assert.ok((await html('/municipios/71072?uf=SP&round=1')).includes('Estado civil
   const dots = (page.match(/class="scatter-dot"/g) ?? []).length;
   assert.ok(dots === 645 || page.includes(`${645 - dots} unidades sem um dos dois valores`), 'Um ponto por município com os dois valores; os demais declarados');
   assert.ok((await html('/mapa?uf=SP&office=governor&series=99')).includes('não está em Governador'));
-  const lines = (await (await request(web, '/mapa/dados.csv?uf=SP&office=governor&round=2&series=13&indicator=literacy-15')).text()).replace(/^﻿/, '').trimEnd().split('\r\n');
+  const lines = (await (await request(web, '/mapa/dados.csv?uf=SP&office=governor&round=2&series=13&indicator=illiterate-16')).text()).replace(/^﻿/, '').trimEnd().split('\r\n');
   assert.equal(lines.length, 646); assert.ok(lines[0].startsWith('uf;codigo_tse;codigo_ibge;nome;'));
   const governor = await json('/elections/map/candidates?office=governor&uf=SP&round=2');
   assert.equal(lines.slice(1).reduce((total, line) => total + Number(line.split(';')[9]), 0), governor.candidates.find((item) => item.number === '13').votes, 'CSV soma os votos publicados da candidatura');
@@ -236,19 +252,44 @@ if (catalog.tractsDatasets?.length) {
   assert.ok(!page.includes('Não há associação socioeconômica validada'));
   assert.ok(!(await html('/metodologia')).includes('O método geográfico ainda não foi definido'));
 }
-// Entorno dos domicílios (Censo 2022): valores lidos diretamente dos arquivos do IBGE em 19/10/2026, em auditoria independente.
+// Entorno dos domicílios: fora da interface desde 31/10/2026; a publicação continua listada em Fontes como registro.
 if (catalog.urbanSurroundingsDatasets?.length) {
-  const [urban] = catalog.urbanSurroundingsDatasets;
-  assert.equal(urban.importerVersion, 'urban-surroundings-2022-v1');
-  assert.deepEqual([urban.totals.municipalities, urban.totals.tracts, urban.totals.suppressedTracts, urban.totals.residents], [5570, 340965, 1418, 174153633]);
-  const sidewalk = await json('/elections/map/values?indicator=urban-sidewalk');
-  assert.deepEqual([sum(sidewalk.items, 'numerator'), sum(sidewalk.items, 'denominator')], [146376090, 174153633], 'Calçada, Brasil = arquivo municipal do IBGE');
-  const spCity = (await json('/elections/municipalities/71072/context?uf=SP')).urbanSurroundings;
-  assert.equal(spCity.counts[0], 11304202); assert.equal(spCity.counts[21], 10163450);
+  assert.equal(catalog.urbanSurroundingsDatasets[0].importerVersion, 'urban-surroundings-2022-v1');
+  await request(api, '/elections/map/values?indicator=urban-sidewalk', 400);
+  assert.equal((await json('/elections/municipalities/71072/context?uf=SP')).urbanSurroundings, undefined);
   const objetivo = (await json('/elections/municipalities/71072/place-tracts?uf=SP')).items.find((item) => item.zone === 1 && item.code === '1015');
-  assert.equal(objetivo.tract.urban.status, 'surveyed'); assert.equal(objetivo.tract.urban.counts[0], 293);
-  for (const [path, texts] of [['/municipios/71072?uf=SP&round=1', ['Entorno dos domicílios (IBGE)', 'Moradores por característica da face de quadra', 'Entorno do setor']], ['/fontes', ['Entorno dos domicílios (IBGE)', 'agregados_setores_entorno_moradores.zip']],
-    ['/mapa?indicator=urban-ramp&uf=SE', ['Moradores em face de quadra com rampa para cadeirante', 'setores com a pesquisa do entorno', 'não indica ausência da infraestrutura']], ['/metodologia', ['Entorno dos domicílios', 'nunca os arquivos em percentual']]]) {
+  assert.equal(objetivo.tract.urban, undefined); assert.equal(objetivo.tract.code, '355030807000234');
+  assert.ok(!(await html('/municipios/71072?uf=SP&round=1')).includes('Entorno dos domicílios (IBGE)'));
+  assert.ok((await html('/fontes')).includes('Fora da interface desde 31/10/2026'));
+}
+// Indicadores do Censo pela idade de voto: totais conferidos com a auditoria de 31/10/2026 (consultas e código independentes da importação).
+if (catalog.censusIndicatorsDatasets?.length) {
+  const [census] = catalog.censusIndicatorsDatasets;
+  assert.equal(census.importerVersion, 'census-indicators-2022-v1');
+  assert.deepEqual([census.totals.municipalities, census.totals.favela.present, census.totals.favela['not-delimited'], census.totals.favela.divergent], [5570, 656, 4913, 1]);
+  assert.ok(census.ufChecks.filter((check) => check.kind === 'universo').every((check) => check.exact === check.cells), 'Universo: soma dos municípios = UF em todas as células');
+  for (const [indicator, numerator, denominator] of [['race-black-16', 17473835, 160131985], ['race-brown-16', 70879452, 160131985], ['religion-evangelical-15', 43093143, 162933040],
+    ['unemployment-18-69', 4902977, 90885159], ['college-18', 25854304, 154309509], ['disability-15', 13620420, 162933036], ['internet-15', 144184460, 162033747], ['urban-15', 142949968, 162951495]]) {
+    const values = await json(`/elections/map/values?indicator=${indicator}`);
+    assert.deepEqual([sum(values.items, 'numerator'), sum(values.items, 'denominator')], [numerator, denominator], indicator);
+  }
+  // Favelas: Peixe-Boi (PA) sem valor declarado; o Pará fica sem valor na soma por UF; os municípios sem favela delimitada entram com zero.
+  const favela = await json('/elections/map/values?indicator=favela-15');
+  assert.equal(favela.items.find((item) => item.uf === 'PA').value, null);
+  const favelaPa = await json('/elections/map/values?indicator=favela-15&uf=PA');
+  assert.equal(favelaPa.items.find((item) => item.id === '1505601').value, null);
+  assert.ok(favelaPa.items.filter((item) => item.value === 0).length > 0);
+  const sp15 = await json('/elections/map/values?indicator=religion-evangelical-15&uf=SP');
+  assert.ok(sp15.items.every((item) => item.deviation > 0 && item.deviation < 5), 'Desvio declarado em todos os municípios do recorte 15+');
+  assert.equal((await json('/elections/map/values?indicator=race-black-16&uf=SP')).items[0].deviation, undefined, 'Recorte 16+ não tem desvio');
+  const young = (await json('/elections/map/values?indicator=age-16-17')).items;
+  assert.equal(sum(young, 'denominator'), 160131985);
+  const sao = await json('/elections/municipalities/71072/context?uf=SP');
+  assert.equal(sao.censusIndicators.ibgeCode, '3550308'); assert.equal(sao.censusIndicators.favela.status, 'present'); assert.equal(sao.censusIndicatorsId, census.id);
+  for (const [path, texts] of [['/municipios/71072?uf=SP&round=1', ['Cor ou raça (IBGE)', 'Religião (IBGE)', 'Trabalho (IBGE)', 'Internet e moradia (IBGE)', 'Saneamento (IBGE)', 'Urbano × rural e favelas (IBGE)', 'Pessoas com deficiência (IBGE)', 'Migração (IBGE)', 'a tabela do IBGE agrupa as idades de 15 a 19 anos']],
+    ['/mapa?indicator=religion-evangelical-15&uf=SP', ['Evangélicas (15+)', 'Desvio máximo em relação a 16+', 'nunca o voto de pessoas de um grupo', 'agrupa as idades de 15 a 19 anos', 'Em exibição: Pessoas de 15 anos ou mais evangélicas', '\nAbstenção — Presidência, 1º turno: ']],
+    ['/mapa?indicator=favela-15', ['Peixe-Boi (PA) fica sem valor']], ['/mapa?indicator=unemployment-18-69&year=2026', ['não é comparável à taxa da PNAD Contínua', 'O Censo é de 2022 e a eleição comparada é de 2026']],
+    ['/fontes', ['Indicadores do Censo pela idade de voto (IBGE)', 'Soma dos municípios × valor da UF publicado pelo IBGE']], ['/metodologia', ['Indicadores do Censo pela idade de voto', 'Recorte de 15 anos ou mais', 'Entorno dos domicílios (fora da interface)']]]) {
     const page = await html(path);
     for (const text of texts) assert.ok(page.includes(text), `${path}: ${text}`);
   }
@@ -308,5 +349,22 @@ if (catalog.proposalsDatasets?.length) {
     const page = await html(path);
     for (const text of texts) assert.ok(page.includes(text), `${path}: ${text}`);
   }
+}
+// 2026 (31/10/2026): perfis, participação e associação local → setor com publicações próprias; contexto e Censo de 2022.
+if (byYear(fullCatalog.tractsDatasets, 2026).length) {
+  const [tracts] = byYear(fullCatalog.tractsDatasets, 2026);
+  assert.equal(tracts.importerVersion, 'polling-place-tracts-2026-v2');
+  const sp = await json('/elections/municipalities/71072/place-tracts?uf=SP&year=2026');
+  assert.ok(sp.summary.associated.places > 2000, 'São Paulo, 2026: locais associados (coordenadas com vírgula decimal lidas)');
+  const groups = await json('/elections/places/groups?year=2026&indicator=tract-situation&round=2');
+  assert.equal(groups.status, 'published'); for (const group of groups.groups) assert.equal(sum(group.candidates, 'votes'), group.valid);
+  assert.equal((await json('/elections/places/groups?year=2026&indicator=income-median&round=1&radius=500')).status, 'awaiting-import', 'Sensibilidade só em 2022');
+  const turnout1 = await json('/elections/turnout/profiles?year=2026&round=1');
+  assert.equal(turnout1.status, 'published'); assert.deepEqual(turnout1.missingUfs, [], '2026: o DF está na fonte');
+  assert.equal((await json('/elections/turnout/profiles?year=2026&round=2')).status, 'round-not-in-source');
+  const proposals = await json('/elections/proposals?year=2026&q=saude');
+  assert.equal(proposals.status, 'published'); assert.equal(proposals.candidacies.filter((item) => item.listing === 'candidate').length, 12, '2026: 12 candidaturas com votos');
+  assert.deepEqual(proposals.candidacies.filter((item) => item.listing === 'no-votes').map((item) => item.number), ['28', '28'], 'Número 28: totalizada com nulos técnicos e não totalizada, à parte');
+  for (const [path, text] of [['/propostas?year=2026', 'PRESIDÊNCIA 2026'], ['/participacao?year=2026&round=2', 'traz só o 1º turno'], ['/perfis?year=2026&indicator=tract-favela&round=2', 'Setor de favela ou comunidade urbana'], ['/municipios/71072?uf=SP&year=2026&round=1', 'malha de setores do Censo 2022']]) assert.ok((await html(path)).includes(text), `${path}: ${text}`);
 }
 console.log(`Smoke do contexto municipal aprovado: ${requests} requisições.`);

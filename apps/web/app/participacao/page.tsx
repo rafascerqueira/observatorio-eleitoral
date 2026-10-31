@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { percent, STATES, TURNOUT_CROSS_DIMENSIONS, turnoutProfilesQuerySchema, type TurnoutCrossDimension, type TurnoutProfiles } from '@observatorio/contracts';
-import { getTurnoutProfiles } from '../../lib/results';
+import { percent, STATES, TURNOUT_CROSS_DIMENSIONS, turnoutProfilesQuerySchema, type TurnoutCrossDimension, type TurnoutProfiles, ELECTION_YEARS } from '@observatorio/contracts';
+import { getCatalog, getTurnoutProfiles } from '../../lib/results';
+import { turnoutCoverage } from '../../lib/turnout-coverage';
 import { QueryForm } from '../../components/query-form';
-import { ErrorSummary, QuerySelect, TurnField } from '../../components/query-fields';
+import { ErrorSummary, QuerySelect } from '../../components/query-fields';
+import { SourceRoundField } from '../../components/round-field';
 import { MunicipalityField } from '../../components/municipality-field';
 import { UF_NAMES, queryErrors, rawValue, type QueryError, type RawQuery } from '../../lib/query-ui';
 
@@ -57,9 +59,12 @@ export default async function Participation({ searchParams }: { searchParams: Pr
   const formErrors = [...(parsed.success ? [] : queryErrors(raw, parsed.error.issues)), ...(sameAxes ? [sameAxes] : []), ...(noUf ? [noUf] : [])];
   // Com município, a UF inteira também é consultada: traz a lista de municípios e permite conferir o código pedido.
   const query = { year: filters.year, round: filters.round, uf: filters.uf };
-  const [ufData, municipalityData] = formErrors.length ? [null, null] : await Promise.all([getTurnoutProfiles(query), filters.municipality ? getTurnoutProfiles({ ...query, municipality: filters.municipality }) : null]);
-  const municipalities = ufData?.municipalities ?? [];
-  const unknown: QueryError | null = filters.municipality && ufData?.status === 'published' && municipalities.length > 0 && !municipalities.some((item) => item.code === filters.municipality)
+  const [ufData, municipalityData, catalog] = await Promise.all([formErrors.length ? null : getTurnoutProfiles(query), !formErrors.length && filters.municipality ? getTurnoutProfiles({ ...query, municipality: filters.municipality }) : null, getCatalog()]);
+  const coverage = turnoutCoverage(catalog?.turnoutProfilesDatasets ?? []);
+  // Turno ausente da fonte: a lista de municípios da UF é a mesma da publicação, lida do 1º turno, para o campo continuar utilizável.
+  const listData = ufData?.status === 'round-not-in-source' && filters.uf ? await getTurnoutProfiles({ ...query, round: '1' }) : ufData;
+  const municipalities = listData?.municipalities ?? [];
+  const unknown: QueryError | null = filters.municipality && listData?.status === 'published' && municipalities.length > 0 && !municipalities.some((item) => item.code === filters.municipality)
     ? { field: 'municipality', message: `O código ${filters.municipality} não é de um município de ${UF_NAMES[filters.uf!]} na fonte; escolha um da lista.` } : null;
   const errors = [...formErrors, ...(unknown ? [unknown] : [])];
   const data = errors.length ? null : filters.municipality ? municipalityData : ufData;
@@ -83,17 +88,19 @@ export default async function Participation({ searchParams }: { searchParams: Pr
       <p className="hero-description">Quantos eleitores aptos compareceram ou se abstiveram, por gênero, faixa etária, escolaridade e estado civil declarados ao TSE, no Brasil, numa UF ou num município. São contagens da própria Justiça Eleitoral, não estimativas; não há voto por candidatura, porque o voto é secreto. Abstenção não indica motivação.</p></section>
     <section className="explorer" aria-labelledby="participacao-filtros">
       <div className="section-heading"><div><p className="eyebrow">ESCOLHA O RECORTE</p><h2 id="participacao-filtros">Território, turno e cruzamento</h2></div><Link className="text-link" href="/metodologia#participacao">Como ler <span aria-hidden="true">↗</span></Link></div>
-      <ErrorSummary errors={errors} targets={{ uf: 'uf', municipality: 'municipality', round: 'round-1', rows: 'rows', cols: 'cols' }} />
+      <ErrorSummary errors={errors} targets={{ year: 'year', uf: 'uf', municipality: 'municipality', round: 'round-1', rows: 'rows', cols: 'cols' }} />
       <QueryForm key={JSON.stringify(raw)} action="/participacao" className="municipality-filters" label="Filtros da participação por perfil" submitLabel="Ver participação" resultsId="participacao" hasErrors={errors.length > 0}>
+        <div className="field"><label htmlFor="year">Eleição</label><QuerySelect id="year" name="year" value={rawValue(raw, 'year', filters.year)} errors={errors} choices={ELECTION_YEARS.map((year) => ({ value: year as string, label: year }))} /></div>
         <div className="field"><label htmlFor="uf">Território</label><QuerySelect id="uf" name="uf" value={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors} choices={ufChoices} /></div>
-        <MunicipalityField loadedUf={filters.uf ?? ''} ufName={filters.uf ? UF_NAMES[filters.uf] : null} value={rawValue(raw, 'municipality', filters.municipality ?? '')} errors={errors} choices={municipalities.map((item) => ({ value: item.code, label: item.name }))} />
-        <TurnField value={rawValue(raw, 'round', filters.round)} errors={errors} />
+        <MunicipalityField loaded={{ uf: filters.uf ?? '', year: filters.year }} value={rawValue(raw, 'municipality', filters.municipality ?? '')} errors={errors} coverage={coverage} choices={municipalities.map((item) => ({ value: item.code, label: item.name }))} />
+        <SourceRoundField year={rawValue(raw, 'year', filters.year)} value={rawValue(raw, 'round', filters.round)} errors={errors} coverage={coverage} />
         <div className="field"><label htmlFor="rows">Linhas</label><QuerySelect id="rows" name="rows" value={rawValue(raw, 'rows', filters.rows)} errors={errors} choices={dimensionChoices} /></div>
         <div className="field"><label htmlFor="cols">Colunas</label><QuerySelect id="cols" name="cols" value={rawValue(raw, 'cols', filters.cols)} errors={errors} choices={dimensionChoices} /></div>
       </QueryForm>
       <div id="participacao" className="query-results">
         {errors.length ? <p className="notice scope-notice">Corrija os filtros acima para ver a participação.</p>
-          : data?.status === 'not-in-source' ? <p className="notice scope-notice">O arquivo de comparecimento por perfil do TSE de 2022 não traz o {UF_NAMES[filters.uf!]}. Os resultados da eleição no DF estão nas outras páginas; aqui não há o que exibir, e nada é estimado.</p>
+          : data?.status === 'round-not-in-source' ? <p className="notice scope-notice">O arquivo de comparecimento por perfil do TSE de {filters.year} traz só o {coverage[filters.year]?.rounds.join(' e ') ?? '1'}º turno{coverage[filters.year]?.generated ? ` (gerado em ${coverage[filters.year]!.generated})` : ''}. O {filters.round}º turno não está na fonte: não disponível, nunca zero. Os resultados do 2º turno estão nas outras páginas.</p>
+          : data?.status === 'not-in-source' ? <p className="notice scope-notice">O arquivo de comparecimento por perfil do TSE de {filters.year} não traz o {UF_NAMES[filters.uf!]}. Os resultados da eleição no DF estão nas outras páginas; aqui não há o que exibir, e nada é estimado.</p>
           : !published || !total ? <p className="notice scope-notice" role="status">Participação por perfil indisponível: {filters.municipality ? 'a publicação por município (import:turnout-profiles, v2) não foi encontrada' : <>a publicação (<code>import:turnout-profiles</code>) não foi encontrada</>}, ou o serviço não respondeu.</p>
           : dimensionUnavailable ? <p className="notice scope-notice" role="status">Estado civil indisponível nesta publicação do comparecimento por perfil (versão anterior à v2). Não é zero: a dimensão não foi importada.</p> : <>
           <dl className="totals-grid">

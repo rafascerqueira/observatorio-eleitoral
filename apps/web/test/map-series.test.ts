@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CANDIDATE_MAP_CUTS, mapPageQuerySchema, type CandidateMap, type MapValues } from '@observatorio/contracts';
-import { candidateSeries, csvPercent, csvText, joinSeries, MAP_CSV_COLUMNS, mapCsv, mapCsvName, resolveSeries } from '../lib/map-series';
+import { candidateSeries, csvPercent, csvText, joinSeries, pairDetail, MAP_CSV_COLUMNS, mapCsv, mapCsvName, resolveSeries } from '../lib/map-series';
 import { axisMax, axisTicks, diameter, Scatter } from '../components/scatter';
 
 // Recortes sintéticos (valores fictícios), só para as regras de série, junção e exportação.
@@ -67,4 +67,14 @@ test('dispersão: eixos a partir de zero com limites redondos, área proporciona
   assert.ok(html.indexOf('data-label="B"') < html.indexOf('data-label="A"'), 'Ponto maior desenhado antes do menor');
   assert.match(html, /2 unidades sem um dos dois valores ficam fora do gráfico/);
   assert.doesNotMatch(html, /tendência|correla/i);
+});
+
+test('dica dos dois mapas: indicador do Censo e série comparada da mesma unidade, com numerador e denominador; sem dado não vira zero', () => {
+  const census = [{ id: '1', code: 'A', uf: 'SP', name: 'A', numerator: 30, denominator: 100, value: 30 }, { id: '2', code: 'B', uf: 'SP', name: 'B', numerator: null, denominator: 10, value: null }] as const;
+  const series = [{ id: '1', code: 'A', uf: 'SP', name: 'A', numerator: 2, denominator: 10, value: 20 }, { id: '2', code: 'B', uf: 'SP', name: 'B', numerator: 1, denominator: 4, value: 25 }] as const;
+  const detail = pairDetail(joinSeries([...census], [...series]), 'Evangélicas (15+)', { kind: 'abstention', title: 'Abstenção — Presidência, 1º turno', weight: 'eleitores aptos' });
+  assert.equal(detail(series[0]), 'Evangélicas (15+): 30,0% (30 de 100)\nAbstenção — Presidência, 1º turno: 20,0% (2 de 10 eleitores aptos)');
+  assert.equal(detail(census[1]), 'Evangélicas (15+): sem dado\nAbstenção — Presidência, 1º turno: 25,0% (1 de 4 eleitores aptos)');
+  const candidate = pairDetail(joinSeries([...census], [...series]), 'X', { kind: 'candidate', title: 'FULANA (10) — % dos votos válidos', weight: 'votos válidos' });
+  assert.match(candidate(census[0]), /\nFULANA \(10\): 20,0% \(2 de 10 votos válidos\)$/);
 });

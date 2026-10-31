@@ -6,7 +6,7 @@ import { Test } from '@nestjs/testing';
 import { AppModule } from '../src/app';
 import { readConfig } from '../src/config';
 import { DatabaseService } from '../src/database/database.service';
-import { emptyMunicipalitiesSchema, nationalResponseSchema, searchText } from '@observatorio/contracts';
+import { CENSUS_THEMES, emptyMunicipalitiesSchema, nationalResponseSchema, searchText } from '@observatorio/contracts';
 
 let app: INestApplication;
 let base: string;
@@ -23,6 +23,9 @@ let trigram = true;
 let contextPublished = false;
 let tractsPublished = false;
 let urbanPublished = false;
+let censusPublished = false;
+// Indicadores do Censo sintéticos (valores fictícios): células por tema e recorte, como as derivadas da publicação.
+let censusCells: Record<string, Array<Record<string, unknown>>> = {};
 // Mapa local → setor (fase B3): vistas, setores e locais sintéticos, com a projeção gravada pelo importador.
 let tractMapPublished = false;
 // Propostas sintéticas: dois documentos, um deles compartilhado por duas candidaturas do mesmo número (valores fictícios).
@@ -65,6 +68,13 @@ const contextItem = { code: '71072', name: 'SÃO PAULO', uf: 'SP', ibgeCode: '35
   electorate: { eligible: 7, gender: distribution('cadastro', 7), age: distribution('cadastro', 7), education: distribution('cadastro', 7), maritalStatus: distribution('cadastro', 7) },
   resultsEligible: { '1': 8, '2': 8 }, turnout: { '1': null, '2': null } };
 const contextDataset = { id: 'd'.repeat(64), kind: 'municipal-context', year: 2022, importedAt: '2026-10-17T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', validation: 'checked', coverage: { expected: 1, published: 1, withoutTurnout: ['DF'] }, notes: [] };
+const censusDataset = { id: '8'.repeat(64), kind: 'census-indicators', year: 2022, importedAt: '2026-10-31T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', notes: [],
+  totals: { municipalities: 1, queries: 1, favela: { present: 0, 'not-delimited': 1, divergent: 0 } }, ufChecks: [] };
+const censusShare = { kind: 'amostra', source: 'teste', numerator: 1, denominator: 2 };
+const censusItem = { ibgeCode: '3550308', code: '71072', uf: 'SP', name: 'SÃO PAULO', age15: { age15: 2, age15plus: 100 },
+  distributions: Object.fromEntries(Object.entries(CENSUS_THEMES).map(([theme, slices]) => [theme, Object.fromEntries(slices.map((slice) => [slice, distribution('universo', 10)]))])),
+  disability: { '15+': censusShare, '70+': censusShare, types: [] }, migration: { '15+': censusShare, '70+': censusShare }, favela: { status: 'not-delimited', favelas: 0, '15+': { ...censusShare, kind: 'universo', numerator: 0 } } };
+const censusCell = (id: string, uf: string, total: string | null, keys: string[], counts: Array<string | null>) => ({ id, code: id.slice(2, 7), uf, name: `Município ${id}`, total, keys, counts });
 const queries: Array<{ sql: string; parameters: unknown[] }> = [];
 // Metadados e local exclusivamente sintéticos para verificar o contrato HTTP.
 const dataset = { id: 'a'.repeat(64), year: 2022, office: 'president', municipalityCode: '71072', municipalityName: 'São Paulo', uf: 'SP', importedAt: '2026-10-12T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', validation: 'reconciled' };
@@ -82,13 +92,15 @@ before(async () => {
         if (sql.includes('pg_extension')) return { rows: [{ installed: trigram }] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/places/tracts') return { rows: tractsPublished ? [{ id: 'e'.repeat(64), metadata: {} }] : [] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/urban-surroundings') return { rows: urbanPublished ? [{ id: 'f'.repeat(64), metadata: {} }] : [] };
+        if (sql.includes('scope=$1') && parameters[0] === '2022/context/census-indicators') return { rows: censusPublished ? [{ id: '8'.repeat(64), metadata: {} }] : [] };
+        if (sql.includes('FROM census_indicator_cells')) return { rows: censusCells[`${parameters[1]}/${parameters[2]}`]?.filter((row) => parameters[3] === null || row.uf === parameters[3]) ?? [] };
+        if (sql.includes('FROM census_indicators WHERE')) return { rows: [{ result: censusItem }] };
         if (sql.includes('FROM import_batches ORDER BY imported_at DESC')) return { rows: urbanPublished ? [{ id: 'f'.repeat(64), scope: '2022/context/urban-surroundings', published: true, metadata: { id: 'f'.repeat(64), kind: 'urban-surroundings', year: 2022, importedAt: '2026-10-19T00:00:00Z',
           importerVersion: 'test', sources: [], scope: 'Teste', notes: [], totals: { municipalities: 1, tracts: 3, suppressedTracts: 1, residents: 10, associatedTracts: 2, associatedSurveyed: 1, associatedSuppressed: 0 } } },
           { id: '9'.repeat(64), scope: '2022/geo/tracts', published: true, metadata: { id: '9'.repeat(64), kind: 'tract-geometries', year: 2022, importedAt: '2026-10-19T00:00:00Z', importerVersion: 'test', sources: [], scope: 'Teste', notes: [],
             totals: { rows: 4, tracts: 3, multipart: 1, invalid: 1, comparedPlaces: 2, equalPlaces: 2 } } },
-          { id: '4'.repeat(64), scope: '2022/proposals/president', published: true, metadata: proposalsDataset }] : [] };
-        if (sql.includes('FROM municipality_urban_surroundings WHERE batch_id=$1 AND ibge_code=$2')) return { rows: [{ tracts: 3, suppressed: 1, counts: urbanCounts() }] };
-        if (sql.includes('FROM municipality_urban_surroundings')) return { rows: [{ id: '3550308', code: '71072', uf: 'SP', name: 'São Paulo', counts: urbanCounts() }] };
+          { id: '4'.repeat(64), scope: '2022/proposals/president', published: true, metadata: proposalsDataset },
+          ...(censusPublished ? [{ id: '8'.repeat(64), scope: '2022/context/census-indicators', published: true, metadata: censusDataset }] : [])] : [] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/municipal') return { rows: contextPublished ? [{ id: 'd'.repeat(64), metadata: {} }] : [] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/geo/tract-display') return { rows: tractMapPublished ? [{ id: '7'.repeat(64), metadata: {} }] : [] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/income-bands') return { rows: tractMapPublished ? [{ id: '6'.repeat(64), metadata: {} }] : [] };
@@ -386,31 +398,49 @@ test('associação local → setor: exige UF, separa ausência de publicação e
   } finally { published = false; tractsPublished = false; tractRows = []; }
 });
 
-test('entorno dos domicílios: contexto do município, indicador do mapa e setor pesquisado, omitido ou fora da pesquisa', async () => {
-  published = true; tractsPublished = true; urbanPublished = true; contextPublished = true; queries.length = 0;
-  tractRows = [tractRow(1, '1015', 'associated', '355030807000234', '1000', { surveyed: true, urban: urbanCounts() }), tractRow(1, '1023', 'associated', '355030890000197', '1000', { surveyed: true, urban: null }),
-    tractRow(1, '1040', 'associated', '355030890000198', '1000'), tractRow(2, '1058', 'no-coordinate', null, null)];
+test('entorno dos domicílios fora da interface; indicadores do Censo pela idade de voto no mapa e no contexto', async () => {
+  published = true; tractsPublished = true; urbanPublished = true; censusPublished = true; contextPublished = true; queries.length = 0;
+  tractRows = [tractRow(1, '1015', 'associated', '355030807000234', '1000', { surveyed: true, urban: urbanCounts() }), tractRow(2, '1058', 'no-coordinate', null, null)];
+  const religion = ['catolica-apostolica-romana', 'evangelicas', 'sem-religiao'];
+  censusCells = {
+    'religion/15+': [censusCell('3550308', 'SP', '100', religion, ['50', '30', '20']), censusCell('3509502', 'SP', '50', religion, ['20', '20', '10']), censusCell('3304557', 'RJ', '40', religion, ['10', '10', null])],
+    'age15/15+': [censusCell('3550308', 'SP', '100', ['age15'], ['2']), censusCell('3509502', 'SP', '50', ['age15'], ['1']), censusCell('3304557', 'RJ', '40', ['age15'], ['2'])],
+    'race/16+': [censusCell('3550308', 'SP', '80', ['branca'], ['40'])], 'race/16-17': [censusCell('3550308', 'SP', '4', ['branca'], ['2'])],
+    'internet/15+': [censusCell('3550308', 'SP', '10', ['nao'], ['1'])],
+  };
   try {
+    // Mesmo com a publicação do entorno, o cartão do local não o recebe nem consulta.
     const data = await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).json();
-    assert.equal(data.urbanBatchId, 'f'.repeat(64));
-    assert.deepEqual(data.items.map((item: { tract: { urban?: { status: string } } | null }) => item.tract?.urban?.status ?? null), ['surveyed', 'suppressed', 'outside', null]);
-    assert.equal(data.items[0].tract.urban.counts[21], 10); assert.equal(data.items[1].tract.urban.counts, null, 'Setor omitido pelo IBGE não vira zero');
-    const select = queries.find((query) => query.sql.includes('FROM polling_place_tracts'))!;
-    assert.match(select.sql, /tract_urban_surroundings u ON u.batch_id=\$4/); assert.equal(select.parameters[3], 'f'.repeat(64));
-    const map = await (await fetch(`${base}/elections/map/values?indicator=urban-sidewalk&uf=SP`)).json();
-    assert.equal(map.status, 'published'); assert.deepEqual([map.items[0].numerator, map.items[0].denominator, map.items[0].value], [10, 10, 100]); assert.deepEqual(map.publications, [{ role: 'context', id: 'f'.repeat(64) }]);
+    assert.equal(data.urbanBatchId, null); assert.equal(data.items[0].tract.urban, undefined);
+    assert.doesNotMatch(queries.find((query) => query.sql.includes('FROM polling_place_tracts'))!.sql, /tract_urban_surroundings/);
+    assert.equal((await fetch(`${base}/elections/map/values?indicator=urban-sidewalk&uf=SP`)).status, 400, 'Indicador do entorno saiu do mapa');
+    // Recorte 15+: categoria ÷ total da própria tabela, com o desvio declarado (15 anos ÷ 15+).
+    const sp = await (await fetch(`${base}/elections/map/values?indicator=religion-evangelical-15&uf=SP`)).json();
+    assert.equal(sp.status, 'published'); assert.deepEqual(sp.publications, [{ role: 'context', id: '8'.repeat(64) }]);
+    assert.deepEqual(sp.items.map((item: { numerator: number; denominator: number; value: number; deviation: number }) => [item.numerator, item.denominator, item.value, item.deviation]), [[20, 50, 40, 2], [30, 100, 30, 2]]);
+    const select = queries.find((query) => query.sql.includes('FROM census_indicator_cells'))!;
+    assert.deepEqual(select.parameters, ['8'.repeat(64), 'religion', '15+', 'SP']);
+    // UF: soma de numeradores, denominadores e desvio; um nulo torna a UF nula (nunca zero).
+    const brazil = await (await fetch(`${base}/elections/map/values?indicator=religion-evangelical-15`)).json();
+    const bySp = brazil.items.find((item: { uf: string }) => item.uf === 'SP'), byRj = brazil.items.find((item: { uf: string }) => item.uf === 'RJ');
+    assert.deepEqual([bySp.numerator, bySp.denominator, bySp.value, bySp.deviation], [50, 150, 50 / 150 * 100, 2]);
+    assert.deepEqual([byRj.numerator, byRj.value, byRj.deviation], [10, 25, 5]);
+    assert.equal((await (await fetch(`${base}/elections/map/values?indicator=religion-none-15&uf=RJ`)).json()).items[0].value, null, 'Célula indisponível não vira zero');
+    // Razão entre recortes (16–17 ÷ 16+), sem desvio porque a fonte tem idade simples.
+    const young = await (await fetch(`${base}/elections/map/values?indicator=age-16-17&uf=SP`)).json();
+    assert.deepEqual([young.items[0].numerator, young.items[0].denominator, young.items[0].value, young.items[0].deviation], [4, 80, 5, undefined]);
+    assert.equal((await fetch(`${base}/elections/map/values?indicator=internet-15&uf=SP`)).status, 503, 'Categoria ausente nas células é inconsistência');
     const context = await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).json();
-    assert.deepEqual([context.urbanSurroundings.tracts, context.urbanSurroundings.suppressedTracts, context.urbanSurroundings.counts[0]], [3, 1, 10]);
+    assert.equal(context.urbanSurroundings, undefined, 'Entorno não é mais enviado'); assert.equal(context.censusIndicators.favela.status, 'not-delimited'); assert.equal(context.censusIndicatorsId, '8'.repeat(64));
     const catalog = await (await fetch(`${base}/elections/catalog`)).json();
-    assert.equal(catalog.urbanSurroundingsDatasets[0].totals.residents, 10, 'Catálogo lista a publicação do entorno'); assert.equal(catalog.datasets.length, 0, 'Entorno e malha não são publicações de cargo');
+    assert.equal(catalog.censusIndicatorsDatasets[0].kind, 'census-indicators');
+    assert.equal(catalog.urbanSurroundingsDatasets[0].totals.residents, 10, 'Entorno continua listado como registro'); assert.equal(catalog.datasets.length, 0, 'Contexto e malha não são publicações de cargo');
     assert.equal(catalog.tractGeometriesDatasets[0].totals.invalid, 1, 'Malha de setores em lista própria');
     assert.equal(catalog.proposalsDatasets[0].totals.ocrPages, 1, 'Propostas em lista própria, fora das publicações eleitorais');
-    urbanPublished = false;
-    const without = await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).json();
-    assert.equal(without.urbanBatchId, null); assert.equal(without.items[0].tract.urban, undefined, 'Sem publicação do entorno, o setor não diz "fora da pesquisa"');
-    assert.doesNotMatch(queries.at(-1)!.sql, /tract_urban_surroundings/);
-    assert.equal((await (await fetch(`${base}/elections/map/values?indicator=urban-sidewalk`)).json()).status, 'awaiting-import');
-  } finally { published = false; tractsPublished = false; urbanPublished = false; contextPublished = false; tractRows = []; }
+    censusPublished = false;
+    assert.equal((await (await fetch(`${base}/elections/map/values?indicator=religion-evangelical-15`)).json()).status, 'awaiting-import');
+    assert.equal((await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).json()).censusIndicators, null);
+  } finally { published = false; tractsPublished = false; urbanPublished = false; censusPublished = false; contextPublished = false; tractRows = []; censusCells = {}; }
 });
 
 test('abstenção do mapa usa aptos e turnos do próprio cargo; cargo estadual exige UF; Censo não depende de cargo', async () => {
@@ -425,7 +455,7 @@ test('abstenção do mapa usa aptos e turnos do próprio cargo; cargo estadual e
     assert.match(select.sql, /m\.office=\$5/); assert.deepEqual(select.parameters, ['c'.repeat(64), '1', 'SP', 'd'.repeat(64), 'governor']);
     assert.equal((await (await fetch(`${base}/elections/map/values?indicator=abstention&office=governor&uf=SP&round=2`)).json()).status, 'round-not-held');
     assert.equal((await (await fetch(`${base}/elections/map/values?indicator=abstention&office=governor&uf=RJ`)).json()).status, 'awaiting-import', 'Outra UF não herda a publicação de SP');
-    const census = await (await fetch(`${base}/elections/map/values?indicator=literacy-15&office=governor`)).json();
+    const census = await (await fetch(`${base}/elections/map/values?indicator=income-upto-half-mw&office=governor`)).json();
     assert.equal(census.status, 'published'); assert.equal(census.office, undefined); assert.deepEqual(census.publications, [{ role: 'context', id: 'd'.repeat(64) }]);
   } finally { published = false; governor = false; contextPublished = false; governorRounds = ['1', '2']; }
 });
@@ -472,7 +502,9 @@ test('mapa local → setor: vistas, faixa de cada setor, locais projetados e div
 });
 
 test('propostas: todas as candidaturas pelo número, documento compartilhado uma vez, busca sem acento e trecho do original', async () => {
-  for (const query of ['q=ab', `q=${'a'.repeat(81)}`, 'year=2026', 'q=saude&uf=SP', 'q=saude%00', 'q=sa%7Fude']) assert.equal((await fetch(`${base}/elections/proposals?${query}`)).status, 400, query);
+  for (const query of ['q=ab', `q=${'a'.repeat(81)}`, 'year=2024', 'q=saude&uf=SP', 'q=saude%00', 'q=sa%7Fude']) assert.equal((await fetch(`${base}/elections/proposals?${query}`)).status, 400, query);
+  // 2026 é um ano válido: sem publicação própria, aguarda importação (não herda a de 2022).
+  assert.equal((await (await fetch(`${base}/elections/proposals?year=2026`)).json()).status, 'awaiting-import');
   published = true;
   try {
     assert.equal((await (await fetch(`${base}/elections/proposals`)).json()).status, 'awaiting-import');

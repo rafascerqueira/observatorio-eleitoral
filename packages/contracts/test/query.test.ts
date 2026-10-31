@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022, placeGroupBandOf, placeGroupsQuerySchema, turnoutProfilesQuerySchema, mapQuerySchema, mapPageQuerySchema, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, URBAN_COUNTS, URBAN_INDICATORS, MAP_INDICATORS, CENSUS_MAP_INDICATORS, urbanIndex, urbanIdentityErrors, urbanIndicatorCounts, urbanSurroundingsSchema, hasControlCharacters, suggestQuerySchema, proposalsQuerySchema } from '../src';
+import { CENSUS_THEMES, PLACE_GROUP_CUTS, PLACE_GROUP_CATEGORIES, PLACE_GROUP_METHODS, PLACE_GROUP_NUMERATORS, TRACT_DEMOGRAPHY_INDICATORS, municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, exteriorResponseSchema, nationalQuerySchema, stateQuerySchema, datasetSchema, isStateOffice, roundHeld, SINGLE_ROUND_OFFICES, incomeBandOf, INCOME_BANDS, MINIMUM_WAGE_2022, placeGroupBandOf, placeGroupsQuerySchema, turnoutProfilesQuerySchema, mapQuerySchema, mapPageQuerySchema, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, URBAN_COUNTS, URBAN_INDICATORS, MAP_INDICATORS, CENSUS_MAP_INDICATORS, urbanIndex, urbanIdentityErrors, urbanIndicatorCounts, urbanSurroundingsSchema, hasControlCharacters, suggestQuerySchema, proposalsQuerySchema } from '../src';
 
 test('aplica defaults e limita a paginação sem coerção de entradas vazias', () => {
   const defaults = municipalityQuerySchema.parse({});
@@ -100,7 +100,26 @@ test('entorno: 35 contagens na ordem do dicionário, categorias somando a base e
   assert.equal(urbanSurroundingsSchema.safeParse({ tracts: 1, suppressedTracts: 0, counts: broken }).success, false);
   assert.equal(urbanSurroundingsSchema.safeParse({ tracts: 1, suppressedTracts: 0, counts: coherent.slice(1) }).success, false);
   assert.deepEqual(urbanIndicatorCounts(coherent, 'urban-trees'), { numerator: 0, denominator: 10 }, 'Sem árvores fica fora do numerador');
-  for (const key of Object.keys(URBAN_INDICATORS)) { assert.equal(MAP_INDICATORS[key as keyof typeof MAP_INDICATORS].kind, 'entorno', key); assert.ok(CENSUS_MAP_INDICATORS.includes(key as never), key); }
+  for (const key of Object.keys(URBAN_INDICATORS)) assert.ok(!(key in MAP_INDICATORS), `${key}: entorno fora do mapa desde 31/10/2026`);
+});
+
+test('mapa: indicadores do Censo com grupo, base no rótulo e recorte existente nos indicadores publicados', () => {
+  const shares = new Set(['disability/15+', 'disability/70+', 'migration/15+', 'favela/15+']);
+  assert.ok(!('literacy-15' in MAP_INDICATORS), 'alfabetização de 15+ substituída pela de 16+');
+  for (const key of CENSUS_MAP_INDICATORS) {
+    const item = MAP_INDICATORS[key] as { label: string; group: string; census?: { theme: string; slice: string; keys?: readonly string[]; numeratorSlice?: string } };
+    assert.ok(item.group, key);
+    if (key === 'income-upto-half-mw') { assert.equal(item.census, undefined); continue; }
+    const census = item.census!;
+    const slices = (CENSUS_THEMES as Record<string, readonly string[]>)[census.theme];
+    assert.ok(slices ? slices.includes(census.slice) : shares.has(`${census.theme}/${census.slice}`), `${key}: ${census.theme}/${census.slice}`);
+    if (census.numeratorSlice) assert.ok(slices?.includes(census.numeratorSlice), key); else assert.ok(census.keys?.length, key);
+    // A base de idade aparece no próprio rótulo, como no recorte.
+    const age = census.slice.replace('+', '').split('-')[0]!;
+    assert.match(item.label, new RegExp(`${age} (anos|a|e)`), `${key}: ${item.label}`);
+  }
+  assert.ok(mapQuerySchema.safeParse({ indicator: 'religion-evangelical-15' }).success);
+  assert.ok(!mapQuerySchema.safeParse({ indicator: 'urban-sidewalk' }).success);
 });
 
 test('buscas em texto livre recusam caracteres de controle, mas não espaços, tabulações nem quebras de linha', () => {
@@ -113,4 +132,19 @@ test('buscas em texto livre recusam caracteres de controle, mas não espaços, t
   assert.equal(proposalsQuerySchema.safeParse({ q: 'saude\u0000' }).success, false);
   assert.equal(proposalsQuerySchema.safeParse({ q: 'saúde\tpública' }).success, true);
   assert.equal(municipalityQuerySchema.parse({ search: '  São Paulo  ' }).search, 'São Paulo');
+});
+
+test('perfis por local: 70+ ao lado de 60+, com os cortes decididos, e grupos por categoria do setor sem cortes', () => {
+  assert.deepEqual(PLACE_GROUP_CUTS['age-70-plus'], [5, 7.5, 10, 15]);
+  assert.deepEqual(PLACE_GROUP_CUTS['age-60-plus'], [15, 20, 25, 30], '60+ mantido');
+  assert.deepEqual([placeGroupBandOf('age-70-plus', 5, 100), placeGroupBandOf('age-70-plus', 51, 1000), placeGroupBandOf('age-70-plus', 16, 100)], [1, 2, 5], 'limite superior incluído');
+  assert.deepEqual(PLACE_GROUP_NUMERATORS['age-70-plus'].keys, ['a70-74', 'a75-79', 'a80-84', 'a85-89', 'a90-94', 'a95-99', 'a100+']);
+  for (const [indicator, categories] of Object.entries(PLACE_GROUP_CATEGORIES)) {
+    assert.equal(PLACE_GROUP_METHODS[indicator as keyof typeof PLACE_GROUP_METHODS], 'categories', indicator);
+    assert.deepEqual(PLACE_GROUP_CUTS[indicator as keyof typeof PLACE_GROUP_CUTS], [], indicator);
+    assert.deepEqual(categories.map((item) => item.index), [1, 2], indicator);
+    assert.ok(!(indicator in PLACE_GROUP_NUMERATORS), `${indicator}: não é percentual do cadastro`);
+  }
+  assert.ok(placeGroupsQuerySchema.safeParse({ indicator: 'tract-favela' }).success);
+  assert.deepEqual(TRACT_DEMOGRAPHY_INDICATORS['age-70-plus'].numerator, ['V01041']);
 });

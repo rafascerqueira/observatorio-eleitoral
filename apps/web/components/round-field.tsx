@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { isStateOffice, OFFICES, type Office } from '@observatorio/contracts';
 import { roundOptions, type RoundAvailability } from '../lib/rounds';
+import { roundNote, type TurnoutCoverage } from '../lib/turnout-coverage';
 import type { QueryError } from '../lib/query-ui';
 import { QuerySelect, TurnField } from './query-fields';
 import { useFormSelection } from './use-form-selection';
@@ -40,5 +41,17 @@ export function UfField({ office, value, errors, choices }: { office: string; va
     <label htmlFor="uf">Unidade da Federação</label>
     <QuerySelect id="uf" name="uf" value={value} errors={errors} hintId="uf-hint" choices={choices} disabledValues={state ? ['', 'ZZ'] : []} />
     <p className="field-hint" id="uf-hint">{state ? 'Cargo estadual: escolha uma das 27 UFs. Não há consolidado Brasil nem votação no exterior.' : '“Todo o Brasil” mostra o consolidado nacional; uma UF mostra o resultado estadual e seus municípios.'}</p>
+  </div>;
+}
+
+/**
+ * Turno de `/participacao`: os dois turnos continuam selecionáveis (o turno ausente da fonte é mostrado como não disponível, nunca
+ * zero), e o aviso acompanha o ano escolhido no navegador, pela cobertura de cada publicação no catálogo.
+ */
+export function SourceRoundField({ value, errors, year, coverage }: { value: string; errors: QueryError[]; year: string; coverage: TurnoutCoverage }) {
+  const anchor = useRef<HTMLDivElement>(null);
+  const selection = useFormSelection(anchor, { office: '', uf: '', round: value, year });
+  return <div ref={anchor} className="round-slot" aria-live="polite">
+    <TurnField value={value} errors={errors} note={roundNote(coverage, selection.year ?? year)} />
   </div>;
 }

@@ -94,10 +94,11 @@ export async function getPlaceTracts(code: string, uf: string, year: string) {
 }
 
 /** Busca literal nas propostas de governo da Presidência; sem `q`, só a cobertura. */
-export async function getProposals(q?: string) {
+export async function getProposals(q?: string, year = '2022') {
   try {
     const url = new URL('/elections/proposals', process.env.API_URL ?? 'http://127.0.0.1:3001');
     if (q) url.searchParams.set('q', q);
+    if (year !== '2022') url.searchParams.set('year', year);
     const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
     if (response.status === 400) return { kind: 'invalid' as const };
     if (!response.ok) return { kind: 'unavailable' as const };
