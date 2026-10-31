@@ -1087,7 +1087,8 @@ Resultado: `data/` 30 → 13 GB; disco livre 40 → 68 GB (71%).
 
 **Alcance na documentação e nos contratos (30/10):** contratos, API, Compose e identidade das publicações não mudam: os metadados expõem bytes (`sha256`, `sizeBytes`), `url`, `originalUrl` e `downloadedAtBasis`, nunca a forma de armazenamento; a API e o volume `:ro` do Compose leem `data/originals` como antes. Ajustados `docs/operacao.md` (originais como hard link, `data/raw` somente leitura e backups com links preservados), `docs/hospedagem-inicial.md` (nota sobre as medidas de 17/10, que somavam `raw` e `originals`) e `AGENTS.md`. Todos os 321 arquivos em `data/originals` têm 2 links e modo 444.
 
+**Merge (30/10):** ramo `chore/originais-hardlink` incorporado ao `main` por fast-forward (`cdc0316`) e apagado; sem push.
+
 Pendente:
 - backups de 17, 18 e 19/10 (0,9 GB) mantidos; apagar só por decisão de Rafael (o de 28/10 é o mais recente);
-- lotes não publicados no banco (~3,5 GB, mais `VACUUM FULL`), se Rafael decidir;
-- merge do ramo `chore/originais-hardlink` no `main`.
+- lotes não publicados no banco (~3,5 GB, mais `VACUUM FULL`), se Rafael decidir.
