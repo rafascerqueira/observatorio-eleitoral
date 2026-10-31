@@ -114,7 +114,7 @@ As identidades incluem também os originais e a configuração pertinente. Refa�
 
 O fluxo eleitoral funciona assim:
 
-1. **Originais**: ficam em `data/raw/tse/2022` e são preservados em `data/originals/<sha256>/<arquivo>`, somente leitura e com integridade conferida a cada uso. Arquivos existentes não são atualizados automaticamente.
+1. **Originais**: os downloads ficam em `data/raw/tse/<ano>` (e `data/raw/ibge/2022`) e são preservados em `data/originals/<sha256>/<arquivo>`, somente leitura e com integridade conferida a cada uso. O original é hard link do download (mesmo inode, sem duplicar os bytes; cópia só quando as pastas estão em sistemas de arquivos diferentes). Por isso o arquivo de `data/raw` também fica somente leitura e nunca deve ser alterado no lugar; apagá-lo não afeta o original nem libera espaço, e cópias ou backups de `data/` precisam preservar os links (`rsync -aH`, `tar`, `cp -a`) para não dobrar o tamanho. Arquivos existentes não são atualizados automaticamente.
 2. **Preparação**: as seções são particionadas em NDJSON por UF/município em `data/staging`. Um manifesto só é gravado após ler todas as fontes e verificar os CRCs; uma interrupção nessa fase exige refazer a leitura, e partições incompletas (`.partial-*`) nunca são publicadas.
 3. **Reconciliação e carga**: cada município é conferido por zona e turno (candidaturas, válidos, brancos, nulos, participação e seções) e gravado, com seu checkpoint, numa única transação. A carga retoma por município após interrupção.
 4. **Publicação**: a troca da versão pública é atômica e só ocorre quando todos os municípios do recorte reconciliaram. Divergências de votos ou chaves, duplicatas e categorias de voto não auditadas bloqueiam a publicação.

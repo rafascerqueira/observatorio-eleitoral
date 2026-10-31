@@ -23,6 +23,8 @@ Leitura de `plan.md`, histórico Git, Compose, Dockerfiles, API, proxy de arquiv
 | `data/audit` | 6,3 MiB | Manter disponível junto da publicação |
 | Extensões instaladas | `pg_trgm` 1.6 e PostGIS 3.6.4 | Hospedagem do banco precisa suportá-las |
 
+Atualização de 29/10/2026 (`plan.md`, item 63): os originais passaram a ser hard links dos arquivos de `data/raw`, e as duas pastas compartilham os mesmos bytes (`du` sobre ambas conta uma vez só; medidas separadas de cada pasta não se somam). O staging de UFs e nacional foi apagado; `data/` caiu para cerca de 13 GB. Para o servidor público continuam bastando `data/originals` e `data/audit`.
+
 `docker stats` mostrou cerca de 187 MiB no contêiner do banco naquele instante. Isso **não mede o pico da aplicação**, o cache total necessário ou a memória de importações; web/API não estavam em contêineres. Não usar esse valor para escolher uma VPS mínima.
 
 O frontend faz renderização no servidor e consultas com `no-store`; não é hoje um site puramente estático. A API usa pool de cinco conexões e timeout SQL de dois segundos. Os originais são transmitidos pela API e pelo proxy do Next.js, com verificação de SHA-256 no primeiro acesso por processo. Isso favorece processos persistentes e disco local no começo.
