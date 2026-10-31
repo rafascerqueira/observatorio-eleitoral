@@ -171,10 +171,14 @@ A listagem municipal passou a uma linha por município com detalhe nativo para t
 
 ### Campos que dependem do recorte — 31/10/2026
 
-Revisão dos oito formulários (pedido de Rafael): campo cujas opções dependem de ano, cargo, UF ou turno não pode ficar desativado até o envio.
+Rafael notou que o “Comparar com” do mapa ficava desativado ao trocar o turno ou o ano, até clicar em “Ver mapas”. A pedido dele, todos os formulários foram revistos em busca de campos com o mesmo problema.
 
-- **Corrigidos:** “Comparar com” (`/mapa`) e “Município” (`/participacao`, que também não acompanhava o ano: MT tem 141 municípios na fonte de 2022 e 142 na de 2026, com Boa Esperança do Norte). Ao mudar o recorte no navegador, o campo busca as opções novas por GET (`/mapa/comparacoes` e `/participacao/municipios`, rotas do frontend sem estado), continua utilizável e mantém a escolha quando ela existe no recorte novo. Fica desativado durante a busca, se ela falhar, sem UF ou com a UF fora da fonte do ano (DF em 2022); desativado, não é enviado, e vale a abstenção ou a UF inteira. A busca é comum (`useRemoteChoices`). Sem JavaScript, nada muda: dois envios.
-- **Turno em `/participacao`:** os dois turnos continuam selecionáveis (o 2º de 2026 foi realizado; só falta na fonte e aparece como não disponível, nunca zero), com aviso no campo que acompanha o ano. Turnos, UFs ausentes e data de geração vêm do catálogo (`turnoutCoverage`), não de texto fixo; o aviso da página deixou de trazer “13/10/2026” escrito no código.
-- **Já acompanhavam o recorte:** turno (`RoundField`), UF com cargo estadual (`UfField`) e sugestões de município (`MunicipalitySearch`, que lê ano, cargo e UF a cada busca). Sem campos dependentes: `/propostas`, `/exterior` (Presidência, dois turnos nos dois anos), locais em `/municipios/[code]` (cargo e UF fixos; turno via `RoundField`).
-- **Mantido:** com cargo estadual e “Todo o Brasil” marcado, a opção fica indisponível e o envio mostra o erro “escolha uma das 27 UFs”; escolher uma UF automaticamente inventaria o recorte.
-- **Verificação:** cenários no `check:ui` (Chrome e Firefox) para os dois campos; teste unitário da cobertura por ano.
+Além do “Comparar com”, só o “Município” de `/participacao` tinha esse defeito, e ele também não acompanhava o ano: MT tem 141 municípios na fonte de 2022 e 142 na de 2026, porque Boa Esperança do Norte só existe na segunda. Os dois campos agora buscam as opções do novo recorte assim que ano, cargo, UF ou turno mudam (`/mapa/comparacoes` e `/participacao/municipios`, rotas simples do frontend), sem esperar o envio, e guardam a escolha se ela ainda existir. Enquanto a lista carrega, se a busca falhar, sem UF ou com uma UF que a fonte do ano não traz (o DF em 2022), o campo fica desativado; desativado, ele não vai no envio, e vale a abstenção ou a UF inteira. A busca é a mesma nos dois casos (`useRemoteChoices`). Sem JavaScript, tudo continua funcionando em dois envios, como antes.
+
+No turno de `/participacao`, os dois turnos continuam disponíveis: o 2º turno de 2026 aconteceu, só não está no arquivo do TSE, e por isso aparece como não disponível, nunca como zero. O aviso acompanha o ano escolhido, e os turnos, as UFs ausentes e a data de geração vêm do catálogo (`turnoutCoverage`), não de um texto fixo no código.
+
+Os outros campos dependentes já se atualizavam no navegador: o turno (`RoundField`), a UF com cargo estadual (`UfField`) e as sugestões de município (`MunicipalitySearch`). Em `/propostas`, `/exterior` e na busca de locais do município, nada depende de outro campo.
+
+Um caso ficou como estava, de propósito: com cargo estadual e “Todo o Brasil” marcado, a opção fica indisponível e o envio pede que se escolha uma das 27 UFs. Escolher uma UF automaticamente seria inventar o recorte.
+
+A verificação ganhou dois cenários no `check:ui` (Chrome e Firefox) e um teste unitário da cobertura por ano.
