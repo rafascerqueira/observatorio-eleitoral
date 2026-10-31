@@ -23,7 +23,7 @@ Implementação e dados disponíveis **localmente**, sem implantação externa. 
 - **Decisões abertas:** eventual tratamento da suplementar de Governador de RR/2026. Nome e identidade definidos no §37. Qualquer novo recorte exige decisão e auditoria próprias; deputados não são uma tarefa automática da fila. Fases A, C, B (B1–B3), D1 e D2 do [plano de melhorias](docs/plano-postgis-propostas.md) concluídas; D3 preparada (rubrica, pacote e ferramentas), com codificação e adjudicação pelos contribuidores do projeto (§58), e E com a pesquisa documental feita (§49); as decisões pendentes estão nas seções 20 e 21 do plano. As cinco decisões da `proposals-2022-v2` (seção 19 do plano) foram tomadas por Rafael em 20/10 (seguir as recomendações), e a v2 está publicada (§48).
 - **Investigação IBGE × TSE por faixa etária (pedida por Rafael em 19/10):** concluída no §40. Não é defeito de cálculo; é diferença entre as fontes (domicílio eleitoral ≠ residência, registros que o Censo já não conta, datas de referência das idades). Nota acrescentada à tabela e à metodologia; nenhum número ajustado.
 - **Bússola política (§53):** livro na v2, à espera da aprovação; a pessoa codifica em público e o modelo depois, isolado (§59); depois, publicação `compass-2022-v1`, conferência externa e página `/propostas/bussola`.
-- **Limpeza dos lotes não publicados (§52):** autorizada para o início da carga de 2026, com backup antes; 52 lotes inventariados, nenhum citado pelas publicações vigentes.
+- **Limpeza dos lotes não publicados (§52):** feita em 30/10/2026 (§63): dados dos 52 lotes apagados depois de backup, registros em `import_batches` mantidos; banco 18,4 → 12,7 GiB.
 - **Manutenção registrada, sem execução autorizada nesta etapa:** renomear a coluna `responsible_with_income`, sem uso na interface. Enriquecimento da busca com distritos do IBGE é possibilidade, não compromisso de implementação.
 
 A página longa, autocomplete, relatório em modo dev, participação por município/estado civil, sensibilidade e mapas por candidatura **já foram resolvidos**. Não recolocá-los na fila com base em listas antigas. O §11 organiza a continuidade; o histórico registra como as decisões foram tomadas.
@@ -1089,6 +1089,11 @@ Resultado: `data/` 30 → 13 GB; disco livre 40 → 68 GB (71%).
 
 **Merge (30/10):** ramo `chore/originais-hardlink` incorporado ao `main` por fast-forward (`cdc0316`) e apagado; sem push.
 
-Pendente:
-- backups de 17, 18 e 19/10 (0,9 GB) mantidos; apagar só por decisão de Rafael (o de 28/10 é o mais recente);
-- lotes não publicados no banco (~3,5 GB, mais `VACUUM FULL`), se Rafael decidir.
+**Pendências resolvidas (30/10, decisões de Rafael):**
+- **Backup antes da limpeza:** `data/backups/observatorio-2026-10-30-antes-limpeza-lotes.dump`, 1.595.840.229 bytes, SHA-256 `c1f49b469b7955fbaa08039b6eeecae9afbe87c438d70cd0fe8484ca05f3a5e1`; `pg_restore --list` lê 32 tabelas, e o dump tem as 35.170.762 linhas de `national_section_votes`, as mesmas do banco.
+- **Lotes não publicados:** os 52 de 12 a 20/10 (Governador 33, contexto 7, locais 8, mapas 2, Presidente 1, propostas 1), refeito o inventário: nenhum citado nos metadados de publicação vigente nem por `results_batch` de grupos ou sensibilidade publicados. Numa transação, com `import_batches` bloqueada, foram apagadas só as linhas de dados, cada tabela conferida com o inventário (`national_section_votes` 7.342.118; `national_place_results` 228.600; `polling_place_tracts` 187.122; `census_tract_context` 141.869; `polling_place_profiles` 93.291; e mais 15 tabelas, de 12 a 33.420 linhas), e nenhuma tabela com `batch_id` ficou com linha desses lotes. Os 178 registros de `import_batches` (126 publicados, 52 não) e os relatórios em `data/audit` foram mantidos, para a rastreabilidade. Depois, `VACUUM (FULL, ANALYZE)` nas 20 tabelas: banco 18,4 → 12,7 GiB (`national_section_votes` 14,1 → 9,3 GiB); disco livre 67 → 72 GB.
+- **Backups:** apagados os de 17, 18 e 19/10 (0,9 GB), depois de conferido o SHA-256 de todos. Ficam o de 28/10 (antes de 2026) e o de 30/10 (antes da limpeza, a única cópia dos dados dos 52 lotes).
+
+**Verificação:** `check:publication` e `check:data` com `status: ok`; os oito smoke tests (`smoke`, `smoke:places`, `smoke:national`, `smoke:summary`, `smoke:exterior`, `smoke:governor`, `smoke:senator`, `smoke:context`) passaram com API e web de desenvolvimento; as rotas de 2026 (Presidência nos dois turnos, exterior, Governador de SP e Senador de MG) respondem 200, e `votacao_secao_2026_AC.zip` baixado pela API confere com o SHA-256. Servidores desligados ao fim.
+
+Pendente: nada deste item.
