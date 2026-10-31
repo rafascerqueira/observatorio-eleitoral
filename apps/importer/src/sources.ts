@@ -76,10 +76,14 @@ export async function sourceFile(source: SourceSpec) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'EXDEV') await copyFile(path, original, constants.COPYFILE_EXCL); else if (code !== 'EEXIST') throw error;
   }
-  // Um original preexistente também é verificado; não confiar apenas no nome.
-  const originalHash = createHash('sha256');
-  for await (const chunk of createReadStream(original)) originalHash.update(chunk);
-  if (originalHash.digest('hex') !== sha256) throw new Error('Original preservado com checksum divergente.');
+  // Um original preexistente também é verificado; não confiar apenas no nome. Se for o mesmo inode do
+  // download, os bytes são os que acabaram de ser conferidos acima.
+  const originalInfo = await stat(original);
+  if (originalInfo.ino !== info.ino || originalInfo.dev !== info.dev) {
+    const originalHash = createHash('sha256');
+    for await (const chunk of createReadStream(original)) originalHash.update(chunk);
+    if (originalHash.digest('hex') !== sha256) throw new Error('Original preservado com checksum divergente.');
+  }
   await chmod(original, 0o444);
   return { path: original, file: source.file, entry: source.entry, url, sha256, downloadedAt: downloaded?.downloadedAt ?? info.mtime.toISOString(), downloadedAtBasis, lastModified, sizeBytes: info.size, originalUrl: `/elections/sources/${sha256}/${source.file}` };
 }
