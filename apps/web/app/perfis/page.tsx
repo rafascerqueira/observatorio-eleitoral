@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ELECTION_YEARS, MINIMUM_WAGE_2022, OFFICES, OFFICE_LABELS, PLACE_GROUP_CATEGORIES, PLACE_GROUP_CUTS, PLACE_GROUP_INDICATORS, STATES, TRACT_DEMOGRAPHY_INDICATORS, TRACT_SENSITIVITY_RADII, placeGroupLimits, placeGroupsQuerySchema, type PlaceGroupIndicator, type PlaceGroups, type TractAgreement, type TractSensitivityRadius } from '@observatorio/contracts';
+import { ELECTION_YEARS, MINIMUM_WAGE_2022, OFFICES, OFFICE_LABELS, PLACE_GROUP_CATEGORIES, PLACE_GROUP_CUTS, PLACE_GROUP_INDICATORS, REGION_LABELS, TRACT_DEMOGRAPHY_INDICATORS, TRACT_SENSITIVITY_RADII, placeGroupLimits, placeGroupsQuerySchema, type PlaceGroupIndicator, type PlaceGroups, type TractAgreement, type TractSensitivityRadius } from '@observatorio/contracts';
 import { getCatalog, getPlaceGroups } from '../../lib/results';
 import { QueryForm } from '../../components/query-form';
 import { ErrorSummary, QuerySelect } from '../../components/query-fields';
-import { RoundField, UfField } from '../../components/round-field';
+import { RoundField } from '../../components/round-field';
+import { ProfileTerritoryFields } from '../../components/profile-territory-fields';
 import { RAMPS } from '../../components/choropleth';
 import { bandName, bandRange, residentsShare } from '../../lib/income-bands';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, type RawQuery } from '../../lib/query-ui';
@@ -107,6 +108,7 @@ function DotStrip({ data, order }: { data: PlaceGroups; order: Array<{ candidate
 export default async function Profiles({ searchParams }: { searchParams: Promise<RawQuery> }) {
   const raw = { ...await searchParams };
   if (raw.uf === '') delete raw.uf;
+  if (raw.region === '') delete raw.region;
   const parsed = placeGroupsQuerySchema.safeParse({ indicator: 'college', ...raw });
   const filters = parsed.success ? parsed.data : placeGroupsQuerySchema.parse({ indicator: 'college' });
   const scopeError = officeScopeError(filters.office, filters.uf);
@@ -126,7 +128,7 @@ export default async function Profiles({ searchParams }: { searchParams: Promise
   };
   const availability = availabilityFromCatalog(catalog?.datasets ?? []);
   const meta = PLACE_GROUP_INDICATORS[filters.indicator];
-  const place = filters.uf ? UF_NAMES[filters.uf] : 'Brasil';
+  const place = filters.uf ? UF_NAMES[filters.uf] : filters.region ? REGION_LABELS[filters.region] : 'Brasil';
   const published = data?.status === 'published' && data.groups.length > 0 ? data : null;
   // Moradores do território nas mesmas faixas: renda (domicílios particulares permanentes ocupados) ou demografia do setor (15+).
   const demography = filters.indicator in TRACT_DEMOGRAPHY_INDICATORS ? TRACT_DEMOGRAPHY_INDICATORS[filters.indicator as keyof typeof TRACT_DEMOGRAPHY_INDICATORS] : null;
@@ -136,19 +138,18 @@ export default async function Profiles({ searchParams }: { searchParams: Promise
   const order = published ? [...new Set(published.groups.flatMap((group) => group.candidates.map((item) => item.number)))]
     .map((candidate) => ({ candidate, info: published.groups.flatMap((group) => group.candidates).find((item) => item.number === candidate)!, votes: published.groups.reduce((sum, group) => sum + (group.candidates.find((item) => item.number === candidate)?.votes ?? 0), 0) }))
     .sort((a, b) => b.votes - a.votes) : [];
-  const ufChoices = [{ value: '', label: 'Todo o Brasil' }, ...[...STATES].sort((a, b) => UF_NAMES[a].localeCompare(UF_NAMES[b], 'pt-BR')).map((uf) => ({ value: uf as string, label: `${UF_NAMES[uf]} — ${uf}` }))];
   return <>
     <section className="hero places-hero"><p className="eyebrow">LOCAIS DE VOTAÇÃO · PERFIL E ENTORNO</p><h1>Resultados por perfil dos locais — {place}</h1>
       <p className="hero-description">Locais de votação agrupados pelo perfil declarado dos seus eleitores (cadastro do TSE) ou pelo setor censitário onde ficam — renda, situação urbana ou rural e favela ou comunidade urbana (Censo 2022) —, com os votos somados em cada grupo. Os grupos descrevem locais, não pessoas: o voto é secreto e ninguém votou “como grupo”.</p></section>
     <section className="explorer" aria-labelledby="perfis-filtros">
       <div className="section-heading"><div><p className="eyebrow">ESCOLHA O RECORTE</p><h2 id="perfis-filtros">Indicador, cargo e território</h2></div><Link className="text-link" href="/metodologia#perfis">Como ler <span aria-hidden="true">↗</span></Link></div>
-      <ErrorSummary errors={errors} targets={{ year: 'year', indicator: 'indicator', office: 'office', uf: 'uf', round: 'round-1', radius: 'indicator' }} />
+      <ErrorSummary errors={errors} targets={{ year: 'year', indicator: 'indicator', office: 'office', region: 'region', uf: 'uf', round: 'round-1', radius: 'indicator' }} />
       <QueryForm key={JSON.stringify(raw)} action="/perfis" className="municipality-filters" label="Filtros dos grupos de locais" submitLabel="Ver grupos" resultsId="grupos" hasErrors={errors.length > 0}>
         <div className="field"><label htmlFor="year">Eleição</label><QuerySelect id="year" name="year" value={rawValue(raw, 'year', filters.year)} errors={errors} choices={ELECTION_YEARS.map((year) => ({ value: year as string, label: year }))} /></div>
         <div className="field"><label htmlFor="indicator">Agrupar locais por</label><QuerySelect id="indicator" name="indicator" value={rawValue(raw, 'indicator', filters.indicator)} errors={errors}
           choices={(Object.keys(PLACE_GROUP_INDICATORS) as PlaceGroupIndicator[]).map((key) => ({ value: key, label: PLACE_GROUP_INDICATORS[key].label }))} /></div>
         <div className="field"><label htmlFor="office">Cargo</label><QuerySelect id="office" name="office" value={rawValue(raw, 'office', filters.office)} errors={errors} choices={OFFICES.map((office) => ({ value: office, label: OFFICE_LABELS[office] }))} /></div>
-        <UfField office={rawValue(raw, 'office', filters.office)} value={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors} choices={ufChoices} />
+        <ProfileTerritoryFields office={rawValue(raw, 'office', filters.office)} region={rawValue(raw, 'region', filters.region ?? '')} uf={rawValue(raw, 'uf', filters.uf ?? '')} errors={errors} />
         <RoundField year={rawValue(raw, 'year', filters.year)} availability={availability} office={rawValue(raw, 'office', filters.office)} uf={rawValue(raw, 'uf', filters.uf ?? '')} value={rawValue(raw, 'round', filters.round)} errors={errors} />
       </QueryForm>
       <div id="grupos" className="query-results">
@@ -157,9 +158,9 @@ export default async function Profiles({ searchParams }: { searchParams: Promise
           : !published ? <p className="notice scope-notice" role="status">Grupos indisponíveis: {radius ? 'a análise de sensibilidade da associação local → setor (import:tract-sensitivity) não foi publicada, ou o serviço não respondeu.' : 'o perfil dos locais, a associação aos setores ou os resultados ainda não foram publicados, ou o serviço não respondeu.'}</p> : <>
           {published.association && <div className="notice scope-notice" role="status"><p><strong>Associação alternativa: setores a até {RADIUS_LABELS[published.association.radius]} do local.</strong> Análise de sensibilidade, não a métrica publicada: cada local entra na faixa com mais moradores entre os setores do mesmo município a essa distância do ponto do TSE. <Link href={sensitivityHref()}>Voltar à associação publicada</Link> (setor que contém o local). Os filtros acima também voltam a ela.</p></div>}
           <p className="query-note context-intro">{published.method === 'categories'
-            ? 'Cada local entra no grupo da categoria do setor censitário que contém o seu ponto no cadastro do TSE (Censo 2022); os grupos são os mesmos no Brasil, em cada UF e em cada cargo, e o tamanho varia com o território — veja a parcela dos eleitores aptos.'
+            ? 'Cada local entra no grupo da categoria do setor censitário que contém o seu ponto no cadastro do TSE (Censo 2022); os grupos são os mesmos no Brasil, nas regiões, em cada UF e em cada cargo, e o tamanho varia com o território — veja a parcela dos eleitores aptos.'
             : published.method === 'bands'
-            ? `Faixas fixas, iguais no Brasil, em cada UF e em cada cargo${filters.indicator === 'income-median' ? `, em salários mínimos de 2022 (${reais(MINIMUM_WAGE_2022)} na data de referência do Censo, 31/07/2022)` : ''}: o tamanho de cada grupo varia com o território — veja a parcela dos eleitores aptos.`
+            ? `Faixas fixas, iguais no Brasil, nas regiões, em cada UF e em cada cargo${filters.indicator === 'income-median' ? `, em salários mínimos de 2022 (${reais(MINIMUM_WAGE_2022)} na data de referência do Censo, 31/07/2022)` : ''}: o tamanho de cada grupo varia com o território — veja a parcela dos eleitores aptos.`
             : 'Cada grupo reúne cerca de um quinto dos eleitores aptos dos locais com o indicador; locais com o mesmo valor ficam no mesmo grupo. Os limites são do recorte escolhido e mudam com ele.'} {number(published.coverage.placesInGroups)} de {number(published.coverage.places)} locais com votos entraram nos grupos, com {pct(published.coverage.votesInGroups / published.coverage.totalVotes * 100)} dos votos do recorte; os demais ficaram de fora por não terem o indicador{filters.indicator === 'income-median' || published.method === 'categories' ? ` (sem coordenada confiável, fora de setor do próprio município ou com ponto compartilhado por locais diferentes${published.association ? '; com o raio, também os locais com empate entre faixas ou sem setores com mediana no entorno' : ''})` : ''}. Fonte do indicador: {meta.source}.</p>
           <div className="table-scroll context-table" role="region" aria-label="Grupos de locais" tabIndex={0}><table>
             <caption><span className="context-caption">Grupos de locais</span> <span className={`badge kind-badge kind-${meta.kind}`}>{meta.kind === 'cadastro' ? 'Cadastro do TSE' : 'Universo do Censo'}</span> <span className="source-note">{meta.label}</span></caption>

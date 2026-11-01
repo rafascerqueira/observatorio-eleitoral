@@ -7,6 +7,8 @@ import { ErrorSummary, OfficeField, QuerySelect, TurnField } from '../components
 import { availabilityFromCatalog, roundOptions, yearChoices } from '../lib/rounds';
 import { UF_NAMES, officeScopeError, queryErrors, rawValue, recoverQuery } from '../lib/query-ui';
 import { brazilHref, formFingerprint, overviewHref, queryHref } from '../lib/query-navigation';
+import { ProfileTerritoryFields } from '../components/profile-territory-fields';
+import { placeGroupsQuerySchema, REGIONS, REGION_STATES } from '@observatorio/contracts';
 
 test('erro em um campo não apaga o contexto nem os valores que precisam de correção', () => {
   const raw = { year: '2026', round: '2', uf: 'RJ', search: 'Rio', page: '0' };
@@ -87,6 +89,17 @@ test('turnos continuam radios nativos e um turno inválido não vira o padrão s
 test('nomes de UFs cobrem somente as 27 UFs do contrato, sem incluir o exterior', () => {
   assert.deepEqual(Object.keys(UF_NAMES).sort(), [...STATES].sort());
   assert.equal(UF_NAMES.SP, 'São Paulo');
+});
+
+test('regiões de Perfis particionam as 27 UFs e o formulário mantém GET sem JavaScript', () => {
+  assert.deepEqual(REGIONS.flatMap((region) => REGION_STATES[region]).sort(), [...STATES].sort());
+  const html = renderToStaticMarkup(createElement(ProfileTerritoryFields, { region: 'NE', uf: '', office: 'president', errors: [] }));
+  assert.match(html, /name="region"/); assert.match(html, /name="uf"/);
+  assert.match(html, /Toda a região Nordeste/); assert.match(html, /Sergipe — SE/); assert.doesNotMatch(html, /São Paulo — SP/);
+  assert.equal(queryHref('/perfis', [['region', 'NE'], ['uf', ''], ['indicator', 'women']]), '/perfis?region=NE&indicator=women');
+  const invalid = placeGroupsQuerySchema.safeParse({ region: 'NE', uf: 'SP', indicator: 'college' });
+  if (invalid.success) assert.fail('UF de outra região precisa ser recusada');
+  assert.match(queryErrors({ region: 'NE', uf: 'SP' }, invalid.error.issues)[0]!.message, /UF da região/);
 });
 
 test('governador exige UF, rejeita o exterior e os links de volta preservam cargo e UF', () => {

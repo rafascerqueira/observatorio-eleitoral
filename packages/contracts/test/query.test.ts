@@ -72,6 +72,16 @@ test('raio da sensibilidade e município da participação têm formatos fechado
   for (const municipality of ['7107', '710720', 'abcde']) assert.equal(turnoutProfilesQuerySchema.safeParse({ uf: 'SP', municipality }).success, false, municipality);
 });
 
+test('região de Perfis aceita as cinco macrorregiões e só combina com UF pertencente a ela', () => {
+  for (const region of ['N', 'NE', 'CO', 'SE', 'S']) assert.equal(placeGroupsQuerySchema.parse({ indicator: 'college', region }).region, region);
+  assert.equal(placeGroupsQuerySchema.parse({ indicator: 'women', region: 'NE', uf: 'SE' }).uf, 'SE');
+  assert.equal(placeGroupsQuerySchema.parse({ indicator: 'income-median', region: 'SE', uf: 'SP', radius: '250' }).region, 'SE');
+  for (const region of ['XX', 'Sudeste', '', ['N', 'NE']]) assert.equal(placeGroupsQuerySchema.safeParse({ indicator: 'college', region }).success, false);
+  const incompatible = placeGroupsQuerySchema.safeParse({ indicator: 'college', region: 'NE', uf: 'SP' });
+  assert.equal(incompatible.success, false);
+  if (!incompatible.success) assert.deepEqual(incompatible.error.issues[0]!.path, ['uf']);
+});
+
 test('página do mapa: abstenção como série padrão, só indicadores do Censo à esquerda e candidatura pelo número de urna', () => {
   assert.deepEqual(mapPageQuerySchema.parse({}), { year: '2022', round: '1', office: 'president', indicator: 'income-upto-half-mw', series: 'abstention' });
   assert.equal(mapPageQuerySchema.parse({ office: 'senator', uf: 'SE', series: '131' }).series, '131');

@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import puppeteer from 'puppeteer-core';
+import { REGION_STATES } from '@observatorio/contracts';
 
 const web = process.env.UI_WEB_URL ?? 'http://127.0.0.1:3000';
 const api = process.env.UI_API_URL ?? 'http://127.0.0.1:3001';
@@ -99,6 +100,43 @@ for (const name of browserNames) {
         const text = await page.evaluate(() => document.body.innerText); assert.ok(!text.includes('Corrija os filtros acima'), item.path); assert.ok(!text.includes('Não foi possível consultar'), item.path);
       }
       return { submissions: cases.length, scripting: javascript ? 'ativo' : name === 'firefox' ? "Scripts da página bloqueados por CSP script-src 'none' em proxy local de teste; controle positivo de não execução." : 'JavaScript desativado por CDP; controle positivo de não execução.' };
+    });
+    for (const javascript of [true, false]) await scenario(`Perfis: região e UF (JavaScript ${javascript ? 'ativo' : 'desativado'})`, 'GET dos agregados publicados; região soma votos e denominadores das UFs, com refinamento opcional.', async (page) => {
+      if (name !== 'firefox') await page.setJavaScriptEnabled(javascript);
+      await go(page, '/perfis?uf=SP');
+      if (!javascript) {
+        await page.evaluate(() => { const probe = document.createElement('script'); probe.textContent = 'window.__regionProbe = true'; document.head.appendChild(probe); });
+        assert.equal(await page.evaluate(() => window.__regionProbe), undefined);
+      }
+      await page.select('[name="region"]', 'NE');
+      if (javascript) {
+        await page.waitForFunction(() => document.querySelector('[name="uf"]').value === '');
+        assert.deepEqual((await page.$$eval('[name="uf"] option', (options) => options.map((item) => item.value))).filter(Boolean).sort(), [...REGION_STATES.NE].sort());
+      } else await page.select('[name="uf"]', '');
+      const submit = async () => {
+        await page.click('form[action="/perfis"] button[type="submit"]');
+        await page.waitForNetworkIdle({ idleTime: 500, timeout: 45000 });
+      };
+      await submit();
+      assert.equal(new URL(page.url()).searchParams.get('region'), 'NE');
+      assert.equal(await page.$eval('h1', (element) => element.textContent), 'Resultados por perfil dos locais — Nordeste');
+      assert.ok(await page.$('[aria-label="Votos por candidatura em cada grupo"]'));
+      await page.select('[name="indicator"]', 'income-median'); await submit();
+      assert.equal(new URL(page.url()).searchParams.get('region'), 'NE');
+      assert.ok(await page.$('a[href*="radius=250"][href*="region=NE"]'));
+      await page.screenshot({ path: resolve(artifactDirectory, `${name}-perfis-regiao-${javascript ? 'js' : 'sem-js'}.png`), fullPage: true });
+      if (javascript) {
+        await page.select('[name="uf"]', 'PE'); await submit();
+        assert.equal(new URL(page.url()).searchParams.get('uf'), 'PE');
+        assert.match(await page.$eval('h1', (element) => element.textContent), /Pernambuco/);
+        await page.select('[name="region"]', 'CO');
+        await page.waitForFunction(() => document.querySelector('[name="uf"]').value === '');
+        assert.deepEqual((await page.$$eval('[name="uf"] option', (options) => options.map((item) => item.value))).filter(Boolean).sort(), [...REGION_STATES.CO].sort());
+      }
+      await go(page, '/perfis?region=NE&uf=SP');
+      assert.match(await page.$eval('#query-errors', (element) => element.textContent), /UF da região/);
+      assert.equal(await page.$('[aria-label="Votos por candidatura em cada grupo"]'), null);
+      return { region: 'NE', indicator: 'income-median', scripting: javascript };
     });
     await scenario('Acessibilidade, refluxo e capturas das consultas', 'Somente GET; capturas locais. Tabelas largas têm rolagem própria.', async (page) => {
       let audits = 0;

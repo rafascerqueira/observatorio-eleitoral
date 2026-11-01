@@ -2,7 +2,7 @@ import { municipalityQuerySchema, placesQuerySchema, exteriorQuerySchema, isStat
 
 export type RawQuery = Record<string, string | string[] | undefined>;
 export type QueryError = { field: string; message: string };
-type Issue = { path: readonly PropertyKey[]; code: string; keys?: string[] };
+type Issue = { path: readonly PropertyKey[]; code: string; keys?: string[]; message?: string };
 
 export const UF_NAMES = {
   AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará', DF: 'Distrito Federal',
@@ -39,6 +39,7 @@ export function queryErrors(query: RawQuery, issues: readonly Issue[], mode: 'mu
     radius: 'O raio da associação local → setor aceita 250, 500 ou 1000 metros; os filtros acima voltam à associação publicada.',
     office: 'Escolha um cargo disponível no seletor: Presidência, Governador ou Senador.',
     indicator: 'Escolha um indicador disponível no seletor.',
+    region: 'Escolha Todas as regiões ou uma das cinco regiões.',
     series: 'Escolha a abstenção ou uma candidatura do seletor “Comparar com”.',
     uf: mode === 'places' ? 'A UF do endereço é inválida. Uma nova busca remove esse valor; volte à consulta municipal para escolher outra UF.' : 'Escolha Todo o Brasil ou uma das 27 UFs.',
     zone: 'Informe uma zona de 1 a 9999, usando apenas números. Zeros iniciais são aceitos.',
@@ -58,7 +59,7 @@ export function queryErrors(query: RawQuery, issues: readonly Issue[], mode: 'mu
     const message = issue.code === 'unrecognized_keys'
       ? `O endereço contém filtros não reconhecidos: ${(issue.keys ?? []).join(', ')}. Uma nova consulta os remove.`
       : Array.isArray(query[field]) ? `O filtro ${field} aparece mais de uma vez. Escolha um único valor e consulte novamente.`
-      : instructions[field] ?? 'Confira este filtro e consulte novamente.';
+      : issue.code === 'custom' && issue.message ? issue.message : instructions[field] ?? 'Confira este filtro e consulte novamente.';
     errors.set(field, { field, message });
   }
   return [...errors.values()];

@@ -9,6 +9,8 @@ import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySc
 import { DatabaseService } from '../database/database.service';
 import { checkDependencies } from './dependencies';
 import { nationalSummary } from './national-summary';
+import { regionalPlaceGroups } from './place-groups';
+import { REGION_STATES } from '@observatorio/contracts';
 import { originalFileSchema, originalMediaType } from '@observatorio/contracts';
 
 const INCOME_BANDS_SCOPE = '2022/context/income-bands';
@@ -157,58 +159,68 @@ export class ElectionsController {
   async placeGroups(@Query() query: Record<string, unknown>) {
     const parsed = placeGroupsQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException({ message: 'Filtros dos grupos de locais inválidos.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
-    const { year, round, office, uf, indicator, radius } = parsed.data;
+    const { year, round, office, uf, indicator, radius, region } = parsed.data;
     if (isStateOffice(office) && !uf) throw new BadRequestException({ message: `${OFFICE_LABELS[office]} é cargo estadual: informe a UF.`, fields: ['uf'] });
     if (radius && indicator !== 'income-median') throw new BadRequestException({ message: 'O raio da associação local → setor só se aplica à renda do setor.', fields: ['radius'] });
     await this.database.check();
-    const base = { indicator, office, round, uf: uf ?? null, groups: [], coverage: { places: 0, placesInGroups: 0, totalVotes: 0, votesInGroups: 0 } };
+    const base = { indicator, office, round, uf: uf ?? null, ...(region ? { region } : {}), groups: [], coverage: { places: 0, placesInGroups: 0, totalVotes: 0, votesInGroups: 0 } };
     const dataset = await this.publishedDataset(year, office, uf);
     if (!dataset || !['national', 'state'].includes(dataset.level)) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
     if (!roundHeld(dataset, round)) return placeGroupsSchema.parse({ ...base, status: 'round-not-held' });
     // Grupos pré-calculados na importação (`import:place-groups`), ligados à publicação de resultados em uso.
     // Com raio: a sensibilidade da associação (`import:tract-sensitivity`), publicação própria que não substitui a métrica E.
+    const regional = region && !uf;
+    const territories = uf ? [uf] : region ? [...REGION_STATES[region]] : ['BR'];
     const registry = await this.database.query<{ registry: string | null }>(`SELECT to_regclass('public.${radius ? 'place_group_sensitivity' : 'place_groups'}')::text AS registry`);
     const row = !registry.rows[0]?.registry ? { rows: [] } : radius
       ? await this.database.query<{ result: unknown; metadata: { inputs?: unknown } }>(`SELECT g.result, b.metadata FROM place_group_sensitivity g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope=$6
-        WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.radius=$5`, [dataset.id, office, uf ?? 'BR', Number(round), Number(radius), TRACT_SENSITIVITY_SCOPE])
+        WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=ANY($3::text[]) AND g.round=$4 AND g.radius=$5`, [dataset.id, office, territories, Number(round), Number(radius), TRACT_SENSITIVITY_SCOPE])
       : await this.database.query<{ result: unknown; metadata: { inputs?: unknown } }>(`SELECT g.result, b.metadata FROM place_groups g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope=$6
-      WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=$3 AND g.round=$4 AND g.indicator=$5`, [dataset.id, office, uf ?? 'BR', Number(round), indicator, `${year}/places/groups`]);
+      WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=ANY($3::text[]) AND g.round=$4 AND g.indicator=$5`, [dataset.id, office, territories, Number(round), indicator, `${year}/places/groups`]);
     if (!row.rows[0]) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
     await checkDependencies(this.database, row.rows[0].metadata);
+    let result;
+    try { result = regional ? regionalPlaceGroups(region, row.rows.map((item) => item.result)) : placeGroupsSchema.parse(row.rows[0].result); }
+    catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes ou cobertura regional incompleta.'); }
     // Faixas fixas: moradores do território nas mesmas faixas, de todos os setores (publicações próprias, opcionais) — renda
     // (domicílios particulares permanentes ocupados) ou o equivalente censitário de gênero e idade (moradores de 15+).
-    const bands = (row.rows[0].result as { method?: string }).method === 'bands';
-    const population = !bands ? undefined : indicator === 'income-median' ? await this.incomeBands({ uf: uf ?? null })
-      : indicator in TRACT_DEMOGRAPHY_INDICATORS ? await this.tractDemography(uf ?? null, indicator as TractDemographyIndicator) : undefined;
-    try { return placeGroupsSchema.parse({ ...(row.rows[0].result as object), ...(population === undefined ? {} : { population }) }); } catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes.'); }
+    const bands = result.method === 'bands';
+    const ufs = uf ? [uf] : region ? [...REGION_STATES[region]] : null;
+    const population = !bands ? undefined : indicator === 'income-median' ? await this.incomeBands({ ufs })
+      : indicator in TRACT_DEMOGRAPHY_INDICATORS ? await this.tractDemography(ufs, indicator as TractDemographyIndicator) : undefined;
+    try { return placeGroupsSchema.parse({ ...result, ...(region ? { region } : {}), ...(population === undefined ? {} : { population }) }); } catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes.'); }
   }
 
   /** Moradores de 15+ por faixa de perfil do setor (demografia do Censo), somados nos municípios do território; `null` sem publicação. */
-  private async tractDemography(uf: string | null, indicator: TractDemographyIndicator) {
+  private async tractDemography(ufs: string[] | null, indicator: TractDemographyIndicator) {
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.municipality_tract_demography')::text AS registry");
     if (!registry.rows[0]?.registry) return null;
     const batch = await this.checkedPublication(TRACT_DEMOGRAPHY_SCOPE);
     if (!batch) return null;
-    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_tract_demography m WHERE m.batch_id=$1 AND ($2::text IS NULL OR m.uf=$2)`, [batch.id, uf]);
+    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_tract_demography m WHERE m.batch_id=$1 AND ($2::text[] IS NULL OR m.uf=ANY($2::text[]))`, [batch.id, ufs]);
     if (!rows.rows.length) return null;
     const total = { total: 0, bands: INCOME_BANDS.map((band) => ({ index: band.index, residents: 0, tracts: 0 })), noData: { residents: 0, tracts: 0 }, undisclosed: { tracts: 0 }, coverage: { residents: 0, total: 0 } };
+    let completeCoverage = true;
     for (const row of rows.rows) {
       const item = tractDemographySchema.parse(row.result).indicators[indicator];
       // Indicador novo ausente numa versão anterior: moradores por faixa indisponíveis, nunca zero.
       if (!item) return null;
-      total.total += item.total; total.coverage.residents += item.coverage?.residents ?? 0; total.coverage.total += item.coverage?.total ?? 0; total.noData.residents += item.noData.residents; total.noData.tracts += item.noData.tracts; total.undisclosed.tracts += item.undisclosed.tracts;
+      total.total += item.total;
+      if (item.coverage) { total.coverage.residents += item.coverage.residents; total.coverage.total += item.coverage.total; }
+      else completeCoverage = false;
+      total.noData.residents += item.noData.residents; total.noData.tracts += item.noData.tracts; total.undisclosed.tracts += item.undisclosed.tracts;
       for (const band of item.bands) { total.bands[band.index - 1]!.residents += band.residents; total.bands[band.index - 1]!.tracts += band.tracts; }
     }
-    return total;
+    return { ...total, coverage: completeCoverage ? total.coverage : undefined };
   }
 
   /** Moradores por faixa fixa de renda do setor: soma dos municípios do território (Brasil, UF) ou um município IBGE; `null` sem publicação. */
-  private async incomeBands(filter: { uf: string | null } | { ibgeCode: string }) {
+  private async incomeBands(filter: { ufs: string[] | null } | { ibgeCode: string }) {
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.municipality_income_bands')::text AS registry");
     if (!registry.rows[0]?.registry) return null;
     const batch = await this.checkedPublication(INCOME_BANDS_SCOPE);
     if (!batch) return null;
-    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_income_bands m WHERE m.batch_id=$1 AND ${'ibgeCode' in filter ? 'm.ibge_code=$2' : '($2::text IS NULL OR m.uf=$2)'}`, [batch.id, 'ibgeCode' in filter ? filter.ibgeCode : filter.uf]);
+    const rows = await this.database.query<{ result: unknown }>(`SELECT m.result FROM municipality_income_bands m WHERE m.batch_id=$1 AND ${'ibgeCode' in filter ? 'm.ibge_code=$2' : '($2::text[] IS NULL OR m.uf=ANY($2::text[]))'}`, [batch.id, 'ibgeCode' in filter ? filter.ibgeCode : filter.ufs]);
     if (!rows.rows.length) return null;
     const total = { total: 0, bands: INCOME_BANDS.map((band) => ({ index: band.index, residents: 0, tracts: 0 })), noData: { residents: 0, tracts: 0 }, undisclosed: { tracts: 0 } };
     for (const row of rows.rows) {

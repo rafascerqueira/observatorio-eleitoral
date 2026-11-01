@@ -8,6 +8,13 @@ export function originalMediaType(file: string) { return ORIGINAL_MEDIA_TYPES[fi
 export const publicationInputsSchema = z.array(z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), scope: z.string().min(1) }));
 
 export const STATES = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'] as const;
+export const REGIONS = ['N', 'NE', 'CO', 'SE', 'S'] as const;
+export type Region = typeof REGIONS[number];
+export const REGION_LABELS: Record<Region, string> = { N: 'Norte', NE: 'Nordeste', CO: 'Centro-Oeste', SE: 'Sudeste', S: 'Sul' };
+export const REGION_STATES: Record<Region, readonly typeof STATES[number][]> = {
+  N: ['AC', 'AP', 'AM', 'PA', 'RO', 'RR', 'TO'], NE: ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'],
+  CO: ['DF', 'GO', 'MT', 'MS'], SE: ['ES', 'MG', 'RJ', 'SP'], S: ['PR', 'RS', 'SC'],
+};
 export const TERRITORIES = [...STATES, 'ZZ'] as const;
 export const OFFICES = ['president', 'governor', 'senator'] as const;
 export type Office = typeof OFFICES[number];
@@ -689,10 +696,14 @@ export function placeGroupLimits(indicator: PlaceGroupIndicator, index: number) 
   const cuts = PLACE_GROUP_CUTS[indicator];
   return { lower: index === 1 ? null : cuts[index - 2]!, upper: index > cuts.length ? null : cuts[index - 1]! };
 }
-export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).extend({ indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]), radius: z.enum(TRACT_SENSITIVITY_RADII).optional() }).strict();
+export const placeGroupsQuerySchema = municipalityQuerySchema.pick({ year: true, round: true, office: true, uf: true }).extend({ indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]), radius: z.enum(TRACT_SENSITIVITY_RADII).optional(), region: z.enum(REGIONS).optional() }).strict().superRefine(({ region, uf }, context) => {
+  if (region && uf && !REGION_STATES[region].includes(uf)) context.addIssue({ code: 'custom', path: ['uf'], message: 'Escolha uma UF da região selecionada ou remova o filtro de UF.' });
+});
 export const placeGroupsSchema = z.object({
   status: z.enum(['published', 'awaiting-import', 'round-not-held']), indicator: z.enum(Object.keys(PLACE_GROUP_INDICATORS) as [PlaceGroupIndicator, ...PlaceGroupIndicator[]]),
   office: z.enum(OFFICES), round: z.enum(['1', '2']), uf: z.enum(STATES).nullable(),
+  // Filtro de região opcional; publicações anteriores continuam legíveis sem ele.
+  region: z.enum(REGIONS).optional(),
   // `categories` (v6): o grupo é a categoria do setor do local (situação urbana/rural, favela), sem valores nem limites.
   method: z.enum(['quintiles', 'bands', 'categories']).optional(),
   // `from`/`to`: menor e maior valor observado no grupo (null na sensibilidade por raio, em que o local tem só a faixa). `lower`/`upper` (só faixas): limites da faixa em reais, null quando aberta.
