@@ -19,6 +19,8 @@ A aplicação e os importadores leem o `.env` da raiz; variáveis já definidas 
 
 `Ctrl+C` encerra os servidores de desenvolvimento; `npm run db:stop` para o banco preservando o volume. `npm run build` confere a compilação. Para executar o conjunto compilado sem watch, use o perfil Docker abaixo: a web tem saída `standalone` e o Dockerfile executa seu servidor Node com os arquivos estáticos. O `next start` do script da workspace web não é a forma indicada para essa configuração.
 
+`apps/web/next-env.d.ts` é gerado pelo Next.js e fica fora do Git. `dev`, `build` e `typecheck` da web o geram automaticamente; o último executa `next typegen` antes do TypeScript, inclusive numa cópia nova do projeto. Mantenha o arquivo no `include` do `tsconfig.json` e deixe o Next.js atualizar seu conteúdo.
+
 ### Tudo em Docker
 
 ```sh
