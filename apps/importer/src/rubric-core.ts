@@ -247,16 +247,28 @@ export const adjudicationTemplate = (divergences: ReturnType<typeof agreement>['
 /**
  * Codificação final: o valor comum quando as duas codificações concordam e a decisão registrada quando divergem. Toda divergência precisa
  * de decisão e justificativa; a decisão passa pela mesma validação de uma planilha. Cada linha guarda a origem (`concordancia` ou
- * `adjudicacao`) para a publicação poder mostrá-la.
+ * `adjudicacao`) para a publicação poder mostrá-la. Cada divergência tem exatamente uma decisão: decisão repetida para o mesmo documento
+ * e critério, ou sem divergência correspondente, é problema a resolver na planilha, nunca resolvido pela ordem das linhas.
  */
 export function consolidate(a: readonly CodingRow[], b: readonly CodingRow[], decisions: ReadonlyArray<Record<string, string>>) {
-  const decided = new Map(decisions.map((decision) => [`${decision.documento}/${decision.criterio}`, decision]));
   const problems: string[] = [], other = new Map(b.map((row) => [key(row), row]));
+  const divergent = new Set(a.filter((row) => other.get(key(row))?.valor !== row.valor).map(key));
+  const grouped = new Map<string, Array<Record<string, string>>>();
+  for (const decision of decisions) {
+    const id = `${decision.documento?.trim() ?? ''}/${decision.criterio?.trim() ?? ''}`;
+    grouped.set(id, [...(grouped.get(id) ?? []), decision]);
+  }
+  const decided = new Map<string, Record<string, string>>();
+  for (const [id, list] of grouped) {
+    if (!divergent.has(id)) problems.push(`${id}: decisão sem divergência correspondente (documento ou critério desconhecido, ou codificações concordantes).`);
+    else if (list.length > 1) problems.push(`${id}: ${list.length} decisões para a mesma divergência; manter uma só.`);
+    else decided.set(id, list[0]!);
+  }
   const final = a.map((row) => {
     const peer = other.get(key(row));
     if (peer && peer.valor === row.valor) return { ...row, paginas: [...new Set([...row.paginas, ...peer.paginas])].sort((x, y) => x - y), origem: 'concordancia' as const, justificativa: '' };
     const decision = decided.get(key(row));
-    if (!decision?.valor_final?.trim() || !decision.justificativa?.trim()) problems.push(`${key(row)}: divergência sem decisão e justificativa.`);
+    if ((grouped.get(key(row))?.length ?? 0) <= 1 && (!decision?.valor_final?.trim() || !decision.justificativa?.trim())) problems.push(`${key(row)}: divergência sem decisão e justificativa.`);
     return { documento: row.documento, criterio: row.criterio, valor: decision?.valor_final?.trim().toLowerCase() ?? '', paginas: (decision?.paginas_final ?? '').split(/[,;\s]+/).filter(Boolean).map(Number),
       trecho: decision?.trecho_final?.trim() ?? '', observacao: '', origem: 'adjudicacao' as const, justificativa: decision?.justificativa?.trim() ?? '' };
   });

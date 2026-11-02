@@ -88,6 +88,14 @@ test('consolidação: valor comum quando concordam; decisão com justificativa q
   const decided = final.find((row) => row.documento === documents[0]!.id && row.criterio === 'intervencao')!;
   assert.deepEqual([decided.origem, decided.valor, decided.justificativa], ['adjudicacao', 'especifica', 'A frase diz o que será comprado.']);
   assert.equal(final.filter((row) => row.origem === 'concordancia').length, a.length - 1);
+  // Duas decisões contraditórias para a mesma divergência: problema, e nenhuma delas vale (a ordem da planilha não decide).
+  const contradictory = consolidate(a, b, [decision, { ...decision, valor_final: 'generica', justificativa: 'Outra leitura.' }]);
+  assert.deepEqual(contradictory.problems, [`${documents[0]!.id}/intervencao: 2 decisões para a mesma divergência; manter uma só.`]);
+  assert.equal(contradictory.final.find((row) => row.criterio === 'intervencao' && row.documento === documents[0]!.id)!.valor, '');
+  // Decisão para critério concordante ou documento desconhecido também é problema.
+  assert.deepEqual(consolidate(a, b, [decision, { ...decision, criterio: 'publico' }, { ...decision, documento: 'desconhecido' }]).problems,
+    [`${documents[0]!.id}/publico: decisão sem divergência correspondente (documento ou critério desconhecido, ou codificações concordantes).`,
+      'desconhecido/intervencao: decisão sem divergência correspondente (documento ou critério desconhecido, ou codificações concordantes).']);
 });
 
 test('autoria: uma pessoa e um modelo com identificador e execução isolada declarada', () => {

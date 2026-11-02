@@ -13,7 +13,7 @@ Catálogo do IBGE em 31/10/2026: 289 tabelas do Censo 2022 com recorte municipal
 
 ## 2. Decisões de Rafael (31/10/2026)
 
-1. **Base de idade:** 16 anos ou mais sempre que a fonte permitir, com a separação entre voto obrigatório (18–69) e facultativo (16–17 e 70+) quando os cortes forem exatos. Quando a fonte agrupa 15–19 anos, base de 15 anos ou mais **com o desvio máximo declarado** (§3). Nenhuma estimativa nem reponderação pelo eleitorado.
+1. **Base de idade:** 16 anos ou mais sempre que a fonte permitir, com a separação entre voto obrigatório (18–69) e facultativo (16–17 e 70+) quando os cortes forem exatos. Quando a fonte agrupa 15–19 anos, base de 15 anos ou mais **com o desvio máximo declarado** (§3). Nenhuma estimativa nem reponderação pelo eleitorado. *Revisão de 02/11/2026 (§69 do `plan.md`):* a proporção de pessoas de 15 anos da 9606 só é limite demonstrado onde a base é a mesma população residente (situação do domicílio e favelas); nas tabelas da amostra e de moradores em domicílios particulares permanentes ocupados, a interface a apresenta como referência.
 2. **Cor ou raça:** as cinco categorias sempre separadas. Se alguma soma aparecer, ela se chama “pretas e pardas (soma de duas categorias do IBGE)”, com aviso de que não é uma cor ou raça única nem indica maioria de uma categoria. As fontes previstas trazem as categorias separadas; nenhuma soma é necessária.
 3. **Religião e cor ou raça entram**, com a leitura ecológica explícita (“municípios em que…”, nunca “eleitores que…”) e a mesma escala para todas as candidaturas.
 4. **Temas novos:** trabalho (desocupação e outros), internet e moradia, saneamento, urbano × rural, favelas e comunidades urbanas, deficiência e migração.

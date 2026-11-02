@@ -145,7 +145,9 @@ export const catalogSchema = z.object({
   mapDatasets: z.array(z.lazy(() => mapDatasetSchema)).default([]),
   tractsDatasets: z.array(z.lazy(() => tractsDatasetSchema)).default([]),
   placeProfilesDatasets: z.array(z.lazy(() => placeProfilesDatasetSchema)).default([]),
+  // `placeGroupsImport`: a de 2022, como nas respostas anteriores; `placeGroupsImports`: uma por ano publicado.
   placeGroupsImport: z.object({ inputs: publicationInputsSchema.optional(), id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string() }).nullable().default(null),
+  placeGroupsImports: z.array(z.object({ inputs: publicationInputsSchema.optional(), id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string() })).default([]),
   tractSensitivityImport: z.object({ inputs: publicationInputsSchema.optional(), id: z.string(), importerVersion: z.string(), importedAt: z.string(), recortes: nonnegative, scope: z.string(), method: z.string(), notes: z.array(z.string()), national: z.record(z.enum(TRACT_SENSITIVITY_RADII), tractAgreementSchema) }).nullable().default(null),
   incomeBandsDatasets: z.array(z.lazy(() => incomeBandsDatasetSchema)).default([]),
   tractDemographyDatasets: z.array(z.lazy(() => tractDemographyDatasetSchema)).default([]),
@@ -266,6 +268,12 @@ export const municipalityContextSchema = z.object({
   turnout: z.object({ '1': turnoutRoundSchema.nullable(), '2': turnoutRoundSchema.nullable() }),
 });
 export type MunicipalityContext = z.infer<typeof municipalityContextSchema>;
+/**
+ * Só o território (Censo 2022, IBGE): o contexto sem o cadastro, os aptos dos resultados e o comparecimento por perfil do TSE,
+ * que na publicação são de 2022. Usado no detalhe municipal de outras eleições, para não misturar comparadores de anos diferentes.
+ */
+export const territorialContextSchema = municipalityContextSchema.omit({ electorate: true, resultsEligible: true, turnout: true });
+export type TerritorialContext = z.infer<typeof territorialContextSchema>;
 export const contextDatasetSchema = z.object({
   inputs: publicationInputsSchema.optional(),
   id: z.string(), kind: z.literal('municipal-context'), year: z.literal(2022), importedAt: z.string(), importerVersion: z.string(),
@@ -404,6 +412,15 @@ export type CensusIndicatorsDataset = z.infer<typeof censusIndicatorsDatasetSche
  * têm a chave `numerator`. Recorte `15+` traz o desvio declarado (pessoas de 15 anos ÷ 15+).
  */
 export type CensusMapSpec = { theme: string; slice: string; keys?: readonly string[]; numeratorSlice?: string };
+/**
+ * Recortes 15+: a proporção de pessoas de 15 anos entre as de 15+ (SIDRA 9606, população residente, universo) só é limite
+ * demonstrado da diferença entre as parcelas 15+ e 16+ quando a base do indicador é essa mesma população: cor ou raça (9606),
+ * situação do domicílio (10089, 15+ igual ao da 9606 nos 5.570 municípios) e favelas (denominador da 9606). Nas tabelas da amostra
+ * e nas de moradores em domicílios particulares permanentes ocupados, a composição etária pode ser outra: a proporção fica só como
+ * referência, sem limite próprio, e nada é estimado (revisão de 31/10/2026).
+ */
+export const AGE15_SAME_BASE_THEMES = ['race', 'urbanRural', 'favela'] as const;
+export const age15Basis = (theme: string): 'bound' | 'reference' => (AGE15_SAME_BASE_THEMES as readonly string[]).includes(theme) ? 'bound' : 'reference';
 type MapIndicatorDefinition = { label: string; short: string; source: string; kind: 'universo' | 'amostra' | 'resultados'; family: 'ibge' | 'tse'; group: string; census?: CensusMapSpec };
 const sidraSource = (tables: string) => `IBGE, Censo 2022 — SIDRA ${tables}`;
 /** Indicadores do mapa: cada um com fonte, tipo de dado, numerador, denominador e grupo do seletor explícitos. */
@@ -455,7 +472,8 @@ export const mapValuesSchema = z.object({
   // `id`: código IBGE (polígono); `null` para município sem correspondência no Censo 2022 (criado depois), que fica só na tabela.
   // `code`: UF ou código TSE do município. Valor `null` quando numerador ou denominador faltam.
   items: z.array(z.object({ id: z.string().nullable(), code: z.string(), uf: z.enum(STATES), name: z.string(), numerator: sourceCount, denominator: sourceCount, value: z.number().min(0).max(100).nullable(),
-    // Só nos recortes 15+: desvio máximo em pontos percentuais em relação a 16+ (pessoas de 15 anos ÷ 15+ × 100). Ausente nos demais.
+    // Só nos recortes 15+: pessoas de 15 anos ÷ 15+ × 100 da população residente (9606). Limite do desvio em relação a 16+ só quando
+    // `age15Basis(tema)` é `bound`; nas outras bases, referência (ver `AGE15_SAME_BASE_THEMES`). Ausente nos demais.
     deviation: z.number().min(0).max(100).nullable().optional() })),
   publications: mapPublicationsSchema.optional(),
 });
@@ -584,13 +602,13 @@ export const placeProfilesDatasetSchema = z.object({
 /** Métrica E: locais agrupados pelo perfil do eleitorado (TSE) ou pelo entorno (IBGE); resultados somados por grupo. */
 export const PLACE_GROUP_INDICATORS = {
   // `short`: o que o percentual conta, para as definições dos grupos ("locais com X% a Y% de …").
-  college: { label: 'Eleitores aptos do local com superior completo (escolaridade declarada no alistamento)', short: 'eleitores com superior completo', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
-  'education-low': { label: 'Eleitores aptos do local com até o fundamental incompleto (analfabeto, lê e escreve ou fundamental incompleto; escolaridade declarada)', short: 'eleitores com até o fundamental incompleto', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
-  women: { label: 'Eleitoras entre os eleitores aptos do local (gênero do cadastro eleitoral)', short: 'eleitoras (gênero feminino no cadastro)', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
-  'age-16-24': { label: 'Eleitores aptos do local com 16 a 24 anos', short: 'eleitores de 16 a 24 anos', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
-  'age-60-plus': { label: 'Eleitores aptos do local com 60 anos ou mais (pessoa idosa)', short: 'eleitores de 60 anos ou mais', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  college: { label: 'Eleitores aptos do local com superior completo (escolaridade declarada no alistamento)', short: 'eleitores com superior completo', source: 'TSE, perfil do eleitorado por seção do ano da eleição, somado por local', kind: 'cadastro', unit: 'percent' },
+  'education-low': { label: 'Eleitores aptos do local com até o fundamental incompleto (analfabeto, lê e escreve ou fundamental incompleto; escolaridade declarada)', short: 'eleitores com até o fundamental incompleto', source: 'TSE, perfil do eleitorado por seção do ano da eleição, somado por local', kind: 'cadastro', unit: 'percent' },
+  women: { label: 'Eleitoras entre os eleitores aptos do local (gênero do cadastro eleitoral)', short: 'eleitoras (gênero feminino no cadastro)', source: 'TSE, perfil do eleitorado por seção do ano da eleição, somado por local', kind: 'cadastro', unit: 'percent' },
+  'age-16-24': { label: 'Eleitores aptos do local com 16 a 24 anos', short: 'eleitores de 16 a 24 anos', source: 'TSE, perfil do eleitorado por seção do ano da eleição, somado por local', kind: 'cadastro', unit: 'percent' },
+  'age-60-plus': { label: 'Eleitores aptos do local com 60 anos ou mais (pessoa idosa)', short: 'eleitores de 60 anos ou mais', source: 'TSE, perfil do eleitorado por seção do ano da eleição, somado por local', kind: 'cadastro', unit: 'percent' },
   // 70+: voto facultativo por idade (decisão de Rafael, 31/10/2026: acrescentar, mantendo 60+).
-  'age-70-plus': { label: 'Eleitores aptos do local com 70 anos ou mais (voto facultativo)', short: 'eleitores de 70 anos ou mais', source: 'TSE, perfil do eleitorado por seção 2022, somado por local', kind: 'cadastro', unit: 'percent' },
+  'age-70-plus': { label: 'Eleitores aptos do local com 70 anos ou mais (voto facultativo)', short: 'eleitores de 70 anos ou mais', source: 'TSE, perfil do eleitorado por seção do ano da eleição, somado por local', kind: 'cadastro', unit: 'percent' },
   'income-median': { label: 'Rendimento mediano do responsável pelo domicílio no setor censitário do local', short: 'renda mediana do responsável no setor', source: 'IBGE, Censo 2022 — agregados por setor (rendimento do responsável); local → setor pelo ponto do TSE', kind: 'universo', unit: 'reais' },
   // Grupos por categoria do setor que contém o local (decisão de Rafael, 31/10/2026); o local não indica onde os eleitores moram.
   'tract-situation': { label: 'Situação do setor censitário do local (urbana ou rural)', short: 'situação do setor', source: 'IBGE, Censo 2022 — situação do setor (associação local → setor); local → setor pelo ponto do TSE', kind: 'universo', unit: 'category' },
@@ -715,6 +733,8 @@ export const placeGroupsSchema = z.object({
   population: incomeBandPopulationSchema.nullable().optional(),
   // Só na sensibilidade da associação (renda com raio): o raio usado e a concordância com a associação publicada no território.
   association: z.object({ radius: z.enum(TRACT_SENSITIVITY_RADII), agreement: tractAgreementSchema }).optional(),
+  // Publicações consultadas: resultados do cargo e grupos (métrica E) ou sensibilidade por raio. Ausente nas respostas anteriores.
+  publications: z.array(z.object({ role: z.enum(['results', 'groups', 'sensitivity']), id: z.string().regex(/^[a-f0-9]{64}$/) })).optional(),
 });
 export type PlaceGroups = z.infer<typeof placeGroupsSchema>;
 /**
@@ -800,6 +820,11 @@ export const contextResponseSchema = z.discriminatedUnion('status', [
     urbanSurroundings: urbanSurroundingsSchema.nullable().optional(),
     // Indicadores do Censo pela idade de voto; `null` sem a publicação, ausente nas respostas anteriores.
     censusIndicators: censusIndicatorsSchema.nullable().optional(), censusIndicatorsId: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional() }),
+  // Eleição de outro ano (2026): o Censo 2022 vale como referência territorial; os perfis do TSE de 2022 não são enviados.
+  z.object({ status: z.literal('territorial'), electionYear: z.enum(ELECTION_YEARS), censusYear: z.literal(2022), dataset: contextDatasetSchema, item: territorialContextSchema,
+    incomeBands: incomeBandPopulationSchema.nullable(), censusIndicators: censusIndicatorsSchema.nullable(), censusIndicatorsId: z.string().regex(/^[a-f0-9]{64}$/).nullable() }),
+  // Município da eleição sem correspondência no Censo 2022 (criado depois dele): ausência declarada, não falha nem zero.
+  z.object({ status: z.literal('not-in-census'), electionYear: z.enum(ELECTION_YEARS), censusYear: z.literal(2022), dataset: contextDatasetSchema, item: z.null() }),
 ]);
 export type ContextResponse = z.infer<typeof contextResponseSchema>;
 

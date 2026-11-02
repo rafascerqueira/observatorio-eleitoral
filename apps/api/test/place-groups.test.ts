@@ -76,14 +76,15 @@ test('API filtra resultados, moradores e raios pela mesma região e bloqueia UF 
     if (sql.includes('to_regclass')) return { rows: [{ registry: 'test' }] };
     if (sql.includes('SELECT metadata FROM import_batches')) return { rows: [{ metadata: dataset }] };
     if (sql.includes('SELECT id, metadata FROM import_batches')) return { rows: [{ id: 'b'.repeat(64), metadata: {} }] };
-    if (sql.includes('FROM place_groups g') || sql.includes('FROM place_group_sensitivity g')) return { rows: values.map((result) => ({ result, metadata: {} })) };
+    if (sql.includes('FROM place_groups g') || sql.includes('FROM place_group_sensitivity g')) return { rows: values.map((result) => ({ batch_id: sql.includes('sensitivity') ? 'd'.repeat(64) : 'c'.repeat(64), result, metadata: {} })) };
     if (sql.includes('FROM municipality_income_bands')) return { rows: [{ result: population }] };
     if (sql.includes('FROM municipality_tract_demography')) return { rows: [{ result: { residents: 10, indicators: { women: population, 'age-16-24': population, 'age-60-plus': population } } }] };
     throw new Error(`Consulta inesperada: ${sql}`);
   } } as unknown as DatabaseService;
   const controller = new ElectionsController(database);
-  await controller.placeGroups({ region: 'SE', indicator: 'college' });
+  const college = await controller.placeGroups({ region: 'SE', indicator: 'college' });
   assert.deepEqual(queries.find((x) => x.sql.includes('FROM place_groups g'))!.parameters, [dataset.id, 'president', [...REGION_STATES.SE], 1, 'college', '2022/places/groups']);
+  assert.deepEqual(college.publications, [{ role: 'results', id: dataset.id }, { role: 'groups', id: 'c'.repeat(64) }], 'Resposta identifica as publicações consultadas');
   values.pop(); await assert.rejects(controller.placeGroups({ region: 'SE', indicator: 'college' }), /cobertura regional incompleta/);
   values = fixture().map((value) => ({ ...value, indicator: 'income-median' })); queries.length = 0;
   assert.equal((await controller.placeGroups({ region: 'SE', indicator: 'income-median' })).population!.total, 10);
@@ -93,6 +94,6 @@ test('API filtra resultados, moradores e raios pela mesma região e bloqueia UF 
   assert.equal(women.population!.coverage, undefined, 'Cobertura ausente em versão antiga não vira zero');
   assert.deepEqual(queries.find((x) => x.sql.includes('FROM municipality_tract_demography'))!.parameters[1], [...REGION_STATES.SE]);
   values = fixture().map((value) => ({ ...value, indicator: 'income-median', association: { radius: '250', agreement: Object.fromEntries(['same', 'adjacent', 'distant', 'tie', 'radiusOnly', 'none'].map((key) => [key, { places: 1, eligible: 10 }])) as NonNullable<PlaceGroups['association']>['agreement'] } })); queries.length = 0;
-  await controller.placeGroups({ region: 'SE', indicator: 'income-median', radius: '250' });
+  assert.deepEqual((await controller.placeGroups({ region: 'SE', indicator: 'income-median', radius: '250' })).publications?.[1], { role: 'sensitivity', id: 'd'.repeat(64) });
   assert.deepEqual(queries.find((x) => x.sql.includes('FROM place_group_sensitivity g'))!.parameters.slice(2), [[...REGION_STATES.SE], 1, 250, '2022/places/tract-sensitivity']);
 });

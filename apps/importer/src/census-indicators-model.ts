@@ -1,4 +1,4 @@
-import { CENSUS_THEMES, contextDistributionSchema, type CensusTheme } from '@observatorio/contracts';
+import { CENSUS_THEMES, contextDistributionSchema, type CensusIndicators, type CensusTheme } from '@observatorio/contracts';
 
 /**
  * Especificação e aritmética dos indicadores do Censo 2022 pela idade de voto (`census-indicators-2022-v1`). Nomes de
@@ -155,5 +155,36 @@ export function specCoverageErrors() {
     if (specs.length !== 1) errors.push(`${theme}: ${specs.length} especificações`);
     else if (Object.keys(specs[0]!.slices).sort().join() !== [...slices].sort().join()) errors.push(`${theme}: recortes divergentes`);
   }
+  return errors;
+}
+
+/** Parcelas que a migração 022 grava com a chave `numerator`: uma linha por município, mesmo quando a parcela é nula (favela divergente). */
+const SHARE_CELLS = [['disability', '15+'], ['disability', '70+'], ['migration', '15+'], ['migration', '70+'], ['favela', '15+'], ['age15', '15+']] as const;
+
+/**
+ * Células derivadas esperadas (migração 022) por `tema|recorte`, contadas nos itens gravados. Espelha a consulta: distribuição e
+ * tipos de deficiência sem categoria não geram linha.
+ */
+export function expectedCellCounts(items: ReadonlyArray<Pick<CensusIndicators, 'distributions' | 'disability'>>) {
+  const counts = new Map<string, number>();
+  const add = (theme: string, slice: string) => counts.set(`${theme}|${slice}`, (counts.get(`${theme}|${slice}`) ?? 0) + 1);
+  for (const item of items) {
+    for (const [theme, slices] of Object.entries(item.distributions)) for (const [slice, distribution] of Object.entries(slices)) if (distribution.categories.length) add(theme, slice);
+    for (const [theme, slice] of SHARE_CELLS) add(theme, slice);
+    if (item.disability.types.length) add('disabilityTypes', '2+');
+  }
+  return counts;
+}
+
+/** Diferenças entre as células gravadas de um lote e as esperadas: falta, excesso ou tema/recorte desconhecido. Vazio = completo. */
+export function cellCoverageErrors(expected: ReadonlyMap<string, number>, stored: ReadonlyArray<{ theme: string; slice: string; n: number }>) {
+  const errors: string[] = [], seen = new Set<string>();
+  for (const { theme, slice, n } of stored) {
+    const key = `${theme}|${slice}`; seen.add(key);
+    const want = expected.get(key);
+    if (want === undefined) errors.push(`${theme} ${slice}: ${n} células sem item correspondente`);
+    else if (n !== want) errors.push(`${theme} ${slice}: ${n} de ${want} municípios`);
+  }
+  for (const [key, want] of expected) if (!seen.has(key)) errors.push(`${key.replace('|', ' ')}: 0 de ${want} municípios`);
   return errors;
 }

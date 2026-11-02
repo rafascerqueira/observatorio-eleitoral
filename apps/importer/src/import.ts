@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { checkAuditReport, writeAuditReport } from './publication';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
@@ -66,8 +67,8 @@ async function run() {
     limitations: ['ST_PENDENTE_TOT_FINAL ausente no CSV de apuração consultado; publicação baseada na reconciliação dos totais históricos, não em certificação desse campo.', 'Não há aptos, comparecimento ou abstenção por local neste recorte; ficam null.', 'Nomes ou endereços divergentes por local ficam indisponíveis, com variantes preservadas e conflito explícito.', 'Nenhuma associação IBGE, renda ou geografia residencial foi realizada.'],
     summaries: results.summaries,
   };
-  await writeFile(resolve(ROOT, 'data/audit/sao-paulo-2022.json'), JSON.stringify(report, null, 2));
-  if (process.argv.includes('--validate-only')) { console.log(JSON.stringify(results.summaries, null, 2)); return; }
+  // Só validação: relatório com nome próprio, que não substitui o da publicação (servido pela rota pública como `<id>.json`).
+  if (process.argv.includes('--validate-only')) { await writeFile(resolve(ROOT, 'data/audit/sao-paulo-2022-validation.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(results.summaries, null, 2)); return; }
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL obrigatória; validação não foi publicada.');
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
@@ -78,10 +79,13 @@ async function run() {
     await client.query(await readFile(resolve(__dirname, 'migrations/003-national.sql'), 'utf8'));
     await client.query(await readFile(resolve(__dirname, 'migrations/005-search-trigram.sql'), 'utf8'));
     for (const source of files) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes]);
-    const existing = await client.query('SELECT metadata FROM import_batches WHERE id=$1 AND published', [id]);
+    const existing = await client.query<{ metadata: { id: string; [key: string]: unknown } }>('SELECT metadata FROM import_batches WHERE id=$1 AND published', [id]);
     if (existing.rowCount) {
+      // O relatório publicado (`<id>.json`) precisa existir com os mesmos metadados do banco; o de 12/10/2026 tem o nome
+      // antigo `sao-paulo-2022.json` e foi ligado por hard link ao nome pela identidade (§69 do plan.md).
+      await checkAuditReport(id, existing.rows[0]!.metadata);
       await client.query('COMMIT');
-      console.log(`Importação já publicada: ${id}. Nenhum registro duplicado.`);
+      console.log(`Importação já publicada: ${id}. Relatório conferido; nenhum registro duplicado.`);
       return;
     }
     await client.query('INSERT INTO import_batches(id, scope, metadata) VALUES ($1,$2,$3)', [id, SCOPE, dataset]);
@@ -92,6 +96,8 @@ async function run() {
     }
     await client.query('INSERT INTO zone_results SELECT $1, x.round::integer, x.zone, to_jsonb(x) FROM jsonb_to_recordset($2::jsonb) AS x(round text, zone integer, totals jsonb, candidates jsonb)', [id, JSON.stringify(results.zones)]);
     await client.query('INSERT INTO polling_place_results SELECT $1, x.round::integer, x.zone, x.code, to_jsonb(x) FROM jsonb_to_recordset($2::jsonb) AS x(round text, zone integer, code text, name text, address text, sections integer, totals jsonb, candidates jsonb, "metadataConflict" boolean, "metadataVariants" jsonb)', [id, JSON.stringify(results.places)]);
+    // Relatório gravado pela identidade (escrita atômica) antes da troca pública, como nas demais publicações.
+    await writeAuditReport(id, report);
     await client.query('UPDATE import_batches SET published=false WHERE scope=$1 AND published', [SCOPE]);
     await client.query('UPDATE import_batches SET published=true WHERE id=$1', [id]);
     await client.query('COMMIT');

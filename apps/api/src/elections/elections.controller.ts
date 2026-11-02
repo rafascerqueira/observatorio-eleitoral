@@ -5,7 +5,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, incomeBandOf, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, tractMapQuerySchema, tractMapSchema, type TractMap, proposalsQuerySchema, proposalsResponseSchema, proposalsDatasetSchema, PROPOSALS_NORMALIZATION, SEARCH_HYPHEN_MARKER, searchNormalize, searchPattern, searchText, type ProposalsResponse, censusIndicatorsSchema, type CensusMapSpec, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
+import { catalogSchema, datasetSchema, municipalitiesSchema, municipalityQuerySchema, placesQuerySchema, placesResponseSchema, coverageItemSchema, nationalQuerySchema, nationalResponseSchema, exteriorQuerySchema, exteriorResponseSchema, exteriorCitySchema, stateQuerySchema, stateResponseSchema, suggestQuerySchema, suggestResponseSchema, contextDatasetSchema, contextResponseSchema, municipalityContextSchema, mapQuerySchema, mapValuesSchema, mapGeometrySchema, MAP_INDICATORS, candidateMapQuerySchema, candidateMapSchema, percent, placeGroupsQuerySchema, placeGroupsSchema, incomeBandPopulationSchema, INCOME_BANDS, incomeBandOf, turnoutProfilesQuerySchema, turnoutProfilesSchema, AGE_GROUPS, ageGroupOf, optionalVoter, TSE_PROFILE_LABELS, TURNOUT_CELL_ORDER, TRACT_DEMOGRAPHY_INDICATORS, tractDemographySchema, type TractDemographyIndicator, placeTractsQuerySchema, placeTractsSchema, TRACT_STATUSES, tractMapQuerySchema, tractMapSchema, type TractMap, proposalsQuerySchema, proposalsResponseSchema, proposalsDatasetSchema, PROPOSALS_NORMALIZATION, SEARCH_HYPHEN_MARKER, searchNormalize, searchPattern, searchText, type ProposalsResponse, censusIndicatorsSchema, type CensusMapSpec, isStateOffice, roundHeld, OFFICE_LABELS, STATES, STATE_OFFICES, type MunicipalitiesResponse, type PlacesQuery, type Office } from '@observatorio/contracts';
 import { DatabaseService } from '../database/database.service';
 import { checkDependencies } from './dependencies';
 import { nationalSummary } from './national-summary';
@@ -173,9 +173,9 @@ export class ElectionsController {
     const territories = uf ? [uf] : region ? [...REGION_STATES[region]] : ['BR'];
     const registry = await this.database.query<{ registry: string | null }>(`SELECT to_regclass('public.${radius ? 'place_group_sensitivity' : 'place_groups'}')::text AS registry`);
     const row = !registry.rows[0]?.registry ? { rows: [] } : radius
-      ? await this.database.query<{ result: unknown; metadata: { inputs?: unknown } }>(`SELECT g.result, b.metadata FROM place_group_sensitivity g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope=$6
+      ? await this.database.query<{ batch_id: string; result: unknown; metadata: { inputs?: unknown } }>(`SELECT g.batch_id, g.result, b.metadata FROM place_group_sensitivity g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope=$6
         WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=ANY($3::text[]) AND g.round=$4 AND g.radius=$5`, [dataset.id, office, territories, Number(round), Number(radius), TRACT_SENSITIVITY_SCOPE])
-      : await this.database.query<{ result: unknown; metadata: { inputs?: unknown } }>(`SELECT g.result, b.metadata FROM place_groups g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope=$6
+      : await this.database.query<{ batch_id: string; result: unknown; metadata: { inputs?: unknown } }>(`SELECT g.batch_id, g.result, b.metadata FROM place_groups g JOIN import_batches b ON b.id=g.batch_id AND b.published AND b.scope=$6
       WHERE g.results_batch=$1 AND g.office=$2 AND g.uf=ANY($3::text[]) AND g.round=$4 AND g.indicator=$5`, [dataset.id, office, territories, Number(round), indicator, `${year}/places/groups`]);
     if (!row.rows[0]) return placeGroupsSchema.parse({ ...base, status: 'awaiting-import' });
     await checkDependencies(this.database, row.rows[0].metadata);
@@ -188,7 +188,8 @@ export class ElectionsController {
     const ufs = uf ? [uf] : region ? [...REGION_STATES[region]] : null;
     const population = !bands ? undefined : indicator === 'income-median' ? await this.incomeBands({ ufs })
       : indicator in TRACT_DEMOGRAPHY_INDICATORS ? await this.tractDemography(ufs, indicator as TractDemographyIndicator) : undefined;
-    try { return placeGroupsSchema.parse({ ...result, ...(region ? { region } : {}), ...(population === undefined ? {} : { population }) }); } catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes.'); }
+    const publications = [{ role: 'results' as const, id: dataset.id }, { role: radius ? 'sensitivity' as const : 'groups' as const, id: row.rows[0].batch_id }];
+    try { return placeGroupsSchema.parse({ ...result, ...(region ? { region } : {}), ...(population === undefined ? {} : { population }), publications }); } catch { throw new ServiceUnavailableException('Grupos de locais inconsistentes.'); }
   }
 
   /** Moradores de 15+ por faixa de perfil do setor (demografia do Censo), somados nos municípios do território; `null` sem publicação. */
@@ -331,8 +332,11 @@ export class ElectionsController {
       if (!batch) return empty;
       type Cell = { id: string; code: string; uf: string; name: string; total: string | null; keys: string[]; counts: Array<string | null> };
       const read = (theme: string, slice: string) => this.database.query<Cell>('SELECT ibge_code AS id, code, uf, name, total::text, keys, counts::text[] AS counts FROM census_indicator_cells WHERE batch_id=$1 AND theme=$2 AND slice=$3 AND ($4::text IS NULL OR uf=$4)', [batch.id, theme, slice, uf ?? null]);
-      const [main, numeratorSlice, age15] = await Promise.all([read(spec.theme, spec.slice), spec.numeratorSlice ? read(spec.theme, spec.numeratorSlice) : null, spec.slice === '15+' ? read('age15', '15+') : null]);
-      if (main.rows.length === 0) throw new ServiceUnavailableException('Indicadores do Censo sem células derivadas.');
+      const [main, numeratorSlice, age15, recorded] = await Promise.all([read(spec.theme, spec.slice), spec.numeratorSlice ? read(spec.theme, spec.numeratorSlice) : null, spec.slice === '15+' ? read('age15', '15+') : null,
+        this.database.query<{ n: number }>('SELECT count(*)::int AS n FROM census_indicators WHERE batch_id=$1 AND ($2::text IS NULL OR uf=$2)', [batch.id, uf ?? null])]);
+      // Cobertura completa: uma célula por município gravado no lote, em cada recorte lido. Parcial nunca vira soma publicada.
+      const expected = recorded.rows[0]?.n ?? 0;
+      if (expected === 0 || [main, numeratorSlice, age15].some((cells) => cells && cells.rows.length !== expected)) throw new ServiceUnavailableException('Indicadores do Censo com células derivadas incompletas.');
       const byId = (rows: Cell[] | undefined) => new Map((rows ?? []).map((row) => [row.id, row]));
       const numerators = byId(numeratorSlice?.rows);
       rows = main.rows.map((row) => {
@@ -438,20 +442,32 @@ export class ElectionsController {
     return candidateMapSchema.parse({ ...base, status: 'published', candidates, items, publications: [{ role: 'results', id: dataset.id }, { role: 'context', id: context.id }] });
   }
 
-  /** Contexto do município: Censo 2022 (IBGE) e perfis do TSE como base própria; nada é estimado aqui, só lido da publicação. */
+  /**
+   * Contexto do município: Censo 2022 (IBGE) e perfis do TSE como base própria; nada é estimado aqui, só lido da publicação. Em
+   * outra eleição (2026), o Censo continua sendo a referência territorial (`territorial`), mas o cadastro, os aptos e o comparecimento
+   * por perfil gravados no contexto são de 2022 e não são enviados; município criado depois do Censo responde `not-in-census`.
+   */
   @Get('municipalities/:code/context')
   async context(@Param('code') code: string, @Query() query: Record<string, unknown>) {
     if (!/^\d+$/.test(code)) throw new NotFoundException('Código municipal inválido.');
     const parsed = municipalityQuerySchema.pick({ year: true }).extend({ uf: municipalityQuerySchema.shape.uf.unwrap() }).strict().safeParse(query);
     if (!parsed.success) throw new BadRequestException({ message: 'Informe ano e UF do município.', fields: parsed.error.issues.map((issue) => issue.path.join('.')) });
+    const { year, uf } = parsed.data; const municipality = code.padStart(5, '0');
     await this.database.check();
     const registry = await this.database.query<{ registry: string | null }>("SELECT to_regclass('public.municipality_context')::text AS registry");
     const batch = registry.rows[0]?.registry ? await this.database.query<{ metadata: unknown }>("SELECT metadata FROM import_batches WHERE published AND scope='2022/context/municipal' LIMIT 1") : { rows: [] };
-    if (!batch.rows[0] || parsed.data.year !== '2022') return contextResponseSchema.parse({ status: 'awaiting-import', dataset: null, item: null });
+    if (!batch.rows[0]) return contextResponseSchema.parse({ status: 'awaiting-import', dataset: null, item: null });
     const dataset = contextDatasetSchema.parse(batch.rows[0].metadata);
     await checkDependencies(this.database, dataset);
-    const item = await this.database.query<{ result: unknown }>('SELECT result FROM municipality_context WHERE batch_id=$1 AND uf=$2 AND code=$3', [dataset.id, parsed.data.uf, code.padStart(5, '0')]);
-    if (!item.rows[0]) throw new NotFoundException('Município sem contexto publicado.');
+    const item = await this.database.query<{ result: unknown }>('SELECT result FROM municipality_context WHERE batch_id=$1 AND uf=$2 AND code=$3', [dataset.id, uf, municipality]);
+    if (!item.rows[0]) {
+      if (year === '2022') throw new NotFoundException('Município sem contexto publicado.');
+      // Sem contexto do Censo: só é ausência declarada se o município existe nos resultados publicados da eleição.
+      const elected = await this.database.query(`SELECT 1 FROM municipality_results m JOIN import_batches b ON b.id=m.batch_id AND b.published AND b.scope=$1
+        WHERE m.uf=$2 AND m.code=$3 AND m.office='president' LIMIT 1`, [`${year}/president/BR`, uf, municipality]);
+      if (!elected.rows[0]) throw new NotFoundException('Município sem resultados nem contexto publicado.');
+      return contextResponseSchema.parse({ status: 'not-in-census', electionYear: year, censusYear: 2022, dataset, item: null });
+    }
     const ibgeCode = (item.rows[0].result as { ibgeCode: string }).ibgeCode;
     const incomeBands = await this.incomeBands({ ibgeCode });
     // Entorno dos domicílios fora da interface (31/10/2026); indicadores do Censo pela idade de voto, se publicados.
@@ -459,8 +475,12 @@ export class ElectionsController {
     const censusRow = census ? (await this.database.query<{ result: unknown }>('SELECT result FROM census_indicators WHERE batch_id=$1 AND ibge_code=$2', [census.id, ibgeCode])).rows[0] : undefined;
     let censusIndicators = null;
     if (censusRow) { const checked = censusIndicatorsSchema.safeParse(censusRow.result); if (!checked.success) throw new ServiceUnavailableException('Indicadores do Censo inconsistentes.'); censusIndicators = checked.data; }
-    try { return contextResponseSchema.parse({ status: 'published', dataset, item: item.rows[0].result, incomeBands, censusIndicators, censusIndicatorsId: censusRow ? census!.id : null }); }
-    catch { throw new ServiceUnavailableException('Contexto municipal inconsistente.'); }
+    try {
+      if (year === '2022') return contextResponseSchema.parse({ status: 'published', dataset, item: item.rows[0].result, incomeBands, censusIndicators, censusIndicatorsId: censusRow ? census!.id : null });
+      // O item gravado é conferido inteiro; só a parte territorial segue para a eleição de outro ano.
+      const { electorate: _electorate, resultsEligible: _results, turnout: _turnout, ...territorial } = municipalityContextSchema.parse(item.rows[0].result);
+      return contextResponseSchema.parse({ status: 'territorial', electionYear: year, censusYear: 2022, dataset, item: territorial, incomeBands: incomeBands ?? null, censusIndicators, censusIndicatorsId: censusRow ? census!.id : null });
+    } catch { throw new ServiceUnavailableException('Contexto municipal inconsistente.'); }
   }
 
   /**
@@ -686,6 +706,7 @@ export class ElectionsController {
       tractsDatasets: batches.rows.filter((batch) => batch.published && /^\d{4}\/places\/tracts$/.test(batch.scope)).map((batch) => batch.metadata),
       placeProfilesDatasets: batches.rows.filter((batch) => batch.published && /^\d{4}\/places\/profiles$/.test(batch.scope)).map((batch) => batch.metadata),
       placeGroupsImport: batches.rows.find((batch) => batch.published && batch.scope === '2022/places/groups')?.metadata ?? null,
+      placeGroupsImports: batches.rows.filter((batch) => batch.published && /^\d{4}\/places\/groups$/.test(batch.scope)).map((batch) => batch.metadata),
       tractSensitivityImport: batches.rows.find((batch) => batch.published && batch.scope === TRACT_SENSITIVITY_SCOPE)?.metadata ?? null,
       contextDatasets: batches.rows.filter((batch) => batch.published && batch.scope === '2022/context/municipal').map((batch) => batch.metadata),
       turnoutProfilesDatasets: batches.rows.filter((batch) => batch.published && /^\d{4}\/context\/turnout-profiles$/.test(batch.scope)).map((batch) => batch.metadata),

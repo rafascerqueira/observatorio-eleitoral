@@ -158,3 +158,24 @@ test('perfis por local: 70+ ao lado de 60+, com os cortes decididos, e grupos po
   assert.ok(placeGroupsQuerySchema.safeParse({ indicator: 'tract-favela' }).success);
   assert.deepEqual(TRACT_DEMOGRAPHY_INDICATORS['age-70-plus'].numerator, ['V01041']);
 });
+
+test('recortes 15+: limite do desvio só na mesma população da 9606; demais bases como referência', async () => {
+  const { age15Basis, AGE15_SAME_BASE_THEMES } = await import('../src');
+  assert.deepEqual([...AGE15_SAME_BASE_THEMES], ['race', 'urbanRural', 'favela']);
+  const fifteen = Object.values(MAP_INDICATORS).flatMap((meta) => 'census' in meta && meta.census.slice === '15+' ? [meta.census.theme] : []);
+  assert.deepEqual(fifteen.filter((theme) => age15Basis(theme) === 'bound').sort(), ['favela', 'urbanRural']);
+  for (const theme of ['religion', 'internet', 'tenure', 'crowding', 'water', 'sewage', 'garbage', 'disability', 'migration']) assert.equal(age15Basis(theme), 'reference', theme);
+});
+
+test('contexto de outra eleição: só o território do Censo, sem os perfis do TSE de 2022', async () => {
+  const { contextResponseSchema, territorialContextSchema } = await import('../src');
+  const distribution = { kind: 'universo', source: 's', total: 1, categories: [{ key: 'a', label: 'A', value: 1 }] };
+  const item = { code: '71072', name: 'SÃO PAULO', uf: 'SP', ibgeCode: '3550308', ibgeName: 'São Paulo', population: { total: 10, age16plus: 8, age16to17: 1, age18to69: 6, age70plus: 1 },
+    populationByAge: distribution, race: distribution, literacy15: distribution, education18: distribution, incomeClasses: distribution, incomePerCapita: { mean: null, median: 1000, source: 's' } };
+  const territorial = territorialContextSchema.parse({ ...item, electorate: { eligible: 7 }, turnout: { '1': null, '2': null } });
+  assert.equal('electorate' in territorial, false, 'cadastro de 2022 não acompanha o território');
+  const dataset = { id: 'd'.repeat(64), kind: 'municipal-context', year: 2022, importedAt: '2026-10-17T00:00:00Z', importerVersion: 't', sources: [], scope: 't', validation: 'checked', coverage: { expected: 1, published: 1, withoutTurnout: [] }, notes: [] };
+  assert.ok(contextResponseSchema.safeParse({ status: 'territorial', electionYear: '2026', censusYear: 2022, dataset, item, incomeBands: null, censusIndicators: null, censusIndicatorsId: null }).success);
+  assert.ok(!contextResponseSchema.safeParse({ status: 'territorial', electionYear: '2026', censusYear: 2026, dataset, item, incomeBands: null, censusIndicators: null, censusIndicatorsId: null }).success, 'Censo é sempre o de 2022');
+  assert.ok(contextResponseSchema.safeParse({ status: 'not-in-census', electionYear: '2026', censusYear: 2022, dataset, item: null }).success);
+});

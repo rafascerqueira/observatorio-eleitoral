@@ -101,3 +101,5 @@ Ambiente: Node 24.21.0; Next 16.4.2; PostgreSQL local existente; Chrome 151.0.79
 Os testes sintéticos verificaram duplicatas no agregado por setor, cobertura parcial na API e decisões duplicadas na adjudicação; esses dados de teste ficaram apenas em `/tmp`. A análise metodológica do desvio é separada das conferências numéricas: nenhuma alteração nos dados ou nas publicações foi feita para contorná-la.
 
 Não foram executadas novas cargas extensas, comparação integral de todos os votos por seção com todos os ZIPs de ambos os anos, restauração de backup, ensaio de carga externa, leitor de tela humano, Safari nem dispositivos reais. Os testes automáticos não certificam toda a acessibilidade. As correções de código e dependências ficam pendentes; esta entrega é uma revisão.
+
+**Correções (02/11/2026).** Os nove achados e os ajustes menores foram corrigidos e verificados; o que mudou em cada um, as diferenças de comportamento e a verificação estão no §69 do `plan.md`. Este relatório fica como registro do estado revisado em 31/10.

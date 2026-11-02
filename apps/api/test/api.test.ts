@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { ServiceUnavailableException, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { AppModule } from '../src/app';
+import { APP_OPTIONS, AppModule, configureApp } from '../src/app';
 import { readConfig } from '../src/config';
 import { DatabaseService } from '../src/database/database.service';
 import { CENSUS_THEMES, emptyMunicipalitiesSchema, nationalResponseSchema, searchText } from '@observatorio/contracts';
@@ -26,6 +26,8 @@ let urbanPublished = false;
 let censusPublished = false;
 // Indicadores do Censo sintéticos (valores fictícios): células por tema e recorte, como as derivadas da publicação.
 let censusCells: Record<string, Array<Record<string, unknown>>> = {};
+// UF de cada município gravado no lote sintético: a cobertura das células é conferida contra eles.
+let censusMunicipalities: string[] = [];
 // Mapa local → setor (fase B3): vistas, setores e locais sintéticos, com a projeção gravada pelo importador.
 let tractMapPublished = false;
 // Propostas sintéticas: dois documentos, um deles compartilhado por duas candidaturas do mesmo número (valores fictícios).
@@ -94,6 +96,9 @@ before(async () => {
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/urban-surroundings') return { rows: urbanPublished ? [{ id: 'f'.repeat(64), metadata: {} }] : [] };
         if (sql.includes('scope=$1') && parameters[0] === '2022/context/census-indicators') return { rows: censusPublished ? [{ id: '8'.repeat(64), metadata: {} }] : [] };
         if (sql.includes('FROM census_indicator_cells')) return { rows: censusCells[`${parameters[1]}/${parameters[2]}`]?.filter((row) => parameters[3] === null || row.uf === parameters[3]) ?? [] };
+        // Município de 2026 sem contexto do Censo (código sintético 99999 = criado depois do Censo).
+        if (sql.includes("m.office='president' LIMIT 1")) return { rows: parameters[0] === '2026/president/BR' && parameters[1] === 'MT' && parameters[2] === '99999' ? [{ exists: 1 }] : [] };
+        if (sql.includes('count(*)::int AS n FROM census_indicators')) return { rows: [{ n: censusMunicipalities.filter((uf) => parameters[1] === null || uf === parameters[1]).length }] };
         if (sql.includes('FROM census_indicators WHERE')) return { rows: [{ result: censusItem }] };
         if (sql.includes('FROM import_batches ORDER BY imported_at DESC')) return { rows: urbanPublished ? [{ id: 'f'.repeat(64), scope: '2022/context/urban-surroundings', published: true, metadata: { id: 'f'.repeat(64), kind: 'urban-surroundings', year: 2022, importedAt: '2026-10-19T00:00:00Z',
           importerVersion: 'test', sources: [], scope: 'Teste', notes: [], totals: { municipalities: 1, tracts: 3, suppressedTracts: 1, residents: 10, associatedTracts: 2, associatedSurveyed: 1, associatedSuppressed: 0 } } },
@@ -137,9 +142,17 @@ before(async () => {
       }
       return { rows: [{ registry: null }] };
     } }).compile();
-  app = module.createNestApplication();
+  app = configureApp(module.createNestApplication(APP_OPTIONS), config);
   await app.listen(0, '127.0.0.1');
   base = await app.getUrl();
+});
+test('corpo das requisições não é processado (API só de leitura)', async () => {
+  // JSON malformado ou corpo comprimido inválido: sem parser, a rota inexistente responde 404 em vez de 400 do processamento.
+  const json = await fetch(`${base}/health/live`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"a":' });
+  assert.equal(json.status, 404);
+  const gzip = await fetch(`${base}/elections/municipalities`, { method: 'POST', headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' }, body: new Uint8Array([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3, 1, 2, 3]) });
+  assert.equal(gzip.status, 404);
+  assert.equal((await fetch(`${base}/health/live`)).status, 200, 'processo continua respondendo');
 });
 test('exterior tem namespace próprio, total independente da busca e soma explícita ao Brasil', async () => {
   assert.equal((await (await fetch(`${base}/elections/exterior`)).json()).status, 'awaiting-import');
@@ -344,7 +357,15 @@ test('contexto municipal: exige UF, separa ausência de publicação de municíp
     assert.equal(data.status, 'published'); assert.equal(data.item.ibgeCode, '3550308'); assert.equal(data.item.incomeClasses.total, null, 'Suprimido continua null');
     assert.deepEqual(queries.find((query) => query.sql.includes('FROM municipality_context'))!.parameters, ['d'.repeat(64), 'SP', '71072']);
     assert.equal((await fetch(`${base}/elections/municipalities/02550/context?uf=AM`)).status, 404);
-    assert.equal((await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP&year=2026`)).json()).status, 'awaiting-import');
+    // 2026: o Censo 2022 continua valendo para o território; cadastro, aptos e comparecimento por perfil (de 2022) não são enviados.
+    const territorial = await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP&year=2026`)).json();
+    assert.deepEqual([territorial.status, territorial.electionYear, territorial.censusYear, territorial.item.ibgeCode, territorial.item.population.age16plus], ['territorial', '2026', 2022, '3550308', 8]);
+    assert.deepEqual([territorial.item.electorate, territorial.item.resultsEligible, territorial.item.turnout], [undefined, undefined, undefined]);
+    // Município da eleição sem correspondência no Censo: ausência declarada; inexistente nos resultados continua 404.
+    const created = await (await fetch(`${base}/elections/municipalities/99999/context?uf=MT&year=2026`)).json();
+    assert.deepEqual([created.status, created.item, created.electionYear], ['not-in-census', null, '2026']);
+    assert.equal((await fetch(`${base}/elections/municipalities/88888/context?uf=MT&year=2026`)).status, 404);
+    assert.equal((await fetch(`${base}/elections/municipalities/99999/context?uf=MT`)).status, 404, 'Em 2022 todo município tem contexto');
   } finally { published = false; contextPublished = false; }
 });
 
@@ -407,9 +428,11 @@ test('entorno dos domicílios fora da interface; indicadores do Censo pela idade
   censusCells = {
     'religion/15+': [censusCell('3550308', 'SP', '100', religion, ['50', '30', '20']), censusCell('3509502', 'SP', '50', religion, ['20', '20', '10']), censusCell('3304557', 'RJ', '40', religion, ['10', '10', null])],
     'age15/15+': [censusCell('3550308', 'SP', '100', ['age15'], ['2']), censusCell('3509502', 'SP', '50', ['age15'], ['1']), censusCell('3304557', 'RJ', '40', ['age15'], ['2'])],
-    'race/16+': [censusCell('3550308', 'SP', '80', ['branca'], ['40'])], 'race/16-17': [censusCell('3550308', 'SP', '4', ['branca'], ['2'])],
-    'internet/15+': [censusCell('3550308', 'SP', '10', ['nao'], ['1'])],
+    'race/16+': [censusCell('3550308', 'SP', '80', ['branca'], ['40']), censusCell('3509502', 'SP', '40', ['branca'], ['20']), censusCell('3304557', 'RJ', '30', ['branca'], ['10'])],
+    'race/16-17': [censusCell('3550308', 'SP', '4', ['branca'], ['2']), censusCell('3509502', 'SP', '2', ['branca'], ['1']), censusCell('3304557', 'RJ', '2', ['branca'], ['1'])],
+    'internet/15+': [censusCell('3550308', 'SP', '10', ['nao'], ['1']), censusCell('3509502', 'SP', '10', ['nao'], ['1']), censusCell('3304557', 'RJ', '10', ['nao'], ['1'])],
   };
+  censusMunicipalities = ['SP', 'SP', 'RJ'];
   try {
     // Mesmo com a publicação do entorno, o cartão do local não o recebe nem consulta.
     const data = await (await fetch(`${base}/elections/municipalities/71072/place-tracts?uf=SP`)).json();
@@ -430,7 +453,16 @@ test('entorno dos domicílios fora da interface; indicadores do Censo pela idade
     assert.equal((await (await fetch(`${base}/elections/map/values?indicator=religion-none-15&uf=RJ`)).json()).items[0].value, null, 'Célula indisponível não vira zero');
     // Razão entre recortes (16–17 ÷ 16+), sem desvio porque a fonte tem idade simples.
     const young = await (await fetch(`${base}/elections/map/values?indicator=age-16-17&uf=SP`)).json();
-    assert.deepEqual([young.items[0].numerator, young.items[0].denominator, young.items[0].value, young.items[0].deviation], [4, 80, 5, undefined]);
+    const capital = young.items.find((item: { id: string }) => item.id === '3550308');
+    assert.deepEqual([capital.numerator, capital.denominator, capital.value, capital.deviation], [4, 80, 5, undefined]);
+    // Cobertura parcial (uma célula a menos em SP, ou um recorte auxiliar incompleto) é inconsistência, nunca soma publicada.
+    const religionCells = censusCells['religion/15+']!;
+    censusCells['religion/15+'] = religionCells.filter((row) => row.id !== '3509502');
+    assert.equal((await fetch(`${base}/elections/map/values?indicator=religion-evangelical-15&uf=SP`)).status, 503);
+    assert.equal((await fetch(`${base}/elections/map/values?indicator=religion-evangelical-15`)).status, 503, 'UF com soma parcial');
+    censusCells['religion/15+'] = religionCells; censusCells['race/16-17'] = censusCells['race/16-17']!.slice(1);
+    assert.equal((await fetch(`${base}/elections/map/values?indicator=age-16-17&uf=SP`)).status, 503, 'Numerador de outro recorte incompleto');
+    assert.equal((await fetch(`${base}/elections/map/values?indicator=age-16-17&uf=RJ`)).status, 200, 'RJ completo continua respondendo');
     assert.equal((await fetch(`${base}/elections/map/values?indicator=internet-15&uf=SP`)).status, 503, 'Categoria ausente nas células é inconsistência');
     const context = await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).json();
     assert.equal(context.urbanSurroundings, undefined, 'Entorno não é mais enviado'); assert.equal(context.censusIndicators.favela.status, 'not-delimited'); assert.equal(context.censusIndicatorsId, '8'.repeat(64));
@@ -442,7 +474,7 @@ test('entorno dos domicílios fora da interface; indicadores do Censo pela idade
     censusPublished = false;
     assert.equal((await (await fetch(`${base}/elections/map/values?indicator=religion-evangelical-15`)).json()).status, 'awaiting-import');
     assert.equal((await (await fetch(`${base}/elections/municipalities/71072/context?uf=SP`)).json()).censusIndicators, null);
-  } finally { published = false; tractsPublished = false; urbanPublished = false; censusPublished = false; contextPublished = false; tractRows = []; censusCells = {}; }
+  } finally { published = false; tractsPublished = false; urbanPublished = false; censusPublished = false; contextPublished = false; tractRows = []; censusCells = {}; censusMunicipalities = []; }
 });
 
 test('abstenção do mapa usa aptos e turnos do próprio cargo; cargo estadual exige UF; Censo não depende de cargo', async () => {

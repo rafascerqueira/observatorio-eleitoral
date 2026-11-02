@@ -113,20 +113,22 @@ for (const name of browserNames) {
         await page.waitForFunction(() => document.querySelector('[name="uf"]').value === '');
         assert.deepEqual((await page.$$eval('[name="uf"] option', (options) => options.map((item) => item.value))).filter(Boolean).sort(), [...REGION_STATES.NE].sort());
       } else await page.select('[name="uf"]', '');
-      const submit = async () => {
+      // Espera a URL do envio (como no envio dos seis formulários): a rede ociosa sozinha pode terminar antes de a navegação começar.
+      const submit = async (params) => {
         await page.click('form[action="/perfis"] button[type="submit"]');
+        await page.waitForFunction((expected) => Object.entries(expected).every(([key, value]) => new URL(location.href).searchParams.get(key) === value), { timeout: 45000 }, params);
         await page.waitForNetworkIdle({ idleTime: 500, timeout: 45000 });
       };
-      await submit();
+      await submit({ region: 'NE' });
       assert.equal(new URL(page.url()).searchParams.get('region'), 'NE');
       assert.equal(await page.$eval('h1', (element) => element.textContent), 'Resultados por perfil dos locais — Nordeste');
       assert.ok(await page.$('[aria-label="Votos por candidatura em cada grupo"]'));
-      await page.select('[name="indicator"]', 'income-median'); await submit();
+      await page.select('[name="indicator"]', 'income-median'); await submit({ region: 'NE', indicator: 'income-median' });
       assert.equal(new URL(page.url()).searchParams.get('region'), 'NE');
       assert.ok(await page.$('a[href*="radius=250"][href*="region=NE"]'));
       await page.screenshot({ path: resolve(artifactDirectory, `${name}-perfis-regiao-${javascript ? 'js' : 'sem-js'}.png`), fullPage: true });
       if (javascript) {
-        await page.select('[name="uf"]', 'PE'); await submit();
+        await page.select('[name="uf"]', 'PE'); await submit({ uf: 'PE' });
         assert.equal(new URL(page.url()).searchParams.get('uf'), 'PE');
         assert.match(await page.$eval('h1', (element) => element.textContent), /Pernambuco/);
         await page.select('[name="region"]', 'CO');
@@ -205,7 +207,20 @@ for (const name of browserNames) {
       await page.click('#round-1');
       await page.waitForFunction(() => { const field = document.querySelector('#series'); return field && !field.disabled && field.options.length > 3; }, { timeout: 30000 });
       assert.equal(await page.$eval('#series', (field) => field.value), '22');
-      return { options };
+      // Troca de uma UF com 2º turno para outra sem: o turno passa ao 1º e a lista é a do 1º turno, não a do turno anterior.
+      const rounds = [];
+      const listen = (request) => { if (request.url().includes('/mapa/comparacoes')) rounds.push(new URL(request.url()).searchParams.get('round')); };
+      await go(page, '/mapa?year=2026&office=governor&uf=ES&round=2');
+      assert.equal(await page.$eval('[name="round"]:checked', (element) => element.value), '2');
+      page.on('request', listen);
+      await page.select('form[action="/mapa"] [name="uf"]', 'SP');
+      await page.waitForFunction(() => { const field = document.querySelector('#series'); return field && !field.disabled && field.options.length > 1; }, { timeout: 30000 });
+      page.off('request', listen);
+      assert.equal(await page.$eval('[name="round"]:checked', (element) => element.value), '1');
+      assert.equal(rounds.at(-1), '1', 'Última consulta das opções usa o turno efetivo');
+      assert.doesNotMatch(await page.$eval('#series-hint', (hint) => hint.textContent), /não foi realizado/);
+      assert.equal(new URL(page.url()).searchParams.get('uf'), 'ES', 'Trocar a UF não envia o formulário');
+      return { options, automaticRound: rounds };
     });
     await scenario('Participação: município e aviso de turno acompanham UF e ano antes do envio', 'Municípios consultados por GET em /participacao/municipios; trocar o recorte não envia o formulário.', async (page) => {
       const options = () => page.$$eval('#municipality option', (items) => items.map((item) => item.value));

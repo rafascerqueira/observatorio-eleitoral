@@ -287,8 +287,10 @@ if (catalog.censusIndicatorsDatasets?.length) {
   const sao = await json('/elections/municipalities/71072/context?uf=SP');
   assert.equal(sao.censusIndicators.ibgeCode, '3550308'); assert.equal(sao.censusIndicators.favela.status, 'present'); assert.equal(sao.censusIndicatorsId, census.id);
   for (const [path, texts] of [['/municipios/71072?uf=SP&round=1', ['Cor ou raça (IBGE)', 'Religião (IBGE)', 'Trabalho (IBGE)', 'Internet e moradia (IBGE)', 'Saneamento (IBGE)', 'Urbano × rural e favelas (IBGE)', 'Pessoas com deficiência (IBGE)', 'Migração (IBGE)', 'a tabela do IBGE agrupa as idades de 15 a 19 anos']],
-    ['/mapa?indicator=religion-evangelical-15&uf=SP', ['Evangélicas (15+)', 'Desvio máximo em relação a 16+', 'nunca o voto de pessoas de um grupo', 'agrupa as idades de 15 a 19 anos', 'Em exibição: Pessoas de 15 anos ou mais evangélicas', '\nAbstenção — Presidência, 1º turno: ']],
-    ['/mapa?indicator=favela-15', ['Peixe-Boi (PA) fica sem valor']], ['/mapa?indicator=unemployment-18-69&year=2026', ['não é comparável à taxa da PNAD Contínua', 'O Censo é de 2022 e a eleição comparada é de 2026']],
+    // Religião (amostra): a proporção de 15 anos da população residente é só referência; favelas (mesma base da 9606): limite.
+    ['/mapa?indicator=religion-evangelical-15&uf=SP', ['Evangélicas (15+)', 'Pessoas de 15 anos ÷ 15+ na população residente (referência)', 'não um limite garantido', 'nunca o voto de pessoas de um grupo', 'agrupa as idades de 15 a 19 anos', 'Em exibição: Pessoas de 15 anos ou mais evangélicas', '\nAbstenção — Presidência, 1º turno: ']],
+    ['/mapa?indicator=favela-15', ['Peixe-Boi (PA) fica sem valor', 'Desvio máximo em relação a 16+']],
+    ['/municipios/71072?uf=SP&year=2026', ['Dados do Censo 2022 (IBGE), a referência territorial também para a eleição de 2026', 'Religião (IBGE)']], ['/mapa?indicator=unemployment-18-69&year=2026', ['não é comparável à taxa da PNAD Contínua', 'O Censo é de 2022 e a eleição comparada é de 2026']],
     ['/fontes', ['Indicadores do Censo pela idade de voto (IBGE)', 'Soma dos municípios × valor da UF publicado pelo IBGE']], ['/metodologia', ['Indicadores do Censo pela idade de voto', 'Recorte de 15 anos ou mais', 'Entorno dos domicílios (fora da interface)']]]) {
     const page = await html(path);
     for (const text of texts) assert.ok(page.includes(text), `${path}: ${text}`);

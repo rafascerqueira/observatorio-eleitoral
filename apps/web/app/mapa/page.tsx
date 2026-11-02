@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { CENSUS_MAP_INDICATORS, MAP_INDICATORS, mapPageQuerySchema, OFFICES, OFFICE_LABELS, STATES, type MapValues } from '@observatorio/contracts';
+import { age15Basis, CENSUS_MAP_INDICATORS, MAP_INDICATORS, mapPageQuerySchema, OFFICES, OFFICE_LABELS, STATES, type MapValues } from '@observatorio/contracts';
 import { getCandidateMap, getCatalog, getMapGeometry, getMapValues } from '../../lib/results';
 import { QueryForm } from '../../components/query-form';
 import { ErrorSummary, QuerySelect } from '../../components/query-fields';
@@ -59,7 +59,10 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
   const unit = level === 'uf' ? 'UF' : 'município';
   const meta = MAP_INDICATORS[filters.indicator];
   const slice = 'census' in meta ? meta.census.slice : null;
-  // Recorte 15+: maior desvio declarado entre as unidades exibidas (pessoas de 15 anos ÷ 15+).
+  // Recorte 15+: limite do desvio só na mesma população da proporção de 15 anos (9606); nas demais bases, referência.
+  const basis = 'census' in meta ? age15Basis(meta.census.theme) : null;
+  const deviationLabel = basis === 'bound' ? 'Desvio máximo em relação a 16+' : 'Pessoas de 15 anos ÷ 15+ na população residente (referência)';
+  // Maior valor entre as unidades exibidas (pessoas de 15 anos ÷ 15+).
   const deviations = left?.items.flatMap((item) => item.deviation == null ? [] : [item.deviation]) ?? [];
   const maxDeviation = deviations.length ? Math.max(...deviations) : null;
   const group = (value: string) => value === 'Cor ou raça' || value === 'Religião';
@@ -109,7 +112,9 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
             description={`Um ponto por ${unit}; a área do ponto é proporcional aos ${series.weight} (mínimo de 8 px). Os eixos começam em zero.`}
             xLabel={`${meta.label} (%)`} yLabel={series.kind === 'abstention' ? `Abstenção — ${OFFICE_LABELS[filters.office]} (%)` : series.title} /></MapHover>
           <div className="notice scope-notice map-caveats"><p><strong>Como ler.</strong> {series.kind === 'abstention' ? 'Cada mapa tem sua própria escala, em quintis.' : 'O mapa do Censo usa quintis do recorte; o da candidatura usa a escala fixa de “Votação por candidatura”.'} Cores parecidas nos dois mapas, ou pontos alinhados na dispersão, não significam relação de causa, e nada aqui indica o voto de grupos: o Censo descreve quem mora no território; a abstenção e a votação descrevem o eleitorado inscrito ali. A dispersão não traça tendência nem calcula correlação. Municípios extensos e pouco populosos ocupam mais área no mapa do que seu peso em pessoas; na dispersão, o tamanho do ponto mostra esse peso.</p>
-            {slice === '15+' && <p>A tabela do IBGE agrupa as idades de 15 a 19 anos, então a base é de 15 anos ou mais, e não de 16 anos ou mais (a idade mínima para votar). A parcela entre 15+ difere da parcela entre 16+ em no máximo a proporção de pessoas de 15 anos{maxDeviation !== null ? `: até ${points(maxDeviation)} neste recorte` : ''}, na coluna “Desvio máximo” da tabela. Nada é estimado.</p>}
+            {slice === '15+' && (basis === 'bound'
+              ? <p>A tabela do IBGE agrupa as idades de 15 a 19 anos, então a base é de 15 anos ou mais, e não de 16 anos ou mais (a idade mínima para votar). Como a base é a população residente, a parcela entre 15+ difere da parcela entre 16+ em no máximo a proporção de pessoas de 15 anos{maxDeviation !== null ? `: até ${points(maxDeviation)} neste recorte` : ''}, na coluna “Desvio máximo” da tabela. Nada é estimado.</p>
+              : <p>A tabela do IBGE agrupa as idades de 15 a 19 anos, então a base é de 15 anos ou mais, e não de 16 anos ou mais (a idade mínima para votar). A tabela mostra a proporção de pessoas de 15 anos na população residente{maxDeviation !== null ? ` (até ${pct(maxDeviation)} neste recorte)` : ''}, mas este indicador tem outra base ({meta.kind === 'amostra' ? 'estimativa da amostra' : 'moradores em domicílios particulares permanentes ocupados'}), com composição por idade que pode ser diferente: a proporção é só uma referência, não um limite garantido da diferença entre 15+ e 16+. Nada é estimado.</p>)}
             {meta.kind === 'amostra' && <p>Estimativa da amostra do Censo, com erro amostral maior nos municípios pequenos; numerador e denominador vêm da mesma tabela da amostra.</p>}
             {group(meta.group) && <p>{meta.group} descreve a população do território, nunca o voto de pessoas de um grupo: o voto é secreto.</p>}
             {INDICATOR_NOTES[filters.indicator] && <p>{INDICATOR_NOTES[filters.indicator]}</p>}
@@ -118,10 +123,10 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
             <p className="query-note"><a href={exportHref}>Baixar estes dados (CSV)</a>: códigos do TSE e do IBGE, numeradores, denominadores e versões das publicações usadas.</p>
             <div className="table-scroll context-table" role="region" aria-label="Tabela dos mapas" tabIndex={0}><table>
               <caption className="sr-only">Indicador do Censo e {series.kind === 'abstention' ? 'abstenção' : 'votação da candidatura'} por {unit}, com numerador e denominador.</caption>
-              <thead><tr><th scope="col">{level === 'uf' ? 'UF' : 'Município'}</th><th scope="col">{meta.label}</th>{slice === '15+' && <th scope="col">Desvio máximo em relação a 16+</th>}<th scope="col">{series.title}</th></tr></thead>
+              <thead><tr><th scope="col">{level === 'uf' ? 'UF' : 'Município'}</th><th scope="col">{meta.label}</th>{slice === '15+' && <th scope="col">{deviationLabel}</th>}<th scope="col">{series.title}</th></tr></thead>
               <tbody>{rows.map((row) => <tr key={`${row.uf}-${row.code}`}><th scope="row"><Link href={href(row)}>{row.name}</Link></th>
                 <td>{pct(row.census.value)}{row.census.value !== null && <span className="source-note"> · {number(row.census.numerator!)} de {number(row.census.denominator!)}</span>}</td>
-                {slice === '15+' && <td>{row.census.deviation == null ? 'Sem dado' : points(row.census.deviation)}</td>}
+                {slice === '15+' && <td>{row.census.deviation == null ? 'Sem dado' : basis === 'bound' ? points(row.census.deviation) : pct(row.census.deviation)}</td>}
                 <td>{pct(row.series?.value ?? null)}{row.series?.value != null && <span className="source-note"> · {number(row.series.numerator!)} de {number(row.series.denominator!)}</span>}</td></tr>)}</tbody>
             </table></div>
           </details>

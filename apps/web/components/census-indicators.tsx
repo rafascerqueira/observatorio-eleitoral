@@ -1,4 +1,4 @@
-import { percent, type CensusIndicators, type CensusShare } from '@observatorio/contracts';
+import { age15Basis, percent, type CensusIndicators, type CensusShare } from '@observatorio/contracts';
 import { DistributionTable } from './municipality-context';
 
 type Distribution = CensusIndicators['distributions'][keyof CensusIndicators['distributions']][string];
@@ -11,7 +11,7 @@ const KIND_LABEL = { universo: 'Universo do Censo', amostra: 'Estimativa da amos
 
 /**
  * Uma distribuição em vários recortes de idade da mesma tabela: linhas = categorias, colunas = recortes, cada célula com o
- * percentual e a contagem. Recortes 15+ levam o desvio máximo em relação a 16+ (pessoas de 15 anos ÷ 15+), nunca estimado.
+ * percentual e a contagem. Recortes 15+ levam a nota sobre 16+ do tema (limite ou referência, conforme `age15Basis`), nunca estimado.
  */
 function SlicesTable({ title, data, slices, unit }: { title: string; data: Record<string, Distribution>; slices: string[]; unit: string }) {
   const columns = slices.map((slice) => ({ slice, item: data[slice]! }));
@@ -44,7 +44,12 @@ function ShareRows({ title, rows }: { title: string; rows: Array<{ label: string
 export function CensusSections({ data }: { data: CensusIndicators }) {
   const d = data.distributions;
   const deviation = data.age15.age15 !== null && data.age15.age15plus ? data.age15.age15 / data.age15.age15plus * 100 : null;
-  const base15 = <p className="query-note">Recortes de 15 anos ou mais: a tabela do IBGE agrupa as idades de 15 a 19 anos, então não dá para separar quem tem 16 anos ou mais (a idade mínima para votar). Neste município, a parcela entre 15+ difere da parcela entre 16+ em no máximo {deviation === null ? 'um valor indisponível' : `${deviation.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ponto(s) percentual(is)`} (pessoas de 15 anos ÷ 15+). Nada é estimado.</p>;
+  const share15 = deviation === null ? 'indisponível' : `${deviation.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+  const points15 = deviation === null ? 'um valor indisponível' : `${deviation.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ponto(s) percentual(is)`;
+  // Limite demonstrado só na mesma população da 9606 (ver `age15Basis`); nas outras bases, a proporção é só referência.
+  const base15 = (basis: 'bound' | 'reference') => basis === 'bound'
+    ? <p className="query-note">Recortes de 15 anos ou mais: a tabela do IBGE agrupa as idades de 15 a 19 anos, então não dá para separar quem tem 16 anos ou mais (a idade mínima para votar). Como a base é a população residente, a mesma da proporção de pessoas de 15 anos, neste município a parcela entre 15+ difere da parcela entre 16+ em no máximo {points15} (pessoas de 15 anos ÷ 15+). Nada é estimado.</p>
+    : <p className="query-note">Recortes de 15 anos ou mais: a tabela do IBGE agrupa as idades de 15 a 19 anos, então não dá para separar quem tem 16 anos ou mais (a idade mínima para votar). Na população residente do município, as pessoas de 15 anos são {share15} das de 15 anos ou mais; esta tabela tem outra base (amostra ou moradores em domicílios particulares), com composição por idade que pode ser diferente, então essa proporção é só uma referência, não um limite garantido da diferença entre 15+ e 16+. Nada é estimado.</p>;
   const laborForce = d.laborForce, favela = data.favela;
   return <>
     <details className="context-section"><summary>Cor ou raça (IBGE)</summary>
@@ -52,7 +57,7 @@ export function CensusSections({ data }: { data: CensusIndicators }) {
       <SlicesTable title="Pessoas por cor ou raça e idade de voto" data={d.race} slices={['16+', '16-17', '18-69', '70+']} unit="pessoas" />
     </details>
     <details className="context-section"><summary>Religião (IBGE)</summary>
-      <p className="query-note">Religião declarada ao Censo (estimativa da amostra). Descreve a população do município, não o voto de quem segue cada religião.</p>{base15}
+      <p className="query-note">Religião declarada ao Censo (estimativa da amostra). Descreve a população do município, não o voto de quem segue cada religião.</p>{base15(age15Basis('religion'))}
       <SlicesTable title="Pessoas por religião" data={d.religion} slices={['15+', '70+']} unit="pessoas" />
     </details>
     <details className="context-section"><summary>Escolaridade e alfabetização pela idade de voto (IBGE)</summary>
@@ -70,32 +75,32 @@ export function CensusSections({ data }: { data: CensusIndicators }) {
       <DistributionTable title="Ocupados por rendimento de todos os trabalhos (salário mínimo de R$ 1.212,00)" data={d.workIncome['14+']!} unit="Ocupados" />
     </details>
     <details className="context-section"><summary>Internet e moradia (IBGE)</summary>
-      <p className="query-note">Moradores em domicílios particulares permanentes ocupados (estimativa da amostra). Descreve o domicílio de quem mora no município.</p>{base15}
+      <p className="query-note">Moradores em domicílios particulares permanentes ocupados (estimativa da amostra). Descreve o domicílio de quem mora no município.</p>{base15(age15Basis('internet'))}
       <SlicesTable title="Conexão domiciliar à internet" data={d.internet} slices={['15+', '70+']} unit="moradores" />
       <SlicesTable title="Condição de ocupação do domicílio" data={d.tenure} slices={['15+', '70+']} unit="moradores" />
       <SlicesTable title="Moradores por cômodo usado como dormitório" data={d.crowding} slices={['15+', '70+']} unit="moradores" />
     </details>
     <details className="context-section"><summary>Saneamento (IBGE)</summary>
-      <p className="query-note">Moradores em domicílios particulares permanentes ocupados (universo do Censo).</p>{base15}
+      <p className="query-note">Moradores em domicílios particulares permanentes ocupados (universo do Censo).</p>{base15(age15Basis('water'))}
       <DistributionTable title="Abastecimento de água (moradores de 15 anos ou mais)" data={d.water['15+']!} unit="Moradores" />
       <DistributionTable title="Esgotamento sanitário (moradores de 15 anos ou mais)" data={d.sewage['15+']!} unit="Moradores" />
       <DistributionTable title="Banheiro ou sanitário (moradores de 15 anos ou mais)" data={d.bathroom['15+']!} unit="Moradores" />
       <DistributionTable title="Destino do lixo (moradores de 15 anos ou mais)" data={d.garbage['15+']!} unit="Moradores" />
     </details>
     <details className="context-section"><summary>Urbano × rural e favelas (IBGE)</summary>
-      <p className="query-note">Situação do domicílio e favelas e comunidades urbanas delimitadas pelo IBGE (universo do Censo).</p>{base15}
+      <p className="query-note">Situação do domicílio e favelas e comunidades urbanas delimitadas pelo IBGE (universo do Censo).</p>{base15(age15Basis('urbanRural'))}
       <SlicesTable title="Pessoas por situação do domicílio" data={d.urbanRural} slices={['15+', '70+']} unit="pessoas" />
       {favela.status === 'present' && <ShareRows title={`Favelas e comunidades urbanas (${number(favela.favelas)} no município)`} rows={[{ label: SLICE_LABEL['15+']!, share: favela['15+'] }]} />}
       {favela.status === 'not-delimited' && <p className="query-note">Nenhuma favela ou comunidade urbana delimitada pelo IBGE neste município: ele não aparece nas tabelas de favelas, e os setores censitários confirmam (zero conferido).</p>}
       {favela.status === 'divergent' && <p className="notice">{favela.note}</p>}
     </details>
     <details className="context-section"><summary>Pessoas com deficiência (IBGE)</summary>
-      <p className="query-note">No Censo 2022, pessoa com deficiência é quem declarou ter muita dificuldade ou não conseguir de modo algum em ao menos um dos tipos abaixo (estimativa da amostra). A parcela cresce muito com a idade.</p>{base15}
+      <p className="query-note">No Censo 2022, pessoa com deficiência é quem declarou ter muita dificuldade ou não conseguir de modo algum em ao menos um dos tipos abaixo (estimativa da amostra). A parcela cresce muito com a idade.</p>{base15(age15Basis('disability'))}
       <ShareRows title="Pessoas com deficiência" rows={[{ label: SLICE_LABEL['15+']!, share: data.disability['15+'] }, { label: SLICE_LABEL['70+']!, share: data.disability['70+'] }]} />
       <ShareRows title="Por tipo de dificuldade (2 anos ou mais; a tabela não separa por idade; uma pessoa pode ter mais de um tipo)" rows={data.disability.types.map((type) => ({ label: type.label, share: type }))} />
     </details>
     <details className="context-section"><summary>Migração (IBGE)</summary>
-      <p className="query-note">Quem mudou de município pode manter o título de eleitor no município anterior, o que ajuda a ler a diferença entre cadastro e população. Estimativas da amostra; a base é a da mesma amostra.</p>{base15}
+      <p className="query-note">Quem mudou de município pode manter o título de eleitor no município anterior, o que ajuda a ler a diferença entre cadastro e população. Estimativas da amostra; a base é a da mesma amostra.</p>{base15(age15Basis('migration'))}
       <ShareRows title="Não moravam no município 5 anos antes" rows={[{ label: SLICE_LABEL['15+']!, share: data.migration['15+'] }, { label: SLICE_LABEL['70+']!, share: data.migration['70+'] }]} />
       <DistributionTable title="Tempo de residência de quem mora há menos de 10 anos no município" data={d.residenceTime.all!} unit="Pessoas" />
     </details>

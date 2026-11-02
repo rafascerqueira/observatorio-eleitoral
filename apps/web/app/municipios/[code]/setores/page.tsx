@@ -21,7 +21,7 @@ export default async function TractMapPage({ params, searchParams }: { params: P
   const { uf, year, view } = parsed.data;
   const [result, context] = await Promise.all([getTractMap(code, uf, year, view), getContext(code, uf, year)]);
   if (result.kind === 'missing') notFound();
-  const name = context?.kind === 'ready' && context.data.status === 'published' ? context.data.item.name : `Município TSE ${code}`;
+  const name = context?.kind === 'ready' && (context.data.status === 'published' || context.data.status === 'territorial') ? context.data.item.name : `Município TSE ${code}`;
   const backHref = `/municipios/${code}?${new URLSearchParams({ uf, year })}`;
   const hero = <section className="hero places-hero"><p className="eyebrow">SETORES CENSITÁRIOS E LOCAIS DE VOTAÇÃO</p><h1>{name} / {uf}</h1>
     <p className="hero-description">Censo 2022 (IBGE) e cadastro de locais do TSE (1º turno de 2022).</p><Link className="text-link" href={backHref}>← Voltar ao município</Link></section>;

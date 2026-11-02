@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CENSUS_THEMES, censusIndicatorsSchema, contextDistributionSchema, MAP_INDICATORS } from '@observatorio/contracts';
-import { buildDistribution, categoryKey, DISTRIBUTIONS, FAVELA_DIVERGENCES, favelaStatus, sliceCount, sliceValue, specCoverageErrors, ufTolerance } from '../src/census-indicators-model';
+import { buildDistribution, categoryKey, cellCoverageErrors, DISTRIBUTIONS, expectedCellCounts, FAVELA_DIVERGENCES, favelaStatus, sliceCount, sliceValue, specCoverageErrors, ufTolerance } from '../src/census-indicators-model';
 
 test('cada tema e recorte dos contratos tem exatamente uma especificação no importador', () => {
   assert.deepEqual(specCoverageErrors(), []);
@@ -76,4 +76,20 @@ test('cada categoria pedida pelo mapa existe na especificação da tabela que a 
     const spec = DISTRIBUTIONS.find((entry) => entry.theme === census.theme)!;
     for (const category of census.keys) assert.ok(spec.categories.map(categoryKey).includes(category), `${key}: ${category}`);
   }
+});
+
+test('células derivadas: completude exigida por tema e recorte, sem aceitar uma célula como lote inteiro', () => {
+  const distribution = { kind: 'universo', source: 's', total: 1, categories: [{ key: 'a', label: 'A', value: 1 }] } as const;
+  const item = { distributions: Object.fromEntries(Object.entries(CENSUS_THEMES).map(([theme, slices]) => [theme, Object.fromEntries(slices.map((slice) => [slice, distribution]))])),
+    disability: { types: [{ key: 'ver', label: 'Ver', kind: 'amostra', source: 's', numerator: 1, denominator: 2 }] } } as unknown as Parameters<typeof expectedCellCounts>[0][number];
+  const expected = expectedCellCounts([item, item, item]);
+  const slices = Object.values(CENSUS_THEMES).reduce((sum, list) => sum + list.length, 0);
+  assert.equal(expected.size, slices + 6 + 1, 'distribuições, seis parcelas e tipos de deficiência');
+  assert.ok([...expected.values()].every((n) => n === 3));
+  const complete = [...expected].map(([key, n]) => ({ theme: key.split('|')[0]!, slice: key.split('|')[1]!, n }));
+  assert.deepEqual(cellCoverageErrors(expected, complete), []);
+  assert.equal(cellCoverageErrors(expected, [{ theme: 'race', slice: '16+', n: 1 }]).length, expected.size, 'uma célula não é lote completo');
+  assert.deepEqual(cellCoverageErrors(expected, complete.map((row) => row.theme === 'religion' && row.slice === '70+' ? { ...row, n: 2 } : row)), ['religion 70+: 2 de 3 municípios']);
+  assert.deepEqual(cellCoverageErrors(expected, [...complete, { theme: 'race', slice: '99+', n: 3 }]), ['race 99+: 3 células sem item correspondente']);
+  assert.ok(!expectedCellCounts([{ ...item, disability: { ...item.disability, types: [] } }]).has('disabilityTypes|2+'), 'sem tipos, sem linha (como a consulta)');
 });

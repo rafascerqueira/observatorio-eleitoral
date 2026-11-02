@@ -53,10 +53,13 @@ async function run() {
     const byMunicipality = new Map<string, Municipality>(); let read = 0;
     const entry = entries(tracts.path).find((name) => name.toLowerCase().endsWith('.csv'));
     if (!entry) throw new Error('Sem CSV no agregado de demografia.');
+    const seen = new Set<string>();
     for await (const row of rows(tracts.path, entry)) {
       read++;
       const setor = row.CD_SETOR ?? row.CD_setor ?? '';
       if (!/^\d{15}$/.test(setor)) throw new Error(`Código de setor inválido: ${setor}.`);
+      if (seen.has(setor)) throw new Error(`Setor repetido: ${setor}.`);
+      seen.add(setor);
       const code = setor.slice(0, 7);
       if (!contextOf.has(code)) throw new Error(`Setor ${setor} de município fora do contexto publicado.`);
       const item = byMunicipality.get(code) ?? { residents: 0, undisclosed: 0, indicators: Object.fromEntries(INDICATORS.map((indicator) => [indicator, emptyPopulation()])) as Municipality['indicators'] };

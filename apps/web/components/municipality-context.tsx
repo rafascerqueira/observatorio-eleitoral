@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { contextDistributionSchema, percent, type CensusIndicators, type IncomeBandPopulation, type MunicipalityContext } from '@observatorio/contracts';
+import { contextDistributionSchema, percent, type CensusIndicators, type IncomeBandPopulation, type MunicipalityContext, type TerritorialContext } from '@observatorio/contracts';
 import { bandName, bandRange, residentsShare } from '../lib/income-bands';
 import { CensusSections } from './census-indicators';
 
@@ -54,42 +54,59 @@ function IncomeBandsTable({ data }: { data: IncomeBandPopulation }) {
 
 const DIMENSION_LABEL = { age: 'Idade', education: 'Escolaridade declarada', gender: 'Gênero', maritalStatus: 'Estado civil' } as const;
 
-/** Contexto do município: o que descreve o território (IBGE) separado do que descreve o eleitorado (TSE). Nada é atribuído a eleitores individualmente. */
-export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands, censusIndicators }: { item: MunicipalityContext; round: '1' | '2'; sourcesHref: string; incomeBands?: IncomeBandPopulation | null; censusIndicators?: CensusIndicators | null }) {
-  const turnout = item.turnout[round];
-  const resultsEligible = item.resultsEligible[round];
-  const difference = resultsEligible === null ? null : item.electorate.eligible - resultsEligible;
+/**
+ * Contexto do município: o que descreve o território (IBGE) separado do que descreve o eleitorado (TSE). Nada é atribuído a eleitores
+ * individualmente. Em eleição de outro ano (`TerritorialContext`, 2026), o Censo 2022 continua como referência territorial e as partes
+ * do TSE, que no contexto são de 2022, não aparecem: a página indica onde estão os perfis do próprio ano.
+ */
+export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands, censusIndicators, electionYear = '2022' }: { item: MunicipalityContext | TerritorialContext; round: '1' | '2'; sourcesHref: string; incomeBands?: IncomeBandPopulation | null; censusIndicators?: CensusIndicators | null; electionYear?: string }) {
+  const electoral = 'electorate' in item ? item : null;
+  const turnout = electoral?.turnout[round] ?? null;
+  const resultsEligible = electoral?.resultsEligible[round] ?? null;
+  const difference = !electoral || resultsEligible === null ? null : electoral.electorate.eligible - resultsEligible;
   const ages = item.populationByAge.categories;
+  const optionalAge = (key: string) => ['a16', 'a17'].includes(key) || ['a70-74', 'a75-79', 'a80-84', 'a85-89', 'a90-94', 'a95-99', 'a100+'].includes(key);
+  const participation = `/participacao?year=${electionYear}&uf=${item.uf}&municipality=${item.code}&round=${round}#participacao`;
   return <section className="explorer context-panel" aria-labelledby="contexto-titulo">
-    <div className="section-heading"><div><p className="eyebrow">TERRITÓRIO E ELEITORADO</p><h2 id="contexto-titulo">Contexto de {item.name} / {item.uf}</h2></div>
+    <div className="section-heading"><div><p className="eyebrow">{electoral ? 'TERRITÓRIO E ELEITORADO' : 'TERRITÓRIO'}</p><h2 id="contexto-titulo">Contexto de {item.name} / {item.uf}</h2></div>
       <Link className="text-link" href="/metodologia#contexto">Como ler <span aria-hidden="true">↗</span></Link></div>
-    <p className="query-note context-intro">Dados do Censo 2022 (IBGE) descrevem quem mora no município; o cadastro e o comparecimento do TSE descrevem o eleitorado. Nenhuma fonte informa como votou cada grupo: o voto é secreto. Código IBGE {item.ibgeCode}{item.ibgeName.localeCompare(item.name, 'pt-BR', { sensitivity: 'base' }) !== 0 ? ` (nome no IBGE: ${item.ibgeName})` : ''}.</p>
+    {electoral ? <p className="query-note context-intro">Dados do Censo 2022 (IBGE) descrevem quem mora no município; o cadastro e o comparecimento do TSE descrevem o eleitorado. Nenhuma fonte informa como votou cada grupo: o voto é secreto. Código IBGE {item.ibgeCode}{item.ibgeName.localeCompare(item.name, 'pt-BR', { sensitivity: 'base' }) !== 0 ? ` (nome no IBGE: ${item.ibgeName})` : ''}.</p>
+      : <p className="query-note context-intro">Dados do Censo 2022 (IBGE), a referência territorial também para a eleição de {electionYear}: descrevem quem mora no município, não os eleitores. O cadastro e o comparecimento por perfil do TSE guardados neste contexto são de 2022 e não aparecem aqui; o comparecimento por perfil de {electionYear} está em <Link href={participation}>Participação</Link>. Código IBGE {item.ibgeCode}{item.ibgeName.localeCompare(item.name, 'pt-BR', { sensitivity: 'base' }) !== 0 ? ` (nome no IBGE: ${item.ibgeName})` : ''}.</p>}
     <dl className="totals-grid">
       {([
         ['População residente', number(item.population.total), 'Censo 2022, universo'],
         ['População de 16 anos ou mais', number(item.population.age16plus), 'idade mínima para votar'],
-        ['Eleitores aptos no cadastro', number(item.electorate.eligible), 'perfil do eleitorado, TSE'],
-        ['Cadastro ÷ população de 16+', rate(share(item.electorate.eligible, item.population.age16plus)), 'fontes e datas diferentes'],
+        ...(electoral ? [['Eleitores aptos no cadastro', number(electoral.electorate.eligible), 'perfil do eleitorado, TSE'],
+          ['Cadastro ÷ população de 16+', rate(share(electoral.electorate.eligible, item.population.age16plus)), 'fontes e datas diferentes']] as const : []),
         ['Rendimento domiciliar per capita mediano', money(item.incomePerCapita.median), item.incomePerCapita.median === null ? 'estimativa da amostra' : `${(item.incomePerCapita.median / MINIMUM_WAGE).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} salário mínimo (R$ 1.212,00) · amostra`],
         censusIndicators ? ['Não alfabetizadas (16 anos ou mais)', rate(share(censusIndicators.distributions.literacy['16+']?.categories.find((entry) => entry.key === 'nao-alfabetizadas')?.value ?? null, censusIndicators.distributions.literacy['16+']?.total ?? null)), 'Censo 2022, universo']
           : ['Alfabetização (15 anos ou mais)', rate(share(item.literacy15.categories.find((entry) => entry.key === 'literate')?.value ?? null, item.literacy15.total)), 'Censo 2022, universo'],
       ] as const).map(([label, value, detail]) => <div key={label}><dt>{label}</dt><dd>{value}<span className="totals-detail">{detail}</span></dd></div>)}
     </dl>
-    <p className="notice scope-notice">O cadastro do TSE é uma base própria: soma {number(item.electorate.eligible)} eleitores aptos, enquanto os resultados do {round}º turno registram {number(resultsEligible)}{difference ? ` (diferença de ${number(Math.abs(difference))})` : ''}. Domicílio eleitoral não é residência: a razão entre cadastro e população pode passar de 100% sem indicar irregularidade. <Link href={sourcesHref}>Fontes e cobertura</Link>.</p>
+    {electoral && <p className="notice scope-notice">O cadastro do TSE é uma base própria: soma {number(electoral.electorate.eligible)} eleitores aptos, enquanto os resultados do {round}º turno registram {number(resultsEligible)}{difference ? ` (diferença de ${number(Math.abs(difference))})` : ''}. Domicílio eleitoral não é residência: a razão entre cadastro e população pode passar de 100% sem indicar irregularidade. <Link href={sourcesHref}>Fontes e cobertura</Link>.</p>}
 
-    <details className="context-section" open><summary>Eleitorado e população por idade</summary>
+    {electoral ? <details className="context-section" open><summary>Eleitorado e população por idade</summary>
       <div className="table-scroll context-table" role="region" aria-label="Eleitorado e população por idade" tabIndex={0}><table>
         <caption><span className="context-caption">Por faixa etária</span> <Kind kind="universo" /> <Kind kind="cadastro" /> <span className="source-note">População: SIDRA 9514; eleitores: perfil do eleitorado 2022</span></caption>
         <thead><tr><th scope="col">Faixa</th><th scope="col">População (IBGE)</th><th scope="col">Eleitores aptos (TSE)</th><th scope="col">Cadastro ÷ população</th></tr></thead>
-        <tbody>{ages.map((band) => { const electors = item.electorate.age.categories.find((entry) => entry.key === band.key)?.value ?? null; return <tr key={band.key}><th scope="row">{band.label}{['a16', 'a17'].includes(band.key) || ['a70-74', 'a75-79', 'a80-84', 'a85-89', 'a90-94', 'a95-99', 'a100+'].includes(band.key) ? <span className="source-note"> · voto facultativo</span> : null}</th><td>{number(band.value)}</td><td>{number(electors)}</td><td>{rate(share(electors, band.value))}</td></tr>; })}
-          {item.electorate.age.categories.filter((entry) => ['invalid', 'not-informed'].includes(entry.key) && entry.value).map((entry) => <tr key={entry.key}><th scope="row">{entry.label}</th><td>—</td><td>{number(entry.value)}</td><td>—</td></tr>)}</tbody>
+        <tbody>{ages.map((band) => { const electors = electoral.electorate.age.categories.find((entry) => entry.key === band.key)?.value ?? null; return <tr key={band.key}><th scope="row">{band.label}{optionalAge(band.key) ? <span className="source-note"> · voto facultativo</span> : null}</th><td>{number(band.value)}</td><td>{number(electors)}</td><td>{rate(share(electors, band.value))}</td></tr>; })}
+          {electoral.electorate.age.categories.filter((entry) => ['invalid', 'not-informed'].includes(entry.key) && entry.value).map((entry) => <tr key={entry.key}><th scope="row">{entry.label}</th><td>—</td><td>{number(entry.value)}</td><td>—</td></tr>)}</tbody>
       </table></div>
       <p className="query-note">Por faixa, o cadastro pode superar a população sem indicar erro de cálculo: o eleitor vota onde mantém o domicílio eleitoral (por exemplo, o município de origem), não necessariamente onde mora, e o cadastro pode manter registros de pessoas que o Censo já não conta no município. As idades também têm referências diferentes: o Censo as conta em 31/07/2022 e o arquivo do TSE não informa a data, o que pesa mais nas faixas de um ano (16 a 20).</p>
     </details>
+      : <details className="context-section" open><summary>População por idade (IBGE)</summary>
+        <div className="table-scroll context-table" role="region" aria-label="População por idade" tabIndex={0}><table>
+          <caption><span className="context-caption">Por faixa etária</span> <Kind kind="universo" /> <span className="source-note">IBGE, Censo 2022 — SIDRA 9514</span></caption>
+          <thead><tr><th scope="col">Faixa</th><th scope="col">População</th></tr></thead>
+          <tbody>{ages.map((band) => <tr key={band.key}><th scope="row">{band.label}</th><td>{number(band.value)}</td></tr>)}</tbody>
+        </table></div>
+        <p className="query-note">Idades em 31/07/2022, data de referência do Censo, sem atualização para {electionYear}: as faixas não correspondem às idades de quem votou nesta eleição, e nada foi estimado ou reponderado.</p>
+      </details>}
 
+    {electoral && <>
     <details className="context-section" open><summary>Comparecimento e abstenção por perfil — {round}º turno</summary>
       {turnout === null ? <p className="notice">O arquivo de comparecimento por perfil do TSE de 2022 não traz esta UF. Não disponível — não é zero.</p> : <>
-        <p className="query-note">Base própria do TSE: {number(turnout.eligible)} aptos, {number(turnout.turnout)} comparecimentos. Abstenção do grupo ÷ aptos do grupo, no próprio arquivo; abstenção não indica motivação. <Link href={`/participacao?uf=${item.uf}&municipality=${item.code}&round=${round}#participacao`}>Cruzar dois perfis deste município (por exemplo, faixa etária × gênero)</Link>.</p>
+        <p className="query-note">Base própria do TSE: {number(turnout.eligible)} aptos, {number(turnout.turnout)} comparecimentos. Abstenção do grupo ÷ aptos do grupo, no próprio arquivo; abstenção não indica motivação. <Link href={participation}>Cruzar dois perfis deste município (por exemplo, faixa etária × gênero)</Link>.</p>
         {turnout.dimensions.map((dimension) => <div key={dimension.dimension} className="table-scroll context-table" role="region" aria-label={`Comparecimento por ${DIMENSION_LABEL[dimension.dimension].toLowerCase()}`} tabIndex={0}><table>
           <caption><span className="context-caption">{DIMENSION_LABEL[dimension.dimension]}</span> <Kind kind="cadastro" /> <span className="source-note">TSE, comparecimento e abstenção por perfil 2022</span></caption>
           <thead><tr><th scope="col">Grupo</th><th scope="col">Aptos</th><th scope="col">Comparecimento</th><th scope="col">Abstenção</th><th scope="col">% de abstenção</th></tr></thead>
@@ -100,15 +117,19 @@ export function MunicipalityContextPanel({ item, round, sourcesHref, incomeBands
 
     <details className="context-section"><summary>Eleitorado por gênero e estado civil (TSE)</summary>
       <p className="query-note">Cadastro eleitoral: gênero e estado civil declarados ao TSE; o estado civil é o do alistamento ou da última atualização e pode estar desatualizado. Esta página não traz um dado do Censo equivalente para comparar.</p>
-      <DistributionTable title="Gênero dos eleitores aptos" data={item.electorate.gender} unit="Eleitores" />
-      <DistributionTable title="Estado civil dos eleitores aptos" data={item.electorate.maritalStatus} unit="Eleitores" />
+      <DistributionTable title="Gênero dos eleitores aptos" data={electoral.electorate.gender} unit="Eleitores" />
+      <DistributionTable title="Estado civil dos eleitores aptos" data={electoral.electorate.maritalStatus} unit="Eleitores" />
     </details>
+    </>}
 
-    <details className="context-section"><summary>Escolaridade: eleitorado (TSE) e população de 18+ (IBGE)</summary>
+    {electoral ? <details className="context-section"><summary>Escolaridade: eleitorado (TSE) e população de 18+ (IBGE)</summary>
       <p className="query-note">As duas fontes usam classificações diferentes e não são comparáveis linha a linha: a do TSE é a escolaridade declarada no alistamento, que pode estar desatualizada; a do IBGE é o nível de instrução estimado pela amostra do Censo.</p>
-      <DistributionTable title="Escolaridade declarada dos eleitores aptos" data={item.electorate.education} unit="Eleitores" />
+      <DistributionTable title="Escolaridade declarada dos eleitores aptos" data={electoral.electorate.education} unit="Eleitores" />
       <DistributionTable title="Nível de instrução da população de 18 anos ou mais" data={item.education18} unit="Pessoas" />
     </details>
+      : <details className="context-section"><summary>Nível de instrução da população de 18+ (IBGE)</summary>
+        <DistributionTable title="Nível de instrução da população de 18 anos ou mais" data={item.education18} unit="Pessoas" />
+      </details>}
 
     <details className="context-section"><summary>Rendimento domiciliar per capita (IBGE)</summary>
       <p className="query-note">Moradores de domicílios particulares permanentes por classes de rendimento domiciliar per capita, em salários mínimos de R$ 1.212,00 (vigente em julho de 2022). Média {money(item.incomePerCapita.mean)} · mediana {money(item.incomePerCapita.median)}. É o rendimento de quem mora no município, não dos eleitores.</p>

@@ -9,7 +9,11 @@ import { useFormSelection } from './use-form-selection';
 
 const asOffice = (value: string): Office => (OFFICES as readonly string[]).includes(value) ? value as Office : 'president';
 
-/** Mostra só os turnos realizados no recorte; ao mudar cargo ou UF no navegador, recompõe o campo e avisa a troca. */
+/**
+ * Mostra só os turnos realizados no recorte; ao mudar cargo ou UF no navegador, recompõe o campo e avisa a troca. A troca automática
+ * para o 1º turno é emitida como mudança do formulário, para os demais campos (ex.: “Comparar com” do mapa) lerem o turno efetivo,
+ * e não o anterior à remontagem; depois dela, o 1º turno fica escolhido até a pessoa trocar.
+ */
 export function RoundField({ availability, office, uf, value, errors, prefix = '', year = '2022' }: {
   availability: RoundAvailability; office: string; uf: string; value: string; errors: QueryError[]; prefix?: string; year?: string;
 }) {
@@ -18,12 +22,17 @@ export function RoundField({ availability, office, uf, value, errors, prefix = '
   const options = roundOptions(availability, asOffice(selection.office), selection.uf || undefined, selection.year);
   const unavailable = ['1', '2'].includes(selection.round) && !options.rounds.includes(selection.round as '1' | '2');
   const [announcement, setAnnouncement] = useState('');
-  const first = useRef(true);
+  const mounted = useRef(false);
+  const roundsKey = options.rounds.join(',');
   useEffect(() => {
-    if (first.current) { first.current = false; return; }
-    // O aviso só descreve a troca automática atual; some quando o recorte volta a ter os dois turnos.
-    setAnnouncement(unavailable ? 'Este recorte não tem 2º turno; o 1º turno foi selecionado.' : '');
-  }, [unavailable, options.rounds.length]);
+    if (unavailable) {
+      // Os radios remontados já marcam o 1º turno; a mudança emitida faz todos os consumidores do formulário relerem o turno.
+      anchor.current?.querySelector<HTMLInputElement>('input[name="round"]:checked')?.dispatchEvent(new Event('change', { bubbles: true }));
+      // Sem aviso no carregamento (endereço antigo com round=2): só a troca feita no navegador é anunciada.
+      if (mounted.current) setAnnouncement('Este recorte não tem 2º turno; o 1º turno foi selecionado.');
+    } else if (options.rounds.length > 1) setAnnouncement('');
+    mounted.current = true;
+  }, [unavailable, roundsKey, options.rounds.length]);
   // Turno indisponível (inclusive em endereço antigo com round=2) passa ao 1º; valor inválido continua visível como erro.
   const current = unavailable ? '1' : selection.round;
   return <div ref={anchor} className="round-slot">

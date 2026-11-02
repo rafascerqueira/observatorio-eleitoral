@@ -7,7 +7,7 @@ import { censusIndicatorsDatasetSchema, censusIndicatorsSchema, FAVELA_STATUSES,
 import { entries, rows } from './csv';
 import { ROOT } from './sources';
 import { preservedDownload, sidraValue, type PreservedSource } from './sidra';
-import { buildDistribution, categoryKey, DISABILITY, DISABILITY_TYPES, DISTRIBUTIONS, FAVELA, FAVELA_DIVERGENCES, favelaStatus, MIGRATION, sliceCount, sliceValue, specCoverageErrors, ufTolerance, type Kind, type Slice } from './census-indicators-model';
+import { buildDistribution, categoryKey, cellCoverageErrors, DISABILITY, DISABILITY_TYPES, DISTRIBUTIONS, FAVELA, FAVELA_DIVERGENCES, expectedCellCounts, favelaStatus, MIGRATION, sliceCount, sliceValue, specCoverageErrors, ufTolerance, type Kind, type Slice } from './census-indicators-model';
 
 /**
  * Indicadores do Censo 2022 pela idade de voto (docs/plano-indicadores-censo-2022.md): 23 tabelas da SIDRA por município, em
@@ -243,15 +243,30 @@ async function run() {
     // 7. Publicação atômica, idempotente pelos originais.
     const id = publicationId(VERSION, sources.map((source) => source.sha256), inputs);
     for (const source of sources) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [source.sha256, source.file, source.sizeBytes ?? 0]);
-    // Células derivadas (migração 022): leitura rápida por tema e recorte na API; idempotente, recalculada se faltar.
-    const cellsFor = async (batch: string) => {
+    // Células derivadas (migração 022): leitura rápida por tema e recorte na API. Cada tema e recorte precisa de uma célula por
+    // município gravado; cobertura parcial nunca é aceita como trabalho concluído.
+    const expectedCells = expectedCellCounts(items);
+    const cellErrors = async (batch: string) => {
       const exists = (await client.query<{ registry: string | null }>("SELECT to_regclass('public.census_indicator_cells')::text AS registry")).rows[0]?.registry;
-      if (exists && (await client.query('SELECT 1 FROM census_indicator_cells WHERE batch_id=$1 LIMIT 1', [batch])).rows.length) return;
-      await client.query(await readFile(resolve(__dirname, 'migrations/022-census-indicator-cells.sql'), 'utf8'));
-      const derived = (await client.query<{ n: number }>("SELECT count(*)::int AS n FROM census_indicator_cells WHERE batch_id=$1 AND theme='race' AND slice='16+'", [batch])).rows[0]!;
-      if (derived.n !== 5570) throw new Error(`Células derivadas incompletas (${derived.n} municípios).`);
+      if (!exists) return ['tabela census_indicator_cells ausente'];
+      return cellCoverageErrors(expectedCells, (await client.query<{ theme: string; slice: string; n: number }>('SELECT theme, slice, count(*)::int AS n FROM census_indicator_cells WHERE batch_id=$1 GROUP BY theme, slice', [batch])).rows);
     };
-    if (await reusePublished(client, { id, scope: SCOPE, inputs })) { await cellsFor(id); console.log(`Já publicado: ${id}. Nenhuma duplicação.`); return; }
+    // Dentro de uma transação: a migração é idempotente (ON CONFLICT DO NOTHING) e só completa o que falta.
+    const fillCells = async (batch: string) => {
+      await client.query(await readFile(resolve(__dirname, 'migrations/022-census-indicator-cells.sql'), 'utf8'));
+      const errors = await cellErrors(batch);
+      if (errors.length) throw new Error(`Células derivadas incompletas: ${errors.slice(0, 5).join('; ')}${errors.length > 5 ? ` (e mais ${errors.length - 5})` : ''}. Publicação bloqueada.`);
+    };
+    if (await reusePublished(client, { id, scope: SCOPE, inputs })) {
+      // Retomada: confere a completude e, se faltar algo, completa e confere de novo antes de aceitar.
+      const missing = await cellErrors(id);
+      if (missing.length) {
+        console.log(`Já publicado, com células derivadas incompletas (${missing.length} tema(s)/recorte(s)); completando.`);
+        await client.query('BEGIN');
+        try { await fillCells(id); await client.query('COMMIT'); } catch (error) { await client.query('ROLLBACK'); throw error; }
+      }
+      console.log(`Já publicado: ${id}. Nenhuma duplicação.`); return;
+    }
     const sizes = sources.reduce((sum, source) => sum + (source.sizeBytes ?? 0), 0);
     const dataset = censusIndicatorsDatasetSchema.parse({ id, kind: 'census-indicators', year: 2022, importedAt: new Date().toISOString(), importerVersion: VERSION, inputs, sources,
       scope: 'Indicadores do Censo 2022 por município pela idade de voto: cor ou raça, religião, escolaridade, alfabetização, trabalho, internet e moradia, saneamento, urbano × rural, favelas, deficiência e migração (SIDRA, 23 tabelas), cada um com a base da própria tabela.',
@@ -276,10 +291,12 @@ async function run() {
       }
       const stored = (await client.query<{ n: number }>('SELECT count(*)::int AS n FROM census_indicators WHERE batch_id=$1', [id])).rows[0]!;
       if (stored.n !== items.length) throw new Error('Indicadores gravados não conferem.');
+      // Células completas antes da troca pública, na mesma transação: uma falha aqui preserva a publicação anterior.
+      if ((await client.query<{ registry: string | null }>("SELECT to_regclass('public.census_indicator_cells')::text AS registry")).rows[0]?.registry) await client.query('DELETE FROM census_indicator_cells WHERE batch_id=$1', [id]);
+      await fillCells(id);
       await preparePublication(client, { id, scope: SCOPE, inputs, report: { dataset, elapsedSeconds: Math.round((performance.now() - started) / 1000) } });
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
-    await cellsFor(id);
     console.log(JSON.stringify({ published: id, scope: SCOPE, totals: dataset.totals, ufChecks, originalsBytes: sizes, elapsedSeconds: Math.round((performance.now() - started) / 1000) }, null, 2));
   } finally { client.release(); await db.end(); }
 }

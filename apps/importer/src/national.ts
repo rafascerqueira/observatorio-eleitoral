@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises';
+import { checkAuditReport } from './publication';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { config } from 'dotenv';
@@ -114,8 +115,9 @@ async function run() {
     await client.query(await readFile(resolve(__dirname, 'migrations/004-national-section-lookup.sql'), 'utf8'));
     await client.query(await readFile(resolve(__dirname, 'migrations/005-search-trigram.sql'), 'utf8'));
     for (const file of files) await client.query('INSERT INTO original_sources VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [file.sha256, file.file, file.sizeBytes]);
-    const existing = await client.query('SELECT published FROM import_batches WHERE id=$1', [id]);
-    if (existing.rows[0]?.published) { console.log(`Já publicado: ${id}; originais e checksums conferidos. Nenhuma duplicação.`); return; }
+    const existing = await client.query<{ published: boolean; metadata: { id: string; [key: string]: unknown } }>('SELECT published, metadata FROM import_batches WHERE id=$1', [id]);
+    // Já publicado: o relatório da rota pública precisa existir com os mesmos metadados do banco.
+    if (existing.rows[0]?.published) { await checkAuditReport(id, existing.rows[0].metadata); console.log(`Já publicado: ${id}; originais, checksums e relatório conferidos. Nenhuma duplicação.`); return; }
     const { directory, manifest } = await stage(id, files, scope);
     const territories: Record<string, Territory> = {};
     for (const item of Object.values(manifest.territories)) {

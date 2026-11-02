@@ -83,14 +83,21 @@ export async function loadTracts(client: PoolClient, gpkgPath: string) {
   return { rows: total, tracts: distinct.rows[0]!.n, multipart: distinct.rows[0]!.parts };
 }
 
-/** Valores por setor de um agregado do IBGE (CSV do FTP), só para os setores pedidos (`null`: todos). */
+/**
+ * Valores por setor de um agregado do IBGE (CSV do FTP), só para os setores pedidos (`null`: todos). Cada setor aparece uma
+ * vez no agregado: uma repetição, pedida ou não, bloqueia a leitura em vez de a última linha prevalecer.
+ */
 export async function tractValues(zip: string, wanted: Set<string> | null, fields: string[]) {
   const values = new Map<string, Record<string, number | null>>();
   const entry = entries(zip).find((name) => name.toLowerCase().endsWith('.csv'));
   if (!entry) throw new Error(`Sem CSV em ${zip}.`);
+  const seen = new Set<string>();
   for await (const row of rows(zip, entry)) {
     const setor = row.CD_SETOR ?? row.CD_setor;
-    if (!setor || (wanted && !wanted.has(setor))) continue;
+    if (!setor) continue;
+    if (seen.has(setor)) throw new Error(`Setor repetido em ${entry}: ${setor}. Importação bloqueada.`);
+    seen.add(setor);
+    if (wanted && !wanted.has(setor)) continue;
     values.set(setor, Object.fromEntries(fields.map((field) => {
       const raw = (row[field] ?? row[field.toLowerCase()])?.replace(',', '.');
       if (raw === undefined) throw new Error(`Campo ${field} ausente em ${entry}.`);
